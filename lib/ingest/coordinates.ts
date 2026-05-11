@@ -157,6 +157,14 @@ export const PARK_COORDS: ParkCoord[] = [
   { match: "Six Mile Lake", lat: 44.886, lng: -79.751, region: "Central" },
   { match: "Sleeping Giant", lat: 48.359, lng: -88.79, region: "Northwestern" },
   { match: /Spanish River|Biscotasi/i, lat: 46.892, lng: -82.067, region: "Northeastern" },
+  // Conservation Authority parks — kept first so the more-specific CA names
+  // win over loose substring matches like "Springwater" (the OP park is in
+  // the Central region, the CA park is south-west).
+  { match: "Fanshawe", lat: 43.040, lng: -81.184, region: "Southwestern" },
+  { match: "Wildwood", lat: 43.221, lng: -80.973, region: "Southwestern" },
+  { match: "Pittock", lat: 43.135, lng: -80.728, region: "Southwestern" },
+  { match: "Falls Reserve", lat: 43.726, lng: -81.557, region: "Southwestern" },
+  { match: /Springwater Conservation/i, lat: 42.681, lng: -80.964, region: "Southwestern" },
   { match: "Springwater", lat: 44.435, lng: -79.776, region: "Central" },
   { match: "Sturgeon Bay", lat: 45.077, lng: -80.013, region: "Central" },
   { match: "Temagami", lat: 47.013, lng: -80.043, region: "Northeastern" },

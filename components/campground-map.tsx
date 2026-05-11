@@ -420,8 +420,31 @@ function SitePopover({
   const bgH = campMap.y_dimension * K;
   const bgX = `${THUMB / 2 - (site.site.map_x ?? 0) * K}px`;
   const bgY = `${THUMB / 2 - (site.site.map_y ?? 0) * K}px`;
+  const photos = (site.site.photos ?? []).filter((p) => p.url || p.avifUrl);
+  const description = site.site.description?.trim();
   return (
     <div className="absolute left-3 bottom-3 right-3 sm:right-auto sm:w-80 card p-0 shadow-xl ring-stone-300/70 z-40 overflow-hidden">
+      {photos.length > 0 && (
+        <div className="relative h-32 bg-stone-200 overflow-hidden">
+          <div className="flex h-full overflow-x-auto snap-x snap-mandatory scrollbar-thin">
+            {photos.map((p, i) => (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                key={(p.url ?? p.avifUrl) + String(i)}
+                src={p.url ?? p.avifUrl ?? ""}
+                alt={`Site ${site.site.name} photo ${i + 1}`}
+                className="h-full w-full flex-shrink-0 object-cover snap-center"
+                loading="lazy"
+              />
+            ))}
+          </div>
+          {photos.length > 1 && (
+            <span className="absolute bottom-1.5 right-1.5 chip bg-black/55 text-white text-[10px] backdrop-blur-sm border-0">
+              {photos.length} photos
+            </span>
+          )}
+        </div>
+      )}
       <div className="flex gap-3 p-3">
         {/* Mini thumbnail showing the site's position on the operator map */}
         <div
@@ -488,6 +511,11 @@ function SitePopover({
       </div>
 
       <div className="border-t border-stone-100 px-3 py-2 text-xs text-stone-600 space-y-1.5">
+        {description && (
+          <div className="text-stone-700 leading-relaxed pb-1">
+            {description}
+          </div>
+        )}
         <div className="flex items-center gap-1.5">
           <Users size={11} className="text-stone-400" />
           Up to {site.site.max_party_size} people

@@ -58,6 +58,16 @@ export type Site = {
   /** Pixel coordinates on the operator-branded campground map image. */
   map_x?: number | null;
   map_y?: number | null;
+  /** Operator's per-site photos. Sourced from `/api/resourcelocation/resources`. */
+  photos?: SitePhoto[];
+  /** Operator's per-site description blurb. */
+  description?: string | null;
+};
+
+export type SitePhoto = {
+  url: string | null;
+  avifUrl: string | null;
+  aspectType: number;
 };
 
 export type EquipmentOption = {

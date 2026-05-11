@@ -38,12 +38,15 @@ function gtc(id: string, name: string, host: string): Operator {
 const OPERATORS: Operator[] = [
   ONTARIO_PARKS,
   PARKS_CANADA,
-  gtc("lprca",   "Long Point Region CA",  "longpoint.goingtocamp.com"),
-  gtc("stclair", "St. Clair Region CA",   "stclair.goingtocamp.com"),
-  gtc("otonabee","Otonabee Region CA",    "otonabee.goingtocamp.com"),
-  gtc("npca",    "Niagara Peninsula CA",  "niagara.goingtocamp.com"),
-  gtc("trca",    "Toronto and Region CA", "camping.trca.ca"),
-  gtc("grca",    "Grand River CA",        "www.grcacamping.ca"),
+  gtc("lprca",        "Long Point Region CA",   "longpoint.goingtocamp.com"),
+  gtc("stclair",      "St. Clair Region CA",    "stclair.goingtocamp.com"),
+  gtc("otonabee",     "Otonabee Region CA",     "otonabee.goingtocamp.com"),
+  gtc("npca",         "Niagara Peninsula CA",   "niagara.goingtocamp.com"),
+  gtc("trca",         "Toronto and Region CA",  "camping.trca.ca"),
+  gtc("grca",         "Grand River CA",         "www.grcacamping.ca"),
+  gtc("upperthames",  "Upper Thames River CA",  "upperthames.goingtocamp.com"),
+  gtc("maitland",     "Maitland Valley CA",     "maitlandvalley.goingtocamp.com"),
+  gtc("catfish",      "Catfish Creek CA",       "catfishcreek.goingtocamp.com"),
 ];
 
 async function main() {

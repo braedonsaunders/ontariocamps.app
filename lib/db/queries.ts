@@ -75,6 +75,8 @@ type SiteRow = {
   vendor_resource_location_id: string | number | null;
   vendor_resource_id: string | number | null;
   vendor_booking_category_id: number | null;
+  photos: unknown;
+  description: string | null;
 };
 function rowToSite(r: SiteRow): Site {
   return {
@@ -87,6 +89,8 @@ function rowToSite(r: SiteRow): Site {
     is_pet_friendly: r.is_pet_friendly, is_waterfront: r.is_waterfront,
     amenities: Array.isArray(r.amenities) ? r.amenities : [],
     camp_map_id: r.camp_map_id, map_x: r.map_x, map_y: r.map_y,
+    photos: Array.isArray(r.photos) ? (r.photos as Site["photos"]) : [],
+    description: r.description,
   };
 }
 
@@ -292,14 +296,16 @@ export async function upsertSite(s: SiteWrite): Promise<void> {
                        has_electric, has_water, has_sewer, is_pull_through,
                        is_accessible, is_pet_friendly, is_waterfront,
                        amenities, camp_map_id, map_x, map_y,
-                       vendor_resource_location_id, vendor_resource_id, vendor_booking_category_id)
+                       vendor_resource_location_id, vendor_resource_id, vendor_booking_category_id,
+                       photos, description)
     VALUES (${s.id}, ${s.campground_id}, ${s.vendor_site_id}, ${s.name}, ${s.site_type},
             ${s.site_type_label ?? null}, ${s.icon_type ?? null},
             ${s.max_party_size}, ${s.max_equipment_length_ft},
             ${s.has_electric}, ${s.has_water}, ${s.has_sewer}, ${s.is_pull_through},
             ${s.is_accessible}, ${s.is_pet_friendly}, ${s.is_waterfront},
             ${sqlDirect().json(s.amenities)}, ${s.camp_map_id ?? null}, ${s.map_x ?? null}, ${s.map_y ?? null},
-            ${s.vendor_resource_location_id}, ${s.vendor_resource_id}, ${s.vendor_booking_category_id})
+            ${s.vendor_resource_location_id}, ${s.vendor_resource_id}, ${s.vendor_booking_category_id},
+            ${sqlDirect().json(s.photos ?? [])}, ${s.description ?? null})
     ON CONFLICT (id) DO UPDATE SET
       campground_id = excluded.campground_id, vendor_site_id = excluded.vendor_site_id,
       name = excluded.name, site_type = excluded.site_type,
@@ -313,7 +319,8 @@ export async function upsertSite(s: SiteWrite): Promise<void> {
       camp_map_id = excluded.camp_map_id, map_x = excluded.map_x, map_y = excluded.map_y,
       vendor_resource_location_id = excluded.vendor_resource_location_id,
       vendor_resource_id = excluded.vendor_resource_id,
-      vendor_booking_category_id = excluded.vendor_booking_category_id
+      vendor_booking_category_id = excluded.vendor_booking_category_id,
+      photos = excluded.photos, description = excluded.description
   `;
 }
 

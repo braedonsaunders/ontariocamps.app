@@ -61,6 +61,23 @@ export type CamisMap = {
   yDimension?: number;
 };
 
+export type CamisPhoto = {
+  photoUrlResult?: { url?: string; avifUrl?: string };
+  aspectType?: number;
+};
+
+export type CamisResourceDetail = {
+  resourceId: number;
+  resourceLocationId: number;
+  localizedValues?: Array<{ cultureName: string; name?: string; description?: string }>;
+  photos?: CamisPhoto[];
+  mapIds?: number[];
+  order?: number;
+  maxCapacity?: number;
+  maxAdultCapacity?: number | null;
+  allowedEquipment?: Array<{ equipmentCategoryId: number; subEquipmentCategoryId: number }>;
+};
+
 export type CamisAvailabilityRow = {
   availability: number;
   processedAvailability?: number;
@@ -238,6 +255,22 @@ export class CamisClient {
       numAdults: params.numAdults ?? 2,
       numChildren: params.numChildren ?? 0,
     });
+  }
+
+  /**
+   * Full per-resource detail dump for an entire campground. Returns a dict
+   * keyed by resourceId; each entry includes the operator's `photos` array,
+   * `localizedValues` (name + description blurb), and structured site
+   * attributes (`definedAttributes`, `allowedEquipment`, etc).
+   *
+   * This is one HTTP call per park, vs. one-per-site for `/api/resource/*`,
+   * so we use it both during ingest and for ad-hoc photo backfills.
+   */
+  getResourceLocationResources(resourceLocationId: number): Promise<Record<string, CamisResourceDetail>> {
+    return this.get<Record<string, CamisResourceDetail>>(
+      "/api/resourcelocation/resources",
+      { resourceLocationId },
+    );
   }
 
   getResourceDailyAvailability(params: {

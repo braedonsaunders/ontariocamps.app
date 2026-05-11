@@ -266,8 +266,18 @@ export async function refreshOperatorMetadata(
     await upsertCampground({ id: cgId, park_id: parkId, vendor_map_id: String(cand.childMapId ?? ""), name: "Main campground" });
 
     let parkMaps: CamisMap[];
+    let resourceDetails: Record<string, import("./camis-client").CamisResourceDetail> = {};
     try {
-      parkMaps = await client.getMaps(cand.resourceLocationId);
+      [parkMaps, resourceDetails] = await Promise.all([
+        client.getMaps(cand.resourceLocationId),
+        // Per-site details (photos + descriptions + structured attributes).
+        // One call per park; failure here is non-fatal — sites still get
+        // ingested without photos.
+        client.getResourceLocationResources(cand.resourceLocationId).catch((err) => {
+          errors.push(`getResources(${cand.title}): ${(err as Error).message}`);
+          return {};
+        }),
+      ]);
     } catch (err) {
       errors.push(`getMaps(${cand.title}): ${(err as Error).message}`);
       continue;
@@ -287,15 +297,28 @@ export async function refreshOperatorMetadata(
       for (const r of leaf.resources) {
         const siteId = `s_${parkId}_${r.resourceId}`;
         const label = labelByIcon.get(r.iconType) ?? null;
+        const detail = resourceDetails[String(r.resourceId)];
+        const en = detail?.localizedValues?.find((l) => l.cultureName === "en-CA")
+          ?? detail?.localizedValues?.[0];
+        const photos = (detail?.photos ?? [])
+          .map((ph) => ({
+            url: ph.photoUrlResult?.url ?? null,
+            avifUrl: ph.photoUrlResult?.avifUrl ?? null,
+            aspectType: ph.aspectType ?? 0,
+          }))
+          .filter((ph) => ph.url || ph.avifUrl);
+        const description = (en?.description ?? "").trim() || null;
+        const siteName = (en?.name ?? "").trim() || String(Math.abs(r.resourceId) % 10000);
+
         const site: SiteWrite = {
           id: siteId,
           campground_id: cgId,
           vendor_site_id: String(r.resourceId),
-          name: String(Math.abs(r.resourceId) % 10000),
+          name: siteName,
           site_type: siteTypeFromLabel(label),
           site_type_label: label,
           icon_type: r.iconType,
-          max_party_size: 6,
+          max_party_size: detail?.maxCapacity ?? 6,
           max_equipment_length_ft: null,
           has_electric: hasElectricFromLabel(label),
           has_water: false,
@@ -311,6 +334,8 @@ export async function refreshOperatorMetadata(
           vendor_resource_location_id: cand.resourceLocationId,
           vendor_resource_id: r.resourceId,
           vendor_booking_category_id: bookingCategoryId,
+          photos,
+          description,
         };
         await upsertSite(site);
         sites_seen += 1;
