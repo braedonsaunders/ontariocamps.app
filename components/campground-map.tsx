@@ -400,18 +400,28 @@ function PanZoomViewer({
                   aria-label={`Site ${s.site.name}, ${s.site.site_type}, ${s.status}`}
                 >
                   <span
-                    className="grid place-items-center rounded-full text-white shadow"
+                    className="relative grid place-items-center rounded-full text-white shadow"
                     style={{
                       width: `${markerSize}px`,
                       height: `${markerSize}px`,
                       backgroundColor: fill,
-                      boxShadow: `0 0 0 ${2 / transform.scale}px white, 0 0 0 ${
-                        (isSelected ? 5 : isHovered ? 3.5 : 2.5) / transform.scale
-                      }px ${ring}`,
+                      // Selected → swap the outer status-coloured ring for a
+                      // dark high-contrast ring + a soft drop shadow, so the
+                      // clicked pin reads as obviously distinct from the rest.
+                      // box-shadow widths are divided by the current pan-zoom
+                      // scale so they appear constant in screen pixels.
+                      boxShadow: isSelected
+                        ? `0 0 0 ${3 / transform.scale}px white, 0 0 0 ${5 / transform.scale}px #1c1917, 0 ${6 / transform.scale}px ${14 / transform.scale}px ${-4 / transform.scale}px rgba(0,0,0,0.35)`
+                        : `0 0 0 ${2 / transform.scale}px white, 0 0 0 ${(isHovered ? 3.5 : 2.5) / transform.scale}px ${ring}`,
                       transition: "width 120ms ease-out, height 120ms ease-out, box-shadow 120ms",
                     }}
                   >
-                    <SiteIcon size={iconSize} strokeWidth={2.5} aria-hidden />
+                    <SiteIcon
+                      size={iconSize}
+                      strokeWidth={2.5}
+                      aria-hidden
+                      style={{ display: "block" }}
+                    />
                   </span>
                 </button>
               );

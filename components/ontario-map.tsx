@@ -33,6 +33,12 @@ function colorForAvailability(pct: number): string {
   return "#ef4444";
 }
 
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] ?? c),
+  );
+}
+
 export function OntarioMap({ parks }: { parks: Park[] }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -83,12 +89,21 @@ export function OntarioMap({ parks }: { parks: Park[] }) {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
         cluster: true,
-        clusterRadius: 45,
-        clusterMaxZoom: 8,
+        // Looser clustering: smaller radius (=more individual pins survive at
+        // any given zoom) and a lower max zoom (=clusters break up sooner as
+        // you zoom in). The earlier 45/8 over-clumped the GTA area.
+        clusterRadius: 22,
+        clusterMaxZoom: 6,
         clusterProperties: {
           avail_sum: ["+", ["get", "available_sites"]],
           total_sum: ["+", ["get", "total_sites"]],
         },
+      });
+      // Source for the currently-selected park (empty until click). A second
+      // ring layer paints on top of park-points to highlight it.
+      map.addSource("selected-park", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
       });
 
       map.addLayer({
@@ -147,6 +162,30 @@ export function OntarioMap({ parks }: { parks: Park[] }) {
         filter: ["!", ["has", "point_count"]],
         paint: { "circle-radius": 16, "circle-color": "rgba(0,0,0,0)" },
       });
+      // Selected-park highlight: a thick semi-transparent halo plus a larger,
+      // solid disc on top, so the clicked pin reads as obviously distinct.
+      map.addLayer({
+        id: "park-points-selected-halo",
+        type: "circle",
+        source: "selected-park",
+        paint: {
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, 14, 10, 22, 14, 30],
+          "circle-color": ["get", "color"],
+          "circle-opacity": 0.25,
+        },
+      });
+      map.addLayer({
+        id: "park-points-selected",
+        type: "circle",
+        source: "selected-park",
+        paint: {
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, 7, 10, 12, 14, 16],
+          "circle-color": ["get", "color"],
+          "circle-stroke-color": "#1c1917",
+          "circle-stroke-width": 2.5,
+          "circle-opacity": 1,
+        },
+      });
 
       // Tap a cluster → zoom in
       map.on("click", "park-clusters", (e) => {
@@ -159,12 +198,13 @@ export function OntarioMap({ parks }: { parks: Park[] }) {
         });
       });
 
-      // Tap a park → show details card
+      // Tap a park → show details card and outline the pin.
       map.on("click", "park-points-hit", (e) => {
         const f = e.features?.[0];
         if (!f) return;
         const p = f.properties as Park;
-        setSelected({
+        const [lng, lat] = (f.geometry as unknown as { coordinates: [number, number] }).coordinates;
+        const park: Park = {
           slug: p.slug,
           name: p.name,
           operator: p.operator,
@@ -173,16 +213,57 @@ export function OntarioMap({ parks }: { parks: Park[] }) {
           total_sites: Number(p.total_sites),
           available_sites: Number(p.available_sites),
           availability_pct: Number(p.availability_pct),
-          lat: (f.geometry as unknown as { coordinates: [number, number] }).coordinates[1],
-          lng: (f.geometry as unknown as { coordinates: [number, number] }).coordinates[0],
+          lat,
+          lng,
+        };
+        setSelected(park);
+        const sel = map.getSource("selected-park") as maplibregl.GeoJSONSource | undefined;
+        sel?.setData({
+          type: "FeatureCollection",
+          features: [
+            {
+              type: "Feature",
+              properties: { color: colorForAvailability(park.availability_pct) },
+              geometry: { type: "Point", coordinates: [lng, lat] },
+            },
+          ],
         });
       });
 
-      map.on("mouseenter", "park-points-hit", () => {
+      // Hover tooltip on park points — shows name, operator, available/total.
+      const tooltip = new maplibregl.Popup({
+        closeButton: false,
+        closeOnClick: false,
+        offset: 12,
+        className: "park-hover-popup",
+      });
+      map.on("mouseenter", "park-points-hit", (e) => {
         map.getCanvas().style.cursor = "pointer";
+        const f = e.features?.[0];
+        if (!f) return;
+        const p = f.properties as Park;
+        const [lng, lat] = (f.geometry as unknown as { coordinates: [number, number] }).coordinates;
+        const pct = Number(p.availability_pct);
+        const open = Number(p.available_sites);
+        const total = Number(p.total_sites);
+        // Build a small HTML body for the popup — kept terse since it appears
+        // on hover and shouldn't shout.
+        const html = `
+          <div class="font-semibold text-stone-900 leading-tight text-sm mb-1">${escapeHtml(p.name)}</div>
+          <div class="text-[11px] text-stone-500 leading-tight mb-1.5">${escapeHtml(p.operator)} · ${escapeHtml(p.region || "")}</div>
+          <div class="flex items-center gap-2 text-[11px]">
+            <span class="inline-flex items-center gap-1">
+              <span class="h-2 w-2 rounded-full" style="background:${colorForAvailability(pct)}"></span>
+              <span class="font-semibold text-stone-900">${open.toLocaleString()}</span>
+              <span class="text-stone-500">/${total.toLocaleString()} open · ${pct}%</span>
+            </span>
+          </div>
+        `;
+        tooltip.setLngLat([lng, lat]).setHTML(html).addTo(map);
       });
       map.on("mouseleave", "park-points-hit", () => {
         map.getCanvas().style.cursor = "";
+        tooltip.remove();
       });
       map.on("mouseenter", "park-clusters", () => {
         map.getCanvas().style.cursor = "pointer";
@@ -244,7 +325,11 @@ export function OntarioMap({ parks }: { parks: Park[] }) {
             </div>
             <button
               type="button"
-              onClick={() => setSelected(null)}
+              onClick={() => {
+                setSelected(null);
+                const sel = mapRef.current?.getSource("selected-park") as maplibregl.GeoJSONSource | undefined;
+                sel?.setData({ type: "FeatureCollection", features: [] });
+              }}
               className="text-stone-400 hover:text-stone-700 transition-colors shrink-0"
               aria-label="Close"
             >

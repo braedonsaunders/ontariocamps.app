@@ -45,6 +45,20 @@
   border: 1px solid #e7e5e4;
 }
 .ocp-popup .maplibregl-popup-tip { display: none; }
+
+/* Hover-only popup on /map — quiet styling, no maplibre default chrome. */
+.park-hover-popup .maplibregl-popup-content {
+  padding: 9px 11px;
+  border-radius: 8px;
+  border: 1px solid #e7e5e4;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+  pointer-events: none; /* don't intercept the next pin hover */
+  min-width: 180px;
+}
+.park-hover-popup .maplibregl-popup-tip {
+  border-top-color: #e7e5e4;
+}
+
 .maplibregl-ctrl-attrib { font-size: 10px; }
 
 @layer components {
