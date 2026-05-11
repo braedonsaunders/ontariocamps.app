@@ -7,10 +7,13 @@ import {
   getSiteByPark,
   getSiteAvailability,
   getEquipmentForOperator,
+  getSiteReviews,
+  getSiteReviewAggregate,
 } from "@/lib/data-source";
 import { timeAgo } from "@/lib/utils";
 import { ArrowUpRight, ChevronLeft, Tent, Users, Zap, Droplet, Waves, Accessibility, PawPrint } from "lucide-react";
 import { PhotoGallery } from "@/components/photo-gallery";
+import { SiteReviewAggregateDisplay, SiteReviewList, SiteReviewForm } from "@/components/reviews";
 import { MotionFadeUp } from "@/components/motion";
 
 export const dynamic = "force-dynamic";
@@ -52,9 +55,11 @@ export default async function SiteDetailPage({
   ]);
   if (!operator || !site) notFound();
 
-  const [availability, equipment] = await Promise.all([
+  const [availability, equipment, reviews, reviewAggregate] = await Promise.all([
     getSiteAvailability(site.id),
     getEquipmentForOperator(park.operator_id),
+    getSiteReviews(site.id),
+    getSiteReviewAggregate(site.id),
   ]);
 
   // Group availability by month for the per-night table.
@@ -188,18 +193,20 @@ export default async function SiteDetailPage({
             )}
           </div>
 
-          {/* Reviews — placeholder. Real implementation lands in a follow-up. */}
+          {/* Reviews */}
           <div>
-            <h2 className="text-lg font-semibold mb-2">Reviews</h2>
-            <div className="card p-6 text-sm text-stone-600">
-              <div className="font-medium text-stone-900 mb-1">
-                Reviews are coming soon.
-              </div>
-              <p className="leading-relaxed">
-                We&apos;re wiring up a community-driven review and rating system so campers can share what each
-                individual site is actually like — sun/shade, privacy, neighbours, gravel quality, the bear box situation.
-                Until that lands, the operator&apos;s own site is the source of truth.
-              </p>
+            <div className="flex items-baseline justify-between mb-3">
+              <h2 className="text-lg font-semibold">Reviews</h2>
+              {reviewAggregate.review_count > 0 && (
+                <span className="text-xs text-stone-500">
+                  {reviewAggregate.review_count} {reviewAggregate.review_count === 1 ? "review" : "reviews"}
+                </span>
+              )}
+            </div>
+            <div className="space-y-4">
+              <SiteReviewAggregateDisplay aggregate={reviewAggregate} />
+              <SiteReviewList reviews={reviews} />
+              <SiteReviewForm siteId={site.id} />
             </div>
           </div>
         </div>

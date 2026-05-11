@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { CampMap, Site, EquipmentOption } from "@/lib/types";
-import { Minus, Plus, RotateCcw, Move, X, ExternalLink, Zap, Tent as TentIcon, Users, Tent } from "lucide-react";
+import { Minus, Plus, RotateCcw, Move, X, ExternalLink, Zap, Tent as TentIcon, Users, Tent, MapPin, CircleDot } from "lucide-react";
 
 type SiteStatus = "available" | "reserved" | "closed" | "unknown";
 
@@ -127,6 +127,29 @@ export function CampgroundMap({
 
   if (!activeMap) return null;
 
+  const featureLegend = useMemo(() => {
+    const feats = (activeMap.features ?? []);
+    const byType = new Map<number, number>();
+    let accessCount = 0;
+    let labelCount = 0;
+    for (const f of feats) {
+      if (f.kind === "legend") {
+        byType.set(f.legendItemType, (byType.get(f.legendItemType) ?? 0) + 1);
+      } else if (f.kind === "access") {
+        accessCount += 1;
+      } else if (f.kind === "label") {
+        labelCount += 1;
+      }
+    }
+    const types = Array.from(byType.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([lit, count]) => {
+        const hue = (lit * 137.508) % 360;
+        return { lit, count, hue };
+      });
+    return { types, accessCount, labelCount, total: feats.length };
+  }, [activeMap]);
+
   const availableCount = sitesOnMap.filter((s) => s.status === "available").length;
   const electricBreakdown = useMemo(() => {
     let electric = 0;
@@ -211,6 +234,29 @@ export function CampgroundMap({
                   <TentIcon size={9} strokeWidth={2.5} aria-hidden />
                 </span>
                 Non-electric · {electricBreakdown.nonElectric}
+              </span>
+            )}
+          </>
+        )}
+        {featureLegend.total > 0 && (
+          <>
+            <span className="hidden sm:inline-block h-3 w-px bg-stone-200" aria-hidden />
+            {featureLegend.types.map(({ lit, count, hue }) => (
+              <span key={lit} className="inline-flex items-center gap-1 text-stone-500" title={`Facility type ${lit} · ${count}`}>
+                <span
+                  className="inline-block h-3 w-3 rounded-full border"
+                  style={{
+                    backgroundColor: `hsl(${hue}, 70%, 95%)`,
+                    borderColor: `hsl(${hue}, 55%, 35%)`,
+                  }}
+                />
+                {count}
+              </span>
+            ))}
+            {featureLegend.accessCount > 0 && (
+              <span className="inline-flex items-center gap-1 text-stone-500">
+                <MapPin size={10} className="text-violet-500" />
+                {featureLegend.accessCount}
               </span>
             )}
           </>
@@ -379,9 +425,7 @@ function PanZoomViewer({
             draggable={false}
             className="absolute inset-0 h-full w-full object-contain pointer-events-none"
           />
-          {/* Map features (non-site): washrooms, water taps, labels, access
-           *  points. Rendered UNDER the site pins so site dots stay on top. */}
-          <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute inset-0">
             {(campMap.features ?? []).map((f, idx) => {
               const left = (f.x / campMap.x_dimension) * 100;
               const top = (f.y / campMap.y_dimension) * 100;
@@ -390,44 +434,71 @@ function PanZoomViewer({
                 const color = f.r != null && f.g != null && f.b != null
                   ? `rgb(${f.r},${f.g},${f.b})`
                   : "#44403c";
+                const fs = f.fontSize
+                  ? Math.max(8, Math.min(14, f.fontSize * 0.6)) / transform.scale
+                  : 10 / transform.scale;
                 return (
                   <span
                     key={`label-${idx}`}
-                    className="absolute -translate-x-1/2 -translate-y-1/2 whitespace-nowrap text-[9px] font-medium"
+                    className="absolute -translate-x-1/2 -translate-y-1/2 whitespace-nowrap font-semibold"
                     style={{
                       left: `${left}%`,
                       top: `${top}%`,
+                      fontSize: `${fs}px`,
                       color,
-                      textShadow: "0 0 2px white, 0 0 3px white",
+                      textShadow: `0 0 ${2 / transform.scale}px white, 0 0 ${4 / transform.scale}px white`,
                     }}
                   >
                     {f.text}
                   </span>
                 );
               }
-              // Both "legend" and "access" features render as small colored
-              // dots — CAMIS doesn't expose decoded names for legendItemType,
-              // so we use the operator's rgb values to keep visual parity
-              // with their own map and hide the encoded type in a tooltip.
-              const color = f.kind === "legend"
-                ? `rgb(${f.r},${f.g},${f.b})`
-                : "#44403c";
-              const featureDot = 6 / transform.scale;
+
+              if (f.kind === "access") {
+                const sz = 14 / transform.scale;
+                return (
+                  <span
+                    key={`access-${idx}`}
+                    className="absolute -translate-x-1/2 -translate-y-1/2 grid place-items-center"
+                    style={{ left: `${left}%`, top: `${top}%`, width: sz, height: sz }}
+                    title="Access point"
+                    aria-hidden
+                  >
+                    <MapPin
+                      size={sz}
+                      style={{ color: "#6d28d9", fill: "#ede9fe", strokeWidth: 2 }}
+                    />
+                  </span>
+                );
+              }
+
+              const color = `rgb(${f.r},${f.g},${f.b})`;
+              const outer = 12 / transform.scale;
+              const inner = 8 / transform.scale;
+
+              const hue = (f.legendItemType * 137.508) % 360;
+              const iconColor = `hsl(${hue}, 55%, 35%)`;
+              const bgColor = `hsl(${hue}, 70%, 95%)`;
+
               return (
                 <span
                   key={`feat-${idx}`}
-                  className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full"
+                  className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full grid place-items-center"
                   style={{
                     left: `${left}%`,
                     top: `${top}%`,
-                    width: `${featureDot}px`,
-                    height: `${featureDot}px`,
-                    backgroundColor: color,
-                    boxShadow: `0 0 0 ${1 / transform.scale}px white`,
+                    width: `${outer}px`,
+                    height: `${outer}px`,
+                    backgroundColor: bgColor,
+                    border: `${1.5 / transform.scale}px solid ${iconColor}`,
+                    boxShadow: `0 0 0 ${1 / transform.scale}px white, 0 ${1 / transform.scale}px ${2 / transform.scale}px rgba(0,0,0,0.15)`,
+                    zIndex: 5,
                   }}
-                  title={f.kind === "legend" ? `Feature type ${f.legendItemType}` : "Access point"}
+                  title={`Facility (${f.legendItemType})`}
                   aria-hidden
-                />
+                >
+                  <CircleDot size={inner * 0.7} style={{ color: iconColor }} strokeWidth={2.5} />
+                </span>
               );
             })}
           </div>

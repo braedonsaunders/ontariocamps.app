@@ -20,9 +20,23 @@ import {
   getAllEquipmentOptions,
   getRefreshMeta,
   getLatestRefreshLogPerType,
+  getSiteReviews,
+  getSiteReviewAggregate,
+  getParkReviews,
+  getParkReviewAggregate,
+  getRecentSiteReviewsForPark,
   type RefreshLogRow,
 } from "./db/queries";
-import type { Operator, Park, Campground, Site, CampMap, EquipmentOption } from "./types";
+import type { Operator, Park, Campground, Site, CampMap, EquipmentOption, SiteReview, ParkReview, SiteReviewAggregate, ParkReviewAggregate } from "./types";
+
+export {
+  getSiteReviews,
+  getSiteReviewAggregate,
+  getParkReviews,
+  getParkReviewAggregate,
+  getRecentSiteReviewsForPark,
+};
+export type { SiteReview, ParkReview, SiteReviewAggregate, ParkReviewAggregate };
 
 // ─── Bulk reads (used by index pages, search, analytics) ────────────────────
 

@@ -18,6 +18,10 @@ import type {
   CampMap,
   SiteType,
   EquipmentOption,
+  SiteReview,
+  ParkReview,
+  SiteReviewAggregate,
+  ParkReviewAggregate,
 } from "../types";
 
 // ─── Row adapters ───────────────────────────────────────────────────────────
@@ -416,4 +420,149 @@ export async function pruneStaleAvailability(cutoff_date: string): Promise<numbe
  *  every availability ingest run. */
 export async function refreshAggregates(): Promise<void> {
   await sqlDirect()`SELECT refresh_aggregates()`;
+}
+
+// ─── Review reads ─────────────────────────────────────────────────────────────
+
+type SiteReviewRow = {
+  id: string; site_id: string; author_handle: string;
+  overall: number; privacy: number | null; cleanliness: number | null;
+  noise: number | null; site_size: number | null; shade: number | null;
+  title: string | null; body: string; visited_at: Date | string | null;
+  created_at: Date | string;
+};
+
+function rowToSiteReview(r: SiteReviewRow): SiteReview {
+  return {
+    id: r.id, site_id: r.site_id, author_handle: r.author_handle,
+    overall: r.overall, privacy: r.privacy, cleanliness: r.cleanliness,
+    noise: r.noise, site_size: r.site_size, shade: r.shade,
+    title: r.title, body: r.body,
+    visited_at: r.visited_at instanceof Date ? r.visited_at.toISOString().slice(0, 10) : (r.visited_at as string | null),
+    created_at: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+  };
+}
+
+type ParkReviewRow = {
+  id: string; park_id: string; author_handle: string;
+  overall: number; facilities: number | null; trails: number | null;
+  beach: number | null; privacy: number | null; noise: number | null;
+  title: string | null; body: string; visited_at: Date | string | null;
+  created_at: Date | string;
+};
+
+function rowToParkReview(r: ParkReviewRow): ParkReview {
+  return {
+    id: r.id, park_id: r.park_id, author_handle: r.author_handle,
+    overall: r.overall, facilities: r.facilities, trails: r.trails,
+    beach: r.beach, privacy: r.privacy, noise: r.noise,
+    title: r.title, body: r.body,
+    visited_at: r.visited_at instanceof Date ? r.visited_at.toISOString().slice(0, 10) : (r.visited_at as string | null),
+    created_at: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+  };
+}
+
+export async function getSiteReviews(siteId: string, limit = 20, offset = 0): Promise<SiteReview[]> {
+  const rows = await sql()<SiteReviewRow[]>`
+    SELECT id, site_id, author_handle, overall, privacy, cleanliness, noise, site_size, shade,
+           title, body, visited_at, created_at
+      FROM site_reviews
+     WHERE site_id = ${siteId} AND status = 'approved'
+     ORDER BY created_at DESC
+     LIMIT ${limit} OFFSET ${offset}
+  `;
+  return rows.map(rowToSiteReview);
+}
+
+export async function getSiteReviewAggregate(siteId: string): Promise<SiteReviewAggregate> {
+  const rows = await sql()<Array<{
+    review_count: number; rating_avg: number | null;
+    rating_privacy: number | null; rating_cleanliness: number | null;
+    rating_noise: number | null; rating_site_size: number | null; rating_shade: number | null;
+  }>>`
+    SELECT review_count, rating_avg, rating_privacy, rating_cleanliness,
+           rating_noise, rating_site_size, rating_shade
+      FROM sites WHERE id = ${siteId}
+  `;
+  return rows[0] ?? { review_count: 0, rating_avg: null, rating_privacy: null, rating_cleanliness: null, rating_noise: null, rating_site_size: null, rating_shade: null };
+}
+
+export async function getParkReviews(parkId: string, limit = 20, offset = 0): Promise<ParkReview[]> {
+  const rows = await sql()<ParkReviewRow[]>`
+    SELECT id, park_id, author_handle, overall, facilities, trails, beach, privacy, noise,
+           title, body, visited_at, created_at
+      FROM park_reviews
+     WHERE park_id = ${parkId} AND status = 'approved'
+     ORDER BY created_at DESC
+     LIMIT ${limit} OFFSET ${offset}
+  `;
+  return rows.map(rowToParkReview);
+}
+
+export async function getParkReviewAggregate(parkId: string): Promise<ParkReviewAggregate> {
+  const rows = await sql()<Array<{
+    review_count: number; rating_avg: number | null;
+    rating_facilities: number | null; rating_trails: number | null;
+    rating_beach: number | null; rating_privacy: number | null; rating_noise: number | null;
+  }>>`
+    SELECT review_count, rating_avg, rating_facilities, rating_trails,
+           rating_beach, rating_privacy, rating_noise
+      FROM parks WHERE id = ${parkId}
+  `;
+  return rows[0] ?? { review_count: 0, rating_avg: null, rating_facilities: null, rating_trails: null, rating_beach: null, rating_privacy: null, rating_noise: null };
+}
+
+export async function getRecentSiteReviewsForPark(parkId: string, limit = 5): Promise<Array<SiteReview & { site_name: string }>> {
+  const rows = await sql()<Array<SiteReviewRow & { site_name: string }>>`
+    SELECT sr.id, sr.site_id, sr.author_handle, sr.overall, sr.privacy, sr.cleanliness,
+           sr.noise, sr.site_size, sr.shade, sr.title, sr.body, sr.visited_at, sr.created_at,
+           s.name AS site_name
+      FROM site_reviews sr
+      JOIN sites s ON s.id = sr.site_id
+      JOIN campgrounds c ON c.id = s.campground_id
+     WHERE c.park_id = ${parkId} AND sr.status = 'approved'
+     ORDER BY sr.created_at DESC
+     LIMIT ${limit}
+  `;
+  return rows.map((r) => ({ ...rowToSiteReview(r), site_name: r.site_name }));
+}
+
+// ─── Review writes ────────────────────────────────────────────────────────────
+
+export async function insertSiteReview(input: {
+  site_id: string; author_handle: string;
+  overall: number; privacy?: number; cleanliness?: number;
+  noise?: number; site_size?: number; shade?: number;
+  title?: string; body: string; visited_at?: string;
+  submitter_hash?: string;
+}): Promise<string> {
+  const rows = await sqlDirect()<{ id: string }[]>`
+    INSERT INTO site_reviews (site_id, author_handle, overall, privacy, cleanliness, noise, site_size, shade, title, body, visited_at, submitter_hash)
+    VALUES (${input.site_id}, ${input.author_handle}, ${input.overall},
+            ${input.privacy ?? null}, ${input.cleanliness ?? null},
+            ${input.noise ?? null}, ${input.site_size ?? null}, ${input.shade ?? null},
+            ${input.title ?? null}, ${input.body}, ${input.visited_at ?? null},
+            ${input.submitter_hash ?? null})
+    RETURNING id
+  `;
+  return rows[0].id;
+}
+
+export async function insertParkReview(input: {
+  park_id: string; author_handle: string;
+  overall: number; facilities?: number; trails?: number;
+  beach?: number; privacy?: number; noise?: number;
+  title?: string; body: string; visited_at?: string;
+  submitter_hash?: string;
+}): Promise<string> {
+  const rows = await sqlDirect()<{ id: string }[]>`
+    INSERT INTO park_reviews (park_id, author_handle, overall, facilities, trails, beach, privacy, noise, title, body, visited_at, submitter_hash)
+    VALUES (${input.park_id}, ${input.author_handle}, ${input.overall},
+            ${input.facilities ?? null}, ${input.trails ?? null},
+            ${input.beach ?? null}, ${input.privacy ?? null}, ${input.noise ?? null},
+            ${input.title ?? null}, ${input.body}, ${input.visited_at ?? null},
+            ${input.submitter_hash ?? null})
+    RETURNING id
+  `;
+  return rows[0].id;
 }

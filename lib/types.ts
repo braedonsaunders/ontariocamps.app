@@ -162,6 +162,104 @@ export type SearchResponse = {
   freshness_p50_minutes: number;
 };
 
+export type ReviewStatus = "pending" | "approved" | "rejected" | "flagged";
+
+export type SiteReview = {
+  id: string;
+  site_id: string;
+  author_handle: string;
+  overall: number;
+  privacy: number | null;
+  cleanliness: number | null;
+  noise: number | null;
+  site_size: number | null;
+  shade: number | null;
+  title: string | null;
+  body: string;
+  visited_at: string | null;
+  created_at: string;
+};
+
+export type ParkReview = {
+  id: string;
+  park_id: string;
+  author_handle: string;
+  overall: number;
+  facilities: number | null;
+  trails: number | null;
+  beach: number | null;
+  privacy: number | null;
+  noise: number | null;
+  title: string | null;
+  body: string;
+  visited_at: string | null;
+  created_at: string;
+};
+
+export type SiteReviewAggregate = {
+  review_count: number;
+  rating_avg: number | null;
+  rating_privacy: number | null;
+  rating_cleanliness: number | null;
+  rating_noise: number | null;
+  rating_site_size: number | null;
+  rating_shade: number | null;
+};
+
+export type ParkReviewAggregate = {
+  review_count: number;
+  rating_avg: number | null;
+  rating_facilities: number | null;
+  rating_trails: number | null;
+  rating_beach: number | null;
+  rating_privacy: number | null;
+  rating_noise: number | null;
+};
+
+export type SiteReviewInput = {
+  site_id: string;
+  author_handle: string;
+  overall: number;
+  privacy?: number;
+  cleanliness?: number;
+  noise?: number;
+  site_size?: number;
+  shade?: number;
+  title?: string;
+  body: string;
+  visited_at?: string;
+};
+
+export type ParkReviewInput = {
+  park_id: string;
+  author_handle: string;
+  overall: number;
+  facilities?: number;
+  trails?: number;
+  beach?: number;
+  privacy?: number;
+  noise?: number;
+  title?: string;
+  body: string;
+  visited_at?: string;
+};
+
+export const SITE_RATING_ATTRS: { key: keyof Pick<SiteReview, "privacy" | "cleanliness" | "noise" | "site_size" | "shade">; label: string }[] = [
+  { key: "privacy", label: "Privacy" },
+  { key: "cleanliness", label: "Cleanliness" },
+  { key: "noise", label: "Quietness" },
+  { key: "site_size", label: "Site size" },
+  { key: "shade", label: "Shade" },
+];
+
+export const PARK_RATING_ATTRS: { key: keyof Pick<ParkReview, "facilities" | "trails" | "beach" | "privacy" | "noise">; label: string }[] = [
+  { key: "facilities", label: "Facilities" },
+  { key: "trails", label: "Trails" },
+  { key: "beach", label: "Beach / Water" },
+  { key: "privacy", label: "Privacy" },
+  { key: "noise", label: "Quietness" },
+];
+
 export const AMENITIES: Record<string, { label: string; category: string }> = {
   electric_15a: { label: "15A electric", category: "utilities" },
   electric_30a: { label: "30A electric", category: "utilities" },
