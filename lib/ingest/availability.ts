@@ -96,7 +96,8 @@ export type AvailabilityRefreshOptions = {
   requestDelayMs?: number;
   /** Days ahead of today to fetch. */
   daysAhead?: number;
-  /** Days from today to skip (typical "hold-back" before booking opens). */
+  /** Days from today to skip. Default 0 — operators don't actually freeze a
+   *  near-term window; the earlier 14 assumed otherwise and was wrong. */
   daysSkip?: number;
   /** Maximum sites to fetch (for testing). */
   maxSites?: number;
@@ -112,8 +113,13 @@ export async function refreshAvailability(
 ): Promise<{ sites_seen: number; sites_updated: number; nights_updated: number; errors: string[]; duration_ms: number; }> {
   const concurrency = opts.concurrency ?? 8;
   const requestDelayMs = opts.requestDelayMs ?? 250;
-  const daysAhead = opts.daysAhead ?? 90;
-  const daysSkip = opts.daysSkip ?? 14;
+  // Fetch from today forward through ~6 months. The earlier defaults skipped
+  // the first 14 days under a (wrong) assumption that operators freeze that
+  // window — Ontario Parks/PCRS actually open new dates 5 months out and the
+  // first 14 days are very much bookable. Starting at 0 means "tonight" rows
+  // really exist in the table.
+  const daysAhead = opts.daysAhead ?? 180;
+  const daysSkip = opts.daysSkip ?? 0;
   const writeBatchSize = opts.writeBatchSize ?? 500;
 
   const started = Date.now();

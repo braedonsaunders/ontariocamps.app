@@ -155,6 +155,40 @@ export function OntarioMap({ parks }: { parks: Park[] }) {
           "circle-opacity": 0.95,
         },
       });
+      // Park-name labels next to each individual (non-clustered) pin. We
+      // hide them at low zooms where they'd be a crammed mess, then fade
+      // them in at zoom > 7 (right after clusters break apart). Halo so the
+      // text reads over both light and dark basemap.
+      map.addLayer({
+        id: "park-points-label",
+        type: "symbol",
+        source: "parks",
+        filter: ["!", ["has", "point_count"]],
+        layout: {
+          "text-field": ["get", "name"],
+          "text-font": ["Noto Sans Regular"],
+          "text-size": ["interpolate", ["linear"], ["zoom"], 6, 10, 10, 12, 14, 13],
+          "text-offset": [0, 1.05],
+          "text-anchor": "top",
+          "text-allow-overlap": false,
+          "text-optional": true,
+          "text-padding": 4,
+        },
+        paint: {
+          "text-color": "#1c1917",
+          "text-halo-color": "#ffffff",
+          "text-halo-width": 1.5,
+          "text-opacity": [
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            6,
+            0,
+            6.4,
+            1,
+          ],
+        },
+      });
       map.addLayer({
         id: "park-points-hit",
         type: "circle",
