@@ -101,20 +101,34 @@ export function CampgroundMap({
     <div className="card overflow-hidden">
       {campMaps.length > 1 && (
         <div className="flex items-center gap-1 px-3 pt-3 overflow-x-auto">
-          {campMaps.map((m) => (
-            <button
-              key={m.id}
-              onClick={() => setActiveMapId(m.id)}
-              className={`px-3 py-1.5 text-xs rounded-md whitespace-nowrap transition-colors ${
-                m.id === activeMap.id
-                  ? "bg-forest-700 text-white"
-                  : "bg-stone-100 text-stone-700 hover:bg-stone-200"
-              }`}
-            >
-              {m.name ?? `Section ${m.vendor_map_id.slice(-3)}`}
-              <span className="ml-1.5 opacity-70">{sitesByMap.get(m.id) ?? 0}</span>
-            </button>
-          ))}
+          {campMaps.map((m) => {
+            const label = m.name?.trim() || `Section ${m.vendor_map_id.slice(-3)}`;
+            return (
+              <button
+                key={m.id}
+                onClick={() => setActiveMapId(m.id)}
+                title={m.description ?? undefined}
+                className={`px-3 py-1.5 text-xs rounded-md whitespace-nowrap transition-colors ${
+                  m.id === activeMap.id
+                    ? "bg-forest-700 text-white"
+                    : "bg-stone-100 text-stone-700 hover:bg-stone-200"
+                }`}
+              >
+                {label}
+                <span className="ml-1.5 opacity-70">{sitesByMap.get(m.id) ?? 0}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {(activeMap.name?.trim() || activeMap.description?.trim()) && (
+        <div className="px-4 pt-3 pb-1 flex items-baseline gap-2">
+          {activeMap.name?.trim() && (
+            <h3 className="text-sm font-semibold text-stone-900">{activeMap.name}</h3>
+          )}
+          {activeMap.description?.trim() && (
+            <span className="text-xs text-stone-500">{activeMap.description}</span>
+          )}
         </div>
       )}
       <PanZoomViewer

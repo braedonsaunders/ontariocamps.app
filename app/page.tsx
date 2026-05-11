@@ -2,6 +2,8 @@ import Link from "next/link";
 import { HomeSearch } from "@/components/home-search";
 import { sql } from "@/lib/db/client";
 import { MapPin, Database, Search, Calendar } from "lucide-react";
+import { MotionHero, MotionFadeUp, MotionStagger, MotionStaggerItem } from "@/components/motion";
+import { AnimatedNumber } from "@/components/animated-number";
 
 export const dynamic = "force-dynamic";
 
@@ -54,7 +56,7 @@ export default async function HomePage() {
       <section className="relative isolate overflow-hidden bg-gradient-to-b from-forest-800 to-forest-700 text-white">
         <div className="absolute inset-0 opacity-25 [background-image:radial-gradient(circle_at_30%_20%,_#fff_1px,_transparent_1px),radial-gradient(circle_at_70%_60%,_#fff_1px,_transparent_1px)] [background-size:40px_40px,60px_60px]" />
         <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-20 sm:py-28">
-          <div className="max-w-3xl">
+          <MotionHero className="max-w-3xl">
             <span className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs font-medium ring-1 ring-white/20">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" /> Live index across {t.operators} operators
             </span>
@@ -65,35 +67,35 @@ export default async function HomePage() {
               Search Ontario Parks, Parks Canada, and Conservation Authorities in one place.
               We index availability in near-real-time and send you to the operator&apos;s site to book.
             </p>
-          </div>
-          <div className="mt-8">
+          </MotionHero>
+          <MotionFadeUp delay={0.15} className="mt-8">
             <HomeSearch />
-          </div>
-          <div className="mt-8 flex flex-wrap gap-x-8 gap-y-3 text-sm text-white/85">
+          </MotionFadeUp>
+          <MotionFadeUp delay={0.3} className="mt-8 flex flex-wrap gap-x-8 gap-y-3 text-sm text-white/85">
             <div className="flex items-center gap-2">
               <Database size={16} className="text-emerald-300" />
-              {t.sites.toLocaleString()} sites indexed
+              <AnimatedNumber value={t.sites} /> sites indexed
             </div>
             <div className="flex items-center gap-2">
               <MapPin size={16} className="text-emerald-300" />
-              {t.parks} parks across Ontario
+              <AnimatedNumber value={t.parks} duration={0.9} /> parks across Ontario
             </div>
             <div className="flex items-center gap-2">
               <Calendar size={16} className="text-emerald-300" />
-              {t.available.toLocaleString()} bookable nights across the window
+              <AnimatedNumber value={t.available} duration={1.6} /> bookable nights across the window
             </div>
-          </div>
+          </MotionFadeUp>
         </div>
       </section>
 
       <section className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-14">
-        <div className="flex items-end justify-between mb-6">
+        <MotionFadeUp whenInView className="flex items-end justify-between mb-6">
           <div>
             <h2 className="text-2xl font-semibold tracking-tight">Why ontariocamps.app</h2>
             <p className="text-stone-600 mt-1">The queries the operator sites can&apos;t answer themselves.</p>
           </div>
-        </div>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        </MotionFadeUp>
+        <MotionStagger whenInView className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {[
             { icon: MapPin, title: "Geo radius search", body: "Anywhere within 90 minutes of Burlington, this weekend, with electric." },
             { icon: Calendar, title: "Flexible dates", body: "Any 3 consecutive nights between July 15 and July 30 — we'll find them." },
@@ -102,17 +104,17 @@ export default async function HomePage() {
             { icon: MapPin, title: "Equipment-aware", body: "Filter for 32-foot trailers with pull-through, or tent-only walk-ins." },
             { icon: Search, title: "Deep-link to booking", body: "Click through with date + park already populated on the operator's site." },
           ].map((f) => (
-            <div key={f.title} className="card p-5">
+            <MotionStaggerItem key={f.title} className="card p-5">
               <f.icon size={20} className="text-forest-700" />
               <div className="font-semibold mt-3">{f.title}</div>
               <p className="text-sm text-stone-600 mt-1 leading-relaxed">{f.body}</p>
-            </div>
+            </MotionStaggerItem>
           ))}
-        </div>
+        </MotionStagger>
       </section>
 
       <section className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pb-16">
-        <div className="flex items-end justify-between mb-6">
+        <MotionFadeUp whenInView className="flex items-end justify-between mb-6">
           <div>
             <h2 className="text-2xl font-semibold tracking-tight">Popular parks</h2>
             <p className="text-stone-600 mt-1">Hand-picked starting points across the province.</p>
@@ -120,17 +122,18 @@ export default async function HomePage() {
           <Link href="/search" className="text-sm font-medium text-forest-700 hover:text-forest-800">
             See everything →
           </Link>
-        </div>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        </MotionFadeUp>
+        <MotionStagger whenInView className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {featured.map((p) => (
-            <Link key={p.slug} href={`/park/${p.slug}`} className="card group overflow-hidden transition hover:shadow-md">
+            <MotionStaggerItem key={p.slug}>
+            <Link href={`/park/${p.slug}`} className="card group overflow-hidden transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 block">
               <div className="relative h-40 bg-gradient-to-br from-forest-600 to-forest-800 overflow-hidden">
                 {p.hero_image_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={p.hero_image_url}
                     alt={p.name}
-                    className="absolute inset-0 h-full w-full object-cover group-hover:scale-[1.02] transition-transform duration-500"
+                    className="absolute inset-0 h-full w-full object-cover group-hover:scale-[1.03] transition-transform duration-700"
                   />
                 ) : (
                   <div className="absolute inset-0 flex items-center justify-center text-white/30 text-6xl font-bold">
@@ -146,23 +149,26 @@ export default async function HomePage() {
                 <p className="text-sm text-stone-600 mt-1 line-clamp-2">{p.description}</p>
               </div>
             </Link>
+            </MotionStaggerItem>
           ))}
-        </div>
+        </MotionStagger>
       </section>
 
       <section className="border-t border-stone-200 bg-white">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12">
-          <h2 className="text-2xl font-semibold tracking-tight mb-6">Operator coverage</h2>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <MotionFadeUp whenInView>
+            <h2 className="text-2xl font-semibold tracking-tight mb-6">Operator coverage</h2>
+          </MotionFadeUp>
+          <MotionStagger whenInView className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {operators.map((o) => {
               const m = o.last_availability_at;
               const ms = m ? (m instanceof Date ? m.getTime() : new Date(String(m)).getTime()) : 0;
               const minutes = ms ? Math.max(0, Math.floor((Date.now() - ms) / 60000)) : 0;
               return (
+                <MotionStaggerItem key={o.id}>
                 <Link
-                  key={o.id}
                   href={`/operator/${o.id}`}
-                  className="card p-4 flex items-center justify-between hover:ring-forest-300 transition-shadow"
+                  className="card p-4 flex items-center justify-between hover:ring-forest-300 hover:-translate-y-0.5 transition-all duration-200 block"
                 >
                   <div>
                     <div className="font-medium">{o.name}</div>
@@ -174,9 +180,10 @@ export default async function HomePage() {
                     ~{minutes}m fresh
                   </span>
                 </Link>
+                </MotionStaggerItem>
               );
             })}
-          </div>
+          </MotionStagger>
         </div>
       </section>
     </div>

@@ -14,6 +14,7 @@ import { timeAgo } from "@/lib/utils";
 import { ArrowUpRight, MapPin, Tent } from "lucide-react";
 import { AvailabilityCalendar, type CalendarRow } from "@/components/availability-calendar";
 import { CampgroundMap } from "@/components/campground-map";
+import { MotionHero, MotionFadeUp, MotionStagger, MotionStaggerItem } from "@/components/motion";
 
 export const dynamic = "force-dynamic";
 
@@ -152,36 +153,40 @@ export default async function ParkPage({ params }: { params: Promise<{ slug: str
           <img
             src={park.hero_image_url}
             alt={park.name}
-            className="absolute inset-0 h-full w-full object-cover opacity-75"
+            className="absolute inset-0 h-full w-full object-cover opacity-75 animate-heroZoom origin-center"
           />
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-stone-900/85 via-stone-900/30 to-transparent" />
         <div className="relative h-full mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex flex-col justify-end pb-6 text-white">
-          <div className="flex items-center gap-2 text-sm">
-            <span className="chip bg-white/15 ring-1 ring-white/20">{park.region}</span>
-            <Link href={`/operator/${operator.id}`} className="chip bg-white/15 ring-1 ring-white/20 hover:bg-white/25">
-              {operator.name}
-            </Link>
-          </div>
-          <h1 className="mt-3 text-3xl sm:text-5xl font-semibold tracking-tight">{park.name}</h1>
-          <div className="flex items-center gap-1.5 mt-2 text-white/90 text-sm">
-            <MapPin size={14} /> {park.address}
-          </div>
+          <MotionHero>
+            <div className="flex items-center gap-2 text-sm">
+              <span className="chip bg-white/15 ring-1 ring-white/20">{park.region}</span>
+              <Link href={`/operator/${operator.id}`} className="chip bg-white/15 ring-1 ring-white/20 hover:bg-white/25 transition-colors">
+                {operator.name}
+              </Link>
+            </div>
+            <h1 className="mt-3 text-3xl sm:text-5xl font-semibold tracking-tight">{park.name}</h1>
+            <div className="flex items-center gap-1.5 mt-2 text-white/90 text-sm">
+              <MapPin size={14} /> {park.address}
+            </div>
+          </MotionHero>
         </div>
       </section>
 
       <section className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10 grid lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-8">
-          <div>
+          <MotionFadeUp>
             <h2 className="text-xl font-semibold tracking-tight mb-2">About this park</h2>
             <p className="text-stone-700 leading-relaxed">{park.description}</p>
-          </div>
+          </MotionFadeUp>
 
           <div>
-            <h2 className="text-xl font-semibold tracking-tight mb-3">Campgrounds</h2>
-            <div className="grid gap-3 sm:grid-cols-2">
+            <MotionFadeUp whenInView>
+              <h2 className="text-xl font-semibold tracking-tight mb-3">Campgrounds</h2>
+            </MotionFadeUp>
+            <MotionStagger whenInView className="grid gap-3 sm:grid-cols-2">
               {summaries.map(({ cg, site_count, availability_pct, last_checked_at }) => (
-                <div key={cg.id} className="card p-4">
+                <MotionStaggerItem key={cg.id} className="card p-4">
                   <div className="flex items-center justify-between">
                     <div className="font-semibold">{cg.name}</div>
                     <span className="chip bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">
@@ -196,9 +201,9 @@ export default async function ParkPage({ params }: { params: Promise<{ slug: str
                       Last checked {timeAgo(last_checked_at)}
                     </div>
                   )}
-                </div>
+                </MotionStaggerItem>
               ))}
-            </div>
+            </MotionStagger>
           </div>
 
           {parkCampMaps.length > 0 && (

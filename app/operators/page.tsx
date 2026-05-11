@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { sql } from "@/lib/db/client";
 import { Tent, MapPin, Activity, ExternalLink } from "lucide-react";
+import { MotionFadeUp, MotionStagger, MotionStaggerItem } from "@/components/motion";
 
 export const metadata: Metadata = {
   title: "Operators",
@@ -84,7 +85,7 @@ export default async function OperatorsIndexPage() {
 
   return (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10">
-      <div className="flex items-end justify-between flex-wrap gap-4">
+      <MotionFadeUp className="flex items-end justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Operators</h1>
           <p className="text-stone-600 mt-1 max-w-2xl">
@@ -98,21 +99,23 @@ export default async function OperatorsIndexPage() {
           <div><span className="text-2xl font-semibold text-stone-900 mr-1">{totalSites.toLocaleString()}</span>sites</div>
           <div><span className="text-2xl font-semibold text-emerald-700 mr-1">{totalAvail.toLocaleString()}</span>open</div>
         </div>
-      </div>
+      </MotionFadeUp>
 
-      {ORDER.filter((g) => opsByGroup.has(g)).map((group) => (
+      {ORDER.filter((g) => opsByGroup.has(g)).map((group, gi) => (
         <section key={group} className="mt-10">
-          <h2 className="text-xs uppercase tracking-wide font-semibold text-stone-500 mb-3">{group}</h2>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <MotionFadeUp delay={0.05 + gi * 0.05}>
+            <h2 className="text-xs uppercase tracking-wide font-semibold text-stone-500 mb-3">{group}</h2>
+          </MotionFadeUp>
+          <MotionStagger className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {opsByGroup.get(group)!.map((o) => {
               const minutes = minutesSince(o.last_availability_at);
               const accent = o.accent_color ?? "#1F6E3D";
               const pct = o.total_sites > 0 ? Math.round((100 * o.available_sites) / o.total_sites) : 0;
               return (
+                <MotionStaggerItem key={o.id}>
                 <Link
-                  key={o.id}
                   href={`/operator/${o.id}`}
-                  className="group relative overflow-hidden rounded-xl ring-1 ring-stone-200 hover:ring-stone-300 transition-shadow bg-white"
+                  className="group relative overflow-hidden rounded-xl ring-1 ring-stone-200 hover:ring-stone-300 hover:shadow-lg transition-all duration-300 bg-white block"
                   style={{ boxShadow: `0 1px 0 ${accent}1a inset` }}
                 >
                   {/* Hero image strip on top, gracefully scales when absent */}
@@ -220,9 +223,10 @@ export default async function OperatorsIndexPage() {
                     )}
                   </div>
                 </Link>
+                </MotionStaggerItem>
               );
             })}
-          </div>
+          </MotionStagger>
         </section>
       ))}
 

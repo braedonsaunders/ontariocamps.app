@@ -132,7 +132,7 @@ function extractParkCandidates(rootMaps: CamisMap[]) {
 }
 
 type LeafMap = {
-  mapId: number; name: string | null; imageUrl: string;
+  mapId: number; name: string | null; description: string | null; imageUrl: string;
   xDimension: number; yDimension: number; resources: CamisMapResource[];
 };
 
@@ -153,9 +153,14 @@ function collectLeafMapsFrom(maps: CamisMap[]): LeafMap[] {
       filtered.push(r);
     }
     if (filtered.length === 0) continue;
+    const en = m.localizedValues?.find((l) => l.cultureName === "en-CA")
+      ?? m.localizedValues?.[0];
     leaves.push({
       mapId: m.mapId,
-      name: m.localizedValues?.[0]?.name ?? null,
+      // Camis stores the campground/loop label in `title` ("Campground 1",
+      // "Loop A — Walk-In Tents", etc.); `name` is undefined on these rows.
+      name: en?.title ?? en?.name ?? null,
+      description: en?.description ?? null,
       imageUrl,
       xDimension: typeof m.xDimension === "number" ? m.xDimension : 800,
       yDimension: typeof m.yDimension === "number" ? m.yDimension : 600,
@@ -275,7 +280,8 @@ export async function refreshOperatorMetadata(
       const campMapId = `cm_${parkId}_${leaf.mapId}`;
       await upsertCampMap({
         id: campMapId, park_id: parkId, campground_id: cgId,
-        vendor_map_id: String(leaf.mapId), name: leaf.name, image_url: leaf.imageUrl,
+        vendor_map_id: String(leaf.mapId), name: leaf.name, description: leaf.description,
+        image_url: leaf.imageUrl,
         x_dimension: leaf.xDimension, y_dimension: leaf.yDimension,
       });
       for (const r of leaf.resources) {

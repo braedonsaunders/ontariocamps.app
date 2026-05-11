@@ -4,6 +4,7 @@ import { NuqsAdapter } from "nuqs/adapters/next/app";
 import "./globals.css";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
+import { PageTransition } from "@/components/page-transition";
 
 export const metadata: Metadata = {
   title: {
@@ -20,8 +21,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-screen flex flex-col">
         <NuqsAdapter>
           <SiteHeader />
-          <main className="flex-1">
-            <Suspense>{children}</Suspense>
+          <main className="flex-1 flex flex-col">
+            <Suspense>
+              <PageTransition>{children}</PageTransition>
+            </Suspense>
           </main>
           <SiteFooter />
         </NuqsAdapter>

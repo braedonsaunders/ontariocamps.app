@@ -6,9 +6,36 @@
   :root {
     color-scheme: light;
   }
+  html {
+    scroll-behavior: smooth;
+  }
   html, body {
     @apply bg-stone-50 text-stone-900 antialiased;
   }
+  /* Subtle focus ring across the app — keyboard-only, never on mouse. */
+  *:focus-visible {
+    @apply outline-none ring-2 ring-forest-500 ring-offset-2 ring-offset-stone-50 rounded;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Slow Ken Burns–style zoom for park hero images. Subtle, runs once. */
+@keyframes heroZoom {
+  from { transform: scale(1.0); }
+  to   { transform: scale(1.06); }
+}
+.animate-heroZoom {
+  animation: heroZoom 18s ease-out forwards;
 }
 
 .ocp-popup .maplibregl-popup-content {

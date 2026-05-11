@@ -54,13 +54,14 @@ function rowToCampground(r: CampgroundRow): Campground {
 
 type CampMapRow = {
   id: string; park_id: string; campground_id: string; vendor_map_id: string;
-  name: string | null; image_url: string; x_dimension: number; y_dimension: number;
+  name: string | null; description: string | null;
+  image_url: string; x_dimension: number; y_dimension: number;
 };
 function rowToCampMap(r: CampMapRow): CampMap {
   return {
     id: r.id, park_id: r.park_id, campground_id: r.campground_id,
-    vendor_map_id: r.vendor_map_id, name: r.name, image_url: r.image_url,
-    x_dimension: r.x_dimension, y_dimension: r.y_dimension,
+    vendor_map_id: r.vendor_map_id, name: r.name, description: r.description,
+    image_url: r.image_url, x_dimension: r.x_dimension, y_dimension: r.y_dimension,
   };
 }
 
@@ -271,14 +272,16 @@ export async function upsertCampground(c: Campground): Promise<void> {
 
 export async function upsertCampMap(cm: CampMap): Promise<void> {
   await sqlDirect()`
-    INSERT INTO camp_maps (id, park_id, campground_id, vendor_map_id, name, image_url, x_dimension, y_dimension)
+    INSERT INTO camp_maps (id, park_id, campground_id, vendor_map_id, name, description,
+                           image_url, x_dimension, y_dimension)
     VALUES (${cm.id}, ${cm.park_id}, ${cm.campground_id}, ${cm.vendor_map_id},
-            ${cm.name}, ${cm.image_url}, ${cm.x_dimension}, ${cm.y_dimension})
+            ${cm.name}, ${cm.description},
+            ${cm.image_url}, ${cm.x_dimension}, ${cm.y_dimension})
     ON CONFLICT (id) DO UPDATE SET
       park_id = excluded.park_id, campground_id = excluded.campground_id,
       vendor_map_id = excluded.vendor_map_id, name = excluded.name,
-      image_url = excluded.image_url, x_dimension = excluded.x_dimension,
-      y_dimension = excluded.y_dimension
+      description = excluded.description, image_url = excluded.image_url,
+      x_dimension = excluded.x_dimension, y_dimension = excluded.y_dimension
   `;
 }
 

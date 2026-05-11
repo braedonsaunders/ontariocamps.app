@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { motion } from "motion/react";
 import type { SearchResult } from "@/lib/types";
 import { AMENITIES } from "@/lib/types";
 import { formatPrice, timeAgo } from "@/lib/utils";
@@ -26,7 +27,13 @@ export function ResultCard({ result }: { result: SearchResult }) {
       : "bg-lake-100 text-lake-800 ring-lake-200";
 
   return (
-    <div className="card p-4 hover:ring-stone-300 transition">
+    <motion.div
+      className="card p-4 hover:ring-stone-300 transition-shadow"
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+      whileHover={{ y: -2, boxShadow: "0 8px 24px -8px rgba(0,0,0,0.08)" }}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -87,6 +94,6 @@ export function ResultCard({ result }: { result: SearchResult }) {
           Book on {result.park.operator} <ArrowUpRight size={13} />
         </a>
       </div>
-    </div>
+    </motion.div>
   );
 }

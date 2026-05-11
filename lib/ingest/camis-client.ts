@@ -53,7 +53,9 @@ export type CamisMap = {
   mapImageUrls?: Record<string, string>;
   mapLinks: CamisMapLink[];
   mapResources?: CamisMapResource[];
-  localizedValues?: Array<{ cultureName: string; name?: string; description?: string }>;
+  /** Camis returns `title` (e.g. "Campground 1") not `name`; `description`
+   *  carries the human-readable site-range subtitle like "Sites 1-23". */
+  localizedValues?: Array<{ cultureName: string; title?: string; name?: string; description?: string }>;
   /** Image pixel dimensions when present. */
   xDimension?: number;
   yDimension?: number;

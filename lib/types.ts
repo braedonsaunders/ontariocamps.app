@@ -78,7 +78,10 @@ export type CampMap = {
   park_id: string;
   campground_id: string;
   vendor_map_id: string;
+  /** Operator's name for the section (e.g. "Campground 1", "Loop A"). */
   name: string | null;
+  /** Operator's site-range subtitle (e.g. "Sites 1-23", "Walk-in tents"). */
+  description: string | null;
   image_url: string;
   /** Pixel size of the PNG. */
   x_dimension: number;
