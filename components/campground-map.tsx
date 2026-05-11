@@ -347,7 +347,7 @@ function PanZoomViewer({
   function onPointerDown(e: React.PointerEvent) {
     // Don't intercept clicks on site pins or zoom buttons.
     const t = e.target as HTMLElement;
-    if (t.closest("[data-site-pin]") || t.closest("[data-zoom-btn]")) return;
+    if (t.closest("[data-site-pin]") || t.closest("[data-feature-pin]") || t.closest("[data-zoom-btn]")) return;
     dragRef.current = {
       startX: e.clientX,
       startY: e.clientY,

@@ -266,7 +266,7 @@ export async function upsertPark(p: Park): Promise<void> {
       operator_id = excluded.operator_id, vendor_park_id = excluded.vendor_park_id,
       slug = excluded.slug, name = excluded.name, description = excluded.description,
       region = excluded.region, lat = excluded.lat, lng = excluded.lng,
-      address = excluded.address, hero_image_url = excluded.hero_image_url,
+      address = excluded.address, hero_image_url = COALESCE(excluded.hero_image_url, parks.hero_image_url),
       vendor_url = excluded.vendor_url, updated_at = now()
   `;
 }
