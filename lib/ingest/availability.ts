@@ -26,9 +26,28 @@ import {
 import { sqlDirect } from "../db/client";
 
 type AvailabilityCode = "available" | "reserved" | "closed" | "unknown";
-function decodeAvailability(code: number): AvailabilityCode {
+
+/**
+ * `processedAvailability` is what the booking UI actually shows the user — it
+ * accounts for arrival/departure pairing rules, min-stay, and operator-specific
+ * lockouts. `availability` is the raw per-night code; if you read it directly,
+ * you wildly overstate availability because every "free" night that's stuck
+ * between two booked nights still shows raw `availability: 0`.
+ *
+ * Observed codes (Camis5, May 2026):
+ *   0 = bookable
+ *   1 = restricted by operator rule (boxed in, min-stay, party-size limit, …)
+ *   2 = outside operator's booking window (closed for season / not yet open)
+ *   3 = closed for season / maintenance
+ *   5 = reserved (booked, or boxed-in by neighbouring bookings)
+ *
+ * For our index we treat anything that isn't bookable-right-now as reserved,
+ * except codes 2/3 which mean the season is closed.
+ */
+function decodeAvailability(row: { availability: number; processedAvailability?: number }): AvailabilityCode {
+  const code = row.processedAvailability ?? row.availability;
   if (code === 0) return "available";
-  if (code === 3 || code === 5) return "closed";
+  if (code === 2 || code === 3) return "closed";
   return "reserved";
 }
 
@@ -179,7 +198,7 @@ export async function refreshAvailability(
           writeBuffer.push({
             site_id: t.site_id,
             night_date: night,
-            status: decodeAvailability(row.availability),
+            status: decodeAvailability(row),
             last_checked_at: nowIso,
           });
           added += 1;
