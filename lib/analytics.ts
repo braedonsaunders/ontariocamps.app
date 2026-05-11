@@ -49,11 +49,17 @@ export type AnalyticsSnapshot = {
   totals: {
     operators: number;
     parks: number;
+    /** Total campsite count across every operator. */
     sites: number;
-    available: number;
-    reserved: number;
-    closed: number;
-    unknown: number;
+    /** Sites with at least one bookable night across the window. */
+    sites_with_availability: number;
+    /** Per-night counts across (sites × window). These add to roughly
+     *  sites × days-in-window; they are NOT site counts. */
+    nights_available: number;
+    nights_reserved: number;
+    nights_closed: number;
+    nights_unknown: number;
+    nights_total: number;
   };
   statusBreakdown: StatusBreakdown[];
   operators: OperatorStatusRow[];
@@ -69,8 +75,20 @@ export async function getAnalyticsSnapshot(): Promise<AnalyticsSnapshot> {
     SELECT json_build_object(
       'generated_at',
         (SELECT last_success_at FROM refresh_meta WHERE refresh_type = 'availability'),
-      'totals',
-        (SELECT row_to_json(t) FROM analytics_totals t),
+      'totals', (
+        SELECT json_build_object(
+          'operators',                t.operators,
+          'parks',                    t.parks,
+          'sites',                    t.sites,
+          'sites_with_availability', (SELECT COALESCE(SUM(available_sites), 0)::int FROM operators),
+          'nights_available',         t.available,
+          'nights_reserved',          t.reserved,
+          'nights_closed',            t.closed,
+          'nights_unknown',           t.unknown,
+          'nights_total',             (t.available + t.reserved + t.closed + t.unknown)
+        )
+          FROM analytics_totals t
+      ),
       'statusBreakdown',
         COALESCE((SELECT json_agg(row_to_json(s) ORDER BY count DESC) FROM analytics_status_breakdown s), '[]'::json),
       'operators',

@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Tent } from "lucide-react";
+import { Tent, Github } from "lucide-react";
 import { motion } from "motion/react";
+
+const REPO_URL = "https://github.com/braedonsaunders/ontariocamps.app";
 
 const NAV = [
   { href: "/search", label: "Search" },
@@ -52,9 +54,21 @@ export function SiteHeader() {
             );
           })}
         </nav>
-        <Link href="/search" className="btn-primary text-xs hover:shadow-md hover:-translate-y-0.5 transition-all duration-200">
-          Find a campsite
-        </Link>
+        <div className="flex items-center gap-2">
+          <a
+            href={REPO_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Source on GitHub"
+            className="hidden sm:inline-flex h-8 w-8 items-center justify-center rounded-md text-stone-500 hover:text-stone-900 hover:bg-stone-100 transition-colors"
+            title="Source on GitHub"
+          >
+            <Github size={16} />
+          </a>
+          <Link href="/search" className="btn-primary text-xs hover:shadow-md hover:-translate-y-0.5 transition-all duration-200">
+            Find a campsite
+          </Link>
+        </div>
       </div>
     </header>
   );

@@ -5,6 +5,9 @@ out/
 .DS_Store
 *.log
 
+# Local build artifacts
+tsconfig.tsbuildinfo
+
 # SQLite database — local, populated by `npm run ingest`
 data/*.db
 data/*.db-shm

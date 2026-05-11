@@ -43,9 +43,17 @@ function formatRelative(iso: string | null): string {
 
 export function AnalyticsView({ snapshot }: { snapshot: AnalyticsSnapshot }) {
   const { totals, statusBreakdown, operators, regions, siteTypes, leaderboard, electric, timeSeries } = snapshot;
-  const availPct = totals.sites > 0 ? Math.round((totals.available / totals.sites) * 100) : 0;
-  const reservedPct = totals.sites > 0 ? Math.round((totals.reserved / totals.sites) * 100) : 0;
-  const closedPct = totals.sites > 0 ? Math.round((totals.closed / totals.sites) * 100) : 0;
+  // Two distinct denominators in play:
+  //   - site-level: `sites_with_availability / sites` ⇒ "% of campsites with any open dates"
+  //   - night-level: `nights_<state> / nights_total` ⇒ "% of nights in this state"
+  // Mixing them produces "millions of available sites" nonsense.
+  const nightsDenom = Math.max(totals.nights_total, 1);
+  const availSitesPct = totals.sites > 0
+    ? Math.round((totals.sites_with_availability / totals.sites) * 100)
+    : 0;
+  const availNightsPct = Math.round((totals.nights_available / nightsDenom) * 100);
+  const reservedNightsPct = Math.round((totals.nights_reserved / nightsDenom) * 100);
+  const closedNightsPct = Math.round((totals.nights_closed / nightsDenom) * 100);
 
   const operatorStacked = operators.map((o) => ({
     name: o.operator.replace(/ Region CA$/, " CA").replace(/ Peninsula CA$/, " CA"),
@@ -93,31 +101,45 @@ export function AnalyticsView({ snapshot }: { snapshot: AnalyticsSnapshot }) {
         </Link>
       </div>
 
-      {/* Headline cards */}
+      {/* Headline cards.
+       *
+       * Top row counts *campsites* (one row per site). Bottom row counts
+       * *site-nights* across the 90-day window — i.e. each site contributes
+       * up to 90 entries, so totals run into the millions. Keeping these
+       * separate avoids the "millions of available sites" misread. */}
       <div className="mt-8 grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Stat icon={Database} title="Sites indexed" value={fmt(totals.sites)} sub={`${fmt(totals.parks)} parks · ${fmt(totals.operators)} operators`} />
+        <Stat
+          icon={Database}
+          title="Sites indexed"
+          value={fmt(totals.sites)}
+          sub={`${fmt(totals.parks)} parks · ${fmt(totals.operators)} operators`}
+        />
         <Stat
           icon={TrendingUp}
-          title="Available now"
-          value={fmt(totals.available)}
-          sub={`${availPct}% of the index · open to book`}
+          title="Sites with open dates"
+          value={fmt(totals.sites_with_availability)}
+          sub={`${availSitesPct}% of indexed sites have at least one open night`}
           accent="emerald"
         />
         <Stat
           icon={Flame}
-          title="Reserved"
-          value={fmt(totals.reserved)}
-          sub={`${reservedPct}% of the index · booked in window`}
+          title="Booked nights"
+          value={fmt(totals.nights_reserved)}
+          sub={`${reservedNightsPct}% of nights in the 90-day window`}
           accent="red"
         />
         <Stat
           icon={Clock}
-          title="Closed / seasonal"
-          value={fmt(totals.closed)}
-          sub={`${closedPct}% of the index · not currently bookable`}
+          title="Closed nights"
+          value={fmt(totals.nights_closed)}
+          sub={`${closedNightsPct}% of nights · seasonal or unbookable`}
           accent="stone"
         />
       </div>
+      <p className="mt-2 text-xs text-stone-500">
+        {fmt(totals.nights_available)} bookable site-nights ({availNightsPct}%) across {fmt(totals.nights_total)} total
+        site-nights sampled. One site checked over 90 days counts as 90 nights — not 90 sites.
+      </p>
 
       {/* Time series — booking pressure across the future window */}
       {timeSeries.length > 1 && (
