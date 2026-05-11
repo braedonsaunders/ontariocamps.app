@@ -182,6 +182,69 @@ export async function getSitesForPark(parkId: string): Promise<Site[]> {
   }));
 }
 
+export async function getSiteByPark(
+  parkId: string,
+  vendorSiteId: string,
+): Promise<Site | null> {
+  const rows = await sql()<Array<{
+    id: string; campground_id: string; vendor_site_id: string; name: string;
+    site_type: string; site_type_label: string | null; icon_type: number | null;
+    max_party_size: number; max_equipment_length_ft: number | null;
+    has_electric: boolean; has_water: boolean; has_sewer: boolean;
+    is_pull_through: boolean; is_accessible: boolean;
+    is_pet_friendly: boolean; is_waterfront: boolean;
+    amenities: string[];
+    camp_map_id: string | null; map_x: number | null; map_y: number | null;
+    photos: unknown; description: string | null;
+  }>>`
+    SELECT s.id, s.campground_id, s.vendor_site_id, s.name, s.site_type,
+           s.site_type_label, s.icon_type,
+           s.max_party_size, s.max_equipment_length_ft,
+           s.has_electric, s.has_water, s.has_sewer, s.is_pull_through,
+           s.is_accessible, s.is_pet_friendly, s.is_waterfront,
+           s.amenities, s.camp_map_id, s.map_x, s.map_y,
+           s.photos, s.description
+      FROM sites s
+      JOIN campgrounds c ON c.id = s.campground_id
+     WHERE c.park_id = ${parkId}
+       AND s.vendor_site_id = ${vendorSiteId}
+     LIMIT 1
+  `;
+  const r = rows[0];
+  if (!r) return null;
+  return {
+    id: r.id, campground_id: r.campground_id, vendor_site_id: r.vendor_site_id,
+    name: r.name, site_type: r.site_type as Site["site_type"],
+    site_type_label: r.site_type_label, icon_type: r.icon_type,
+    max_party_size: r.max_party_size, max_equipment_length_ft: r.max_equipment_length_ft,
+    has_electric: r.has_electric, has_water: r.has_water, has_sewer: r.has_sewer,
+    is_pull_through: r.is_pull_through, is_accessible: r.is_accessible,
+    is_pet_friendly: r.is_pet_friendly, is_waterfront: r.is_waterfront,
+    amenities: Array.isArray(r.amenities) ? r.amenities : [],
+    camp_map_id: r.camp_map_id, map_x: r.map_x, map_y: r.map_y,
+    photos: Array.isArray(r.photos) ? (r.photos as Site["photos"]) : [],
+    description: r.description,
+  };
+}
+
+export async function getSiteAvailability(siteId: string): Promise<Array<{ night_date: string; status: string; last_checked_at: string }>> {
+  const rows = await sql()<Array<{
+    night_date: Date | string;
+    status: string;
+    last_checked_at: Date | string;
+  }>>`
+    SELECT night_date, status, last_checked_at
+      FROM site_availability
+     WHERE site_id = ${siteId}
+     ORDER BY night_date
+  `;
+  return rows.map((r) => ({
+    night_date: r.night_date instanceof Date ? r.night_date.toISOString().slice(0, 10) : String(r.night_date).slice(0, 10),
+    status: r.status,
+    last_checked_at: r.last_checked_at instanceof Date ? r.last_checked_at.toISOString() : String(r.last_checked_at),
+  }));
+}
+
 export async function getEquipmentForOperator(operatorId: string): Promise<EquipmentOption[]> {
   return await sql()<EquipmentOption[]>`
     SELECT operator_id, equipment_category_id, sub_equipment_category_id, name, order_index

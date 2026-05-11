@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import type { CampMap, Site, EquipmentOption } from "@/lib/types";
 import { Minus, Plus, RotateCcw, Move, X, ExternalLink, Zap, Tent as TentIcon, Users } from "lucide-react";
 
@@ -30,6 +31,10 @@ type Props = {
   operatorName?: string;
   /** Equipment options at this operator (Tent / Van / Trailer-up-to-Nft / …). */
   equipmentOptions?: EquipmentOption[];
+  /** Park slug, so the popover can deep-link to the site-detail page. */
+  parkSlug?: string;
+  /** ID of the section tab to show first; defaults to the first map. */
+  initialMapId?: string;
 };
 
 const MIN_SCALE = 1;
@@ -65,8 +70,21 @@ export function CampgroundMap({
   bookingUrls,
   operatorName,
   equipmentOptions,
+  parkSlug,
+  initialMapId,
 }: Props) {
-  const [activeMapId, setActiveMapId] = useState<string>(campMaps[0]?.id ?? "");
+  const [activeMapId, setActiveMapId] = useState<string>(
+    initialMapId && campMaps.some((m) => m.id === initialMapId)
+      ? initialMapId
+      : campMaps[0]?.id ?? "",
+  );
+  // If the parent changes initialMapId after mount (e.g. user clicks a different
+  // campground card), follow that selection.
+  useEffect(() => {
+    if (initialMapId && campMaps.some((m) => m.id === initialMapId)) {
+      setActiveMapId(initialMapId);
+    }
+  }, [initialMapId, campMaps]);
   const activeMap = campMaps.find((m) => m.id === activeMapId) ?? campMaps[0];
 
   const sitesOnMap = useMemo(() => {
@@ -138,6 +156,7 @@ export function CampgroundMap({
         bookingUrls={bookingUrls}
         operatorName={operatorName}
         equipmentOptions={equipmentOptions}
+        parkSlug={parkSlug}
       />
       <div className="flex items-center gap-4 px-4 py-2.5 border-t border-stone-100 text-xs text-stone-600 flex-wrap">
         <span className="inline-flex items-center gap-1.5">
@@ -166,12 +185,14 @@ function PanZoomViewer({
   bookingUrls,
   operatorName,
   equipmentOptions,
+  parkSlug,
 }: {
   campMap: CampMap;
   sites: SiteOnMap[];
   bookingUrls?: Record<string, string>;
   operatorName?: string;
   equipmentOptions?: EquipmentOption[];
+  parkSlug?: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   // Tracks a potential drag — only escalated to "actually dragging" once the
@@ -388,6 +409,7 @@ function PanZoomViewer({
           bookingUrl={bookingUrls?.[selectedSite.site.id]}
           operatorName={operatorName}
           equipmentOptions={equipmentOptions}
+          parkSlug={parkSlug}
           onClose={() => setSelected(null)}
         />
       )}
@@ -401,6 +423,7 @@ function SitePopover({
   bookingUrl,
   operatorName,
   equipmentOptions,
+  parkSlug,
   onClose,
 }: {
   site: SiteOnMap;
@@ -408,6 +431,7 @@ function SitePopover({
   bookingUrl: string | undefined;
   operatorName?: string;
   equipmentOptions?: EquipmentOption[];
+  parkSlug?: string;
   onClose: () => void;
 }) {
   const c = dotColor(site.status);
@@ -425,22 +449,20 @@ function SitePopover({
   return (
     <div className="absolute left-3 bottom-3 right-3 sm:right-auto sm:w-80 card p-0 shadow-xl ring-stone-300/70 z-40 overflow-hidden">
       {photos.length > 0 && (
-        <div className="relative h-32 bg-stone-200 overflow-hidden">
-          <div className="flex h-full overflow-x-auto snap-x snap-mandatory scrollbar-thin">
-            {photos.map((p, i) => (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                key={(p.url ?? p.avifUrl) + String(i)}
-                src={p.url ?? p.avifUrl ?? ""}
-                alt={`Site ${site.site.name} photo ${i + 1}`}
-                className="h-full w-full flex-shrink-0 object-cover snap-center"
-                loading="lazy"
-              />
-            ))}
-          </div>
+        <div className="relative aspect-[16/10] bg-stone-200 overflow-hidden w-full">
+          {/* Show only the first photo at popover width; the full gallery
+           *  lives on the dedicated /site detail page. Avoids horizontal
+           *  scroll inside a 320 px popover where it just feels broken. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={photos[0].url ?? photos[0].avifUrl ?? ""}
+            alt={`Site ${site.site.name}`}
+            className="absolute inset-0 h-full w-full object-cover"
+            loading="lazy"
+          />
           {photos.length > 1 && (
             <span className="absolute bottom-1.5 right-1.5 chip bg-black/55 text-white text-[10px] backdrop-blur-sm border-0">
-              {photos.length} photos
+              +{photos.length - 1} more
             </span>
           )}
         </div>
@@ -540,16 +562,26 @@ function SitePopover({
         </div>
       </div>
 
-      {bookingUrl && (
-        <a
-          href={bookingUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="btn-primary m-3 mt-0 flex justify-center text-xs"
-        >
-          Book on {operatorName ?? "operator"} <ExternalLink size={12} />
-        </a>
-      )}
+      <div className="flex gap-2 px-3 pb-3 pt-0">
+        {parkSlug && (
+          <Link
+            href={`/park/${parkSlug}/site/${site.site.vendor_site_id}`}
+            className="btn-secondary flex-1 text-xs justify-center"
+          >
+            Details
+          </Link>
+        )}
+        {bookingUrl && (
+          <a
+            href={bookingUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-primary flex-1 text-xs justify-center"
+          >
+            Book <ExternalLink size={12} />
+          </a>
+        )}
+      </div>
     </div>
   );
 }

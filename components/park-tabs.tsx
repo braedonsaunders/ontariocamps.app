@@ -1,0 +1,382 @@
+"use client";
+
+import { useState, useMemo } from "react";
+import Link from "next/link";
+import { motion, AnimatePresence } from "motion/react";
+import type { Site, CampMap, EquipmentOption } from "@/lib/types";
+import { AvailabilityCalendar, type CalendarRow } from "@/components/availability-calendar";
+import { CampgroundMap } from "@/components/campground-map";
+import { timeAgo } from "@/lib/utils";
+import { Info, Map as MapIcon, Calendar, Tent, ArrowUpRight, CalendarRange } from "lucide-react";
+
+type SiteAvailability = {
+  status: "available" | "reserved" | "closed" | "unknown";
+  nights_available: number;
+  last_checked_at: string | null;
+};
+
+export type DateContext =
+  | { mode: "today"; date: string }
+  | { mode: "range"; from: string; to: string };
+
+type CampMapSummary = CampMap & {
+  total_sites: number;
+  available_sites: number;
+};
+
+type Props = {
+  parkName: string;
+  parkSlug: string;
+  parkDescription: string;
+  parkAddress: string;
+  operatorName: string;
+  operatorId: string;
+  operatorVendor: string;
+  vendorUrl: string;
+  parkLocation: { lat: number; lng: number };
+  totalSites: number;
+  avgAvailability: number;
+  campMapSummaries: CampMapSummary[];
+  sites: Site[];
+  availabilitySummary: Record<string, SiteAvailability>;
+  bookingUrls: Record<string, string>;
+  equipmentOptions: EquipmentOption[];
+  calendarRows: CalendarRow[];
+  calendarLastChecked: string | null;
+  vendorSiteIds: Record<string, string>;
+  dateContext: DateContext;
+};
+
+type Tab = "overview" | "map" | "calendar";
+
+function formatDate(iso: string): string {
+  return new Date(iso + "T00:00:00Z").toLocaleDateString("en-CA", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+function DateBanner({ ctx }: { ctx: DateContext }) {
+  if (ctx.mode === "range") {
+    return (
+      <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-forest-50 ring-1 ring-forest-200 text-sm text-forest-900">
+        <CalendarRange size={14} />
+        <span>
+          Showing whether each site is open <span className="font-semibold">every night from {formatDate(ctx.from)} → {formatDate(ctx.to)}</span>.
+        </span>
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-stone-100 ring-1 ring-stone-200 text-sm text-stone-700">
+      <CalendarRange size={14} className="text-stone-500" />
+      <span>
+        No dates selected — showing <span className="font-semibold">tonight&apos;s</span> status.
+        Pick a date range in the Calendar tab or via <Link href="/search" className="text-forest-700 hover:underline">search</Link> to refine.
+      </span>
+    </div>
+  );
+}
+
+export function ParkTabs(props: Props) {
+  const {
+    parkName,
+    parkSlug,
+    parkDescription,
+    operatorName,
+    operatorId,
+    operatorVendor,
+    vendorUrl,
+    parkLocation,
+    totalSites,
+    avgAvailability,
+    campMapSummaries,
+    sites,
+    availabilitySummary,
+    bookingUrls,
+    equipmentOptions,
+    calendarRows,
+    calendarLastChecked,
+    vendorSiteIds,
+    dateContext,
+  } = props;
+
+  const [activeTab, setActiveTab] = useState<Tab>("overview");
+  const [selectedSection, setSelectedSection] = useState<string | undefined>(undefined);
+
+  const siteTypeCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const s of sites) {
+      const k = s.site_type_label ?? s.site_type;
+      counts.set(k, (counts.get(k) ?? 0) + 1);
+    }
+    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+  }, [sites]);
+
+  function jumpToSection(campMapId: string) {
+    setSelectedSection(campMapId);
+    setActiveTab("map");
+    // Scroll the tab content into view on mobile where the map sits below
+    setTimeout(() => {
+      const el = document.getElementById("park-tab-content");
+      el?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 50);
+  }
+
+  const TABS: Array<{ id: Tab; label: string; icon: typeof Info }> = [
+    { id: "overview", label: "Overview", icon: Info },
+    { id: "map", label: "Map", icon: MapIcon },
+    { id: "calendar", label: "Calendar", icon: Calendar },
+  ];
+
+  return (
+    <section className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+      <DateBanner ctx={dateContext} />
+
+      {/* Sticky-ish tab strip */}
+      <div className="mt-4 border-b border-stone-200 flex items-end gap-1 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+        {TABS.map((t) => {
+          const active = activeTab === t.id;
+          return (
+            <button
+              key={t.id}
+              onClick={() => setActiveTab(t.id)}
+              className={`relative inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors ${
+                active ? "text-forest-700" : "text-stone-600 hover:text-stone-900"
+              }`}
+            >
+              <t.icon size={14} />
+              {t.label}
+              {active && (
+                <motion.span
+                  layoutId="park-tab-underline"
+                  className="absolute left-3 right-3 -bottom-px h-0.5 rounded-full bg-forest-600"
+                  transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                />
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      <div id="park-tab-content" className="mt-6 grid lg:grid-cols-3 gap-6 lg:gap-8">
+        <div className="lg:col-span-2">
+          <AnimatePresence mode="wait">
+            {activeTab === "overview" && (
+              <motion.div
+                key="overview"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={{ duration: 0.25 }}
+                className="space-y-8"
+              >
+                <div>
+                  <h2 className="text-xl font-semibold tracking-tight mb-2">About {parkName}</h2>
+                  <p className="text-stone-700 leading-relaxed">{parkDescription}</p>
+                </div>
+
+                <div>
+                  <div className="flex items-baseline justify-between mb-3 flex-wrap gap-2">
+                    <h2 className="text-xl font-semibold tracking-tight">Campgrounds</h2>
+                    <span className="text-xs text-stone-500">
+                      {campMapSummaries.length} {campMapSummaries.length === 1 ? "section" : "sections"} · click any card to open in the Map tab
+                    </span>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {campMapSummaries.map((m) => {
+                      const pct = m.total_sites > 0 ? Math.round((m.available_sites / m.total_sites) * 100) : 0;
+                      return (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => jumpToSection(m.id)}
+                          className="card group overflow-hidden text-left transition-all duration-300 hover:shadow-md hover:-translate-y-0.5 hover:ring-stone-300"
+                        >
+                          <div className="relative h-28 bg-stone-200 overflow-hidden">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={m.image_url}
+                              alt={m.name ?? "Campground section"}
+                              className="absolute inset-0 h-full w-full object-cover opacity-90 group-hover:scale-[1.03] transition-transform duration-500"
+                              loading="lazy"
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+                            <span
+                              className={`absolute top-2 right-2 chip ring-1 ${
+                                pct > 50
+                                  ? "bg-emerald-50/95 text-emerald-700 ring-emerald-200"
+                                  : pct > 10
+                                  ? "bg-amber-50/95 text-amber-700 ring-amber-200"
+                                  : "bg-red-50/95 text-red-700 ring-red-200"
+                              }`}
+                            >
+                              {pct}% open
+                            </span>
+                          </div>
+                          <div className="p-4">
+                            <div className="font-semibold text-stone-900 group-hover:text-forest-700 transition-colors">
+                              {m.name ?? `Section ${m.vendor_map_id}`}
+                            </div>
+                            {m.description && (
+                              <div className="text-xs text-stone-500 mt-0.5 line-clamp-2">{m.description}</div>
+                            )}
+                            <div className="mt-3 flex items-center justify-between text-xs text-stone-600">
+                              <span className="inline-flex items-center gap-1">
+                                <Tent size={11} /> {m.total_sites} sites
+                              </span>
+                              <span className="text-forest-700 group-hover:text-forest-800 font-medium">
+                                View map →
+                              </span>
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+            {activeTab === "map" && (
+              <motion.div
+                key="map"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={{ duration: 0.25 }}
+              >
+                {campMapSummaries.length === 0 ? (
+                  <div className="card p-8 text-center text-stone-500">
+                    No campground layouts available for this park yet.
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-baseline justify-between mb-3 flex-wrap gap-2">
+                      <h2 className="text-xl font-semibold tracking-tight">Campground layout</h2>
+                      <span className="text-xs text-stone-500">
+                        Click any site for details · open in {operatorName} to book
+                      </span>
+                    </div>
+                    <CampgroundMap
+                      campMaps={campMapSummaries}
+                      sites={sites}
+                      availabilitySummary={availabilitySummary}
+                      bookingUrls={bookingUrls}
+                      operatorName={operatorName}
+                      equipmentOptions={equipmentOptions}
+                      parkSlug={parkSlug}
+                      initialMapId={selectedSection}
+                    />
+                  </>
+                )}
+              </motion.div>
+            )}
+
+            {activeTab === "calendar" && (
+              <motion.div
+                key="calendar"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={{ duration: 0.25 }}
+              >
+                <div className="flex items-baseline justify-between mb-3 flex-wrap gap-2">
+                  <h2 className="text-xl font-semibold tracking-tight">Availability calendar</h2>
+                  <span className="text-xs text-stone-500">
+                    Real per-night status from {operatorName} · click a green cell to book
+                  </span>
+                </div>
+                <AvailabilityCalendar
+                  rows={calendarRows}
+                  totalSites={sites.length}
+                  lastCheckedAt={calendarLastChecked}
+                  vendorSiteIds={vendorSiteIds}
+                  vendorUrl={vendorUrl}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        <aside className="space-y-4">
+          <div className="card p-5">
+            <div className="text-xs text-stone-500 uppercase tracking-wide">At a glance</div>
+            <dl className="mt-3 grid grid-cols-2 gap-y-3 text-sm">
+              <dt className="text-stone-500">Operator</dt>
+              <dd>
+                <Link href={`/operator/${operatorId}`} className="text-stone-900 hover:text-forest-700">
+                  {operatorName}
+                </Link>
+              </dd>
+              <dt className="text-stone-500">Vendor</dt>
+              <dd className="text-stone-700">{operatorVendor}</dd>
+              <dt className="text-stone-500">Sites</dt>
+              <dd className="font-medium tabular-nums">{totalSites.toLocaleString()}</dd>
+              <dt className="text-stone-500">Sections</dt>
+              <dd className="font-medium tabular-nums">{campMapSummaries.length}</dd>
+              <dt className="text-stone-500">Avg open</dt>
+              <dd className="font-medium tabular-nums">{avgAvailability}%</dd>
+              <dt className="text-stone-500">Coordinates</dt>
+              <dd className="text-stone-700">
+                {parkLocation.lat.toFixed(3)}, {parkLocation.lng.toFixed(3)}
+              </dd>
+            </dl>
+            <a
+              href={vendorUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-primary mt-5 w-full justify-center"
+            >
+              Book on {operatorName} <ArrowUpRight size={14} />
+            </a>
+            <Link
+              href={`/search?lat=${parkLocation.lat}&lng=${parkLocation.lng}&radius_km=40&operators=${operatorId}`}
+              className="btn-secondary mt-2 w-full justify-center"
+            >
+              Search sites nearby
+            </Link>
+          </div>
+
+          {equipmentOptions.length > 0 && (
+            <div className="card p-5">
+              <div className="text-xs text-stone-500 uppercase tracking-wide">Equipment allowed</div>
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {equipmentOptions.map((e) => (
+                  <span key={e.sub_equipment_category_id} className="chip bg-stone-100 text-stone-700">
+                    {e.name}
+                  </span>
+                ))}
+              </div>
+              <p className="text-xs text-stone-500 mt-3 leading-relaxed">
+                {operatorName} matches each equipment type against the site at booking. Filter by yours to see only compatible sites.
+              </p>
+            </div>
+          )}
+
+          {siteTypeCounts.length > 0 && (
+            <div className="card p-5">
+              <div className="text-xs text-stone-500 uppercase tracking-wide">Site types</div>
+              <ul className="mt-3 text-sm space-y-1.5">
+                {siteTypeCounts.map(([label, n]) => (
+                  <li key={label} className="flex items-baseline justify-between gap-3">
+                    <span className="text-stone-700">{label}</span>
+                    <span className="font-medium text-stone-900 tabular-nums">{n.toLocaleString()}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {calendarLastChecked && (
+            <div className="card p-5 text-sm text-stone-600 leading-relaxed">
+              <div className="font-semibold text-stone-900 mb-1.5">Freshness</div>
+              We last checked {operatorName} {timeAgo(calendarLastChecked)}. Per-night status refreshes every 15 minutes during the day.
+            </div>
+          )}
+        </aside>
+      </div>
+    </section>
+  );
+}

@@ -13,7 +13,7 @@ import { PRESET_LOCATIONS } from "@/lib/locations";
 import { AMENITIES, type SearchResponse } from "@/lib/types";
 import { ResultCard } from "@/components/result-card";
 import { ParkMap, type ParkSummary } from "@/components/park-map";
-import { Loader2, MapPin, Calendar, Sliders } from "lucide-react";
+import { Loader2, MapPin, Calendar, Sliders, Search } from "lucide-react";
 
 const SITE_TYPES = ["tent", "rv", "cabin", "yurt"] as const;
 const OPERATOR_OPTIONS: { id: string; label: string }[] = [
@@ -25,12 +25,34 @@ const OPERATOR_OPTIONS: { id: string; label: string }[] = [
   { id: "gtc_trca", label: "Toronto & Region CA" },
   { id: "gtc_npca", label: "Niagara Peninsula CA" },
   { id: "gtc_otonabee", label: "Otonabee CA" },
+  { id: "gtc_upperthames", label: "Upper Thames CA" },
+  { id: "gtc_maitland", label: "Maitland Valley CA" },
+  { id: "gtc_catfish", label: "Catfish Creek CA" },
 ];
 const SORT_OPTIONS = ["distance", "freshness", "name", "price"] as const;
 
+/** Match a typed location label against PRESET_LOCATIONS — case-insensitive
+ *  exact-or-prefix match on either the key or the display label. Returns the
+ *  preset's coords if matched, or null otherwise. */
+function resolveNear(input: string): { lat: number; lng: number; label: string } | null {
+  const q = input.trim().toLowerCase();
+  if (!q) return null;
+  // Exact key match first
+  if (PRESET_LOCATIONS[q]) return PRESET_LOCATIONS[q];
+  // Case-insensitive label match
+  for (const p of Object.values(PRESET_LOCATIONS)) {
+    if (p.label.toLowerCase() === q) return p;
+  }
+  // Prefix-on-label so "tor" → Toronto
+  for (const p of Object.values(PRESET_LOCATIONS)) {
+    if (p.label.toLowerCase().startsWith(q)) return p;
+  }
+  return null;
+}
+
 export function SearchPage() {
   const [state, setState] = useQueryStates({
-    loc: parseAsString.withDefault("toronto"),
+    loc: parseAsString.withDefault(""),
     lat: parseAsFloat,
     lng: parseAsFloat,
     radius_km: parseAsInteger.withDefault(150),
@@ -45,9 +67,30 @@ export function SearchPage() {
     sort: parseAsStringLiteral(SORT_OPTIONS).withDefault("distance"),
   });
 
+  // Local input state for the "Near" field so the user can type freely without
+  // every keystroke triggering a URL update.
+  const [nearInput, setNearInput] = useState<string>(() => {
+    if (state.loc) {
+      const preset = PRESET_LOCATIONS[state.loc];
+      return preset?.label ?? state.loc;
+    }
+    return "";
+  });
+
   const [data, setData] = useState<SearchResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [allParks, setAllParks] = useState<ParkSummary[]>([]);
+  // `searchKey` bumps every time the user explicitly hits Search.
+  // The fetch effect depends on it, NOT on filter state — so changing a chip
+  // doesn't auto-fire a query.
+  //
+  // We start at 1 only when the page is opened with at least one meaningful
+  // URL param (so a shareable /search?lat=…&start_date=… still loads results).
+  const [searchKey, setSearchKey] = useState<number>(() => {
+    if (typeof window === "undefined") return 0;
+    const sp = new URLSearchParams(window.location.search);
+    return sp.has("lat") || sp.has("loc") || sp.has("start_date") || sp.has("end_date") ? 1 : 0;
+  });
 
   // Fetch the full parks rollup once on mount. Used to render every park on
   // the map regardless of the current search filters.
@@ -62,18 +105,34 @@ export function SearchPage() {
     return () => ac.abort();
   }, []);
 
-  // Resolve lat/lng from loc preset if missing
+  // Resolve lat/lng from the typed "near" string (preset match) or explicit
+  // lat/lng params from the URL.
   const effectiveAnchor = useMemo(() => {
     if (state.lat != null && state.lng != null) return { lat: state.lat, lng: state.lng };
-    if (state.loc && PRESET_LOCATIONS[state.loc]) {
-      const p = PRESET_LOCATIONS[state.loc];
-      return { lat: p.lat, lng: p.lng };
-    }
-    return null;
+    const preset = resolveNear(state.loc);
+    return preset ? { lat: preset.lat, lng: preset.lng } : null;
   }, [state.lat, state.lng, state.loc]);
 
-  // Build query string and fetch
+  function runSearch() {
+    // Commit the typed "near" string into state. If we can resolve it to a
+    // preset, store the canonical preset key + clear lat/lng. Otherwise just
+    // store the raw typed value for the URL.
+    const preset = resolveNear(nearInput);
+    if (preset) {
+      // Find the key that maps to this preset
+      const key = Object.entries(PRESET_LOCATIONS).find(([, p]) => p.label === preset.label)?.[0]
+        ?? nearInput.trim().toLowerCase();
+      setState({ loc: key, lat: null, lng: null });
+    } else {
+      setState({ loc: nearInput.trim() });
+    }
+    setSearchKey((k) => k + 1);
+  }
+
+  // Fetch when searchKey changes. We rebuild the URL params off of *state*
+  // at request time so the user can prep filters then hit Search.
   useEffect(() => {
+    if (searchKey === 0) return;
     const sp = new URLSearchParams();
     if (effectiveAnchor) {
       sp.set("lat", String(effectiveAnchor.lat));
@@ -101,27 +160,14 @@ export function SearchPage() {
       })
       .finally(() => setLoading(false));
     return () => ac.abort();
-  }, [
-    effectiveAnchor,
-    state.radius_km,
-    state.start_date,
-    state.end_date,
-    state.flexible,
-    state.min_nights,
-    state.party_size,
-    state.site_types,
-    state.amenities,
-    state.operators,
-    state.sort,
-  ]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchKey]);
 
   function toggle<T extends string>(arr: T[], v: T): T[] {
     return arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v];
   }
 
   // Slugs of parks that have at least one site in the current search results.
-  // Null until the first search completes, so the map shows every pin full
-  // brightness on initial load instead of dimming everything.
   const matchedSlugs = useMemo<Set<string> | null>(() => {
     if (!data) return null;
     const s = new Set<string>();
@@ -129,21 +175,33 @@ export function SearchPage() {
     return s;
   }, [data]);
 
+  const presetSuggestions = Object.values(PRESET_LOCATIONS).map((p) => p.label);
+
   return (
     <div className="bg-stone-50">
       <div className="border-b border-stone-200 bg-white">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-3 grid gap-2 lg:grid-cols-[1.2fr_1fr_1fr_0.8fr_0.8fr_auto]">
-          <div className="flex flex-col">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-3 grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-[1.4fr_1fr_1fr_0.8fr_0.8fr_auto]">
+          <div className="flex flex-col col-span-2 sm:col-span-1">
             <label className="label flex items-center gap-1.5"><MapPin size={12} /> Near</label>
-            <select
+            <input
+              type="text"
               className="field"
-              value={state.loc}
-              onChange={(e) => setState({ loc: e.target.value, lat: null, lng: null })}
-            >
-              {Object.entries(PRESET_LOCATIONS).map(([key, p]) => (
-                <option key={key} value={key}>{p.label}</option>
+              list="near-presets"
+              placeholder="City, region, or town"
+              value={nearInput}
+              onChange={(e) => setNearInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  runSearch();
+                }
+              }}
+            />
+            <datalist id="near-presets">
+              {presetSuggestions.map((label) => (
+                <option key={label} value={label} />
               ))}
-            </select>
+            </datalist>
           </div>
           <div className="flex flex-col">
             <label className="label flex items-center gap-1.5"><Calendar size={12} /> Check-in</label>
@@ -188,23 +246,22 @@ export function SearchPage() {
               <option value="name">Park name</option>
             </select>
           </div>
-          <div className="flex flex-col">
-            <label className="label invisible">Reset</label>
+          <div className="flex flex-col col-span-2 sm:col-span-1">
+            <label className="label invisible sm:visible">Run</label>
             <button
-              className="btn-secondary"
-              onClick={() =>
-                setState({
-                  start_date: "",
-                  end_date: "",
-                  flexible: false,
-                  min_nights: null,
-                  site_types: [],
-                  amenities: [],
-                  operators: [],
-                })
-              }
+              className="btn-primary justify-center"
+              onClick={runSearch}
+              disabled={loading}
             >
-              Reset
+              {loading ? (
+                <>
+                  <Loader2 size={14} className="animate-spin" /> Searching…
+                </>
+              ) : (
+                <>
+                  <Search size={14} /> Search
+                </>
+              )}
             </button>
           </div>
         </div>
@@ -276,7 +333,11 @@ export function SearchPage() {
                 {data.total > (data.results.length ?? 0) ? ` (showing ${data.results.length})` : ""}
                 {" "}· median freshness {data.freshness_p50_minutes}m
               </>
-            ) : null}
+            ) : (
+              <span className="text-stone-500">
+                Set your filters and hit <span className="font-semibold text-stone-700">Search</span> when ready.
+              </span>
+            )}
           </div>
         </div>
 
@@ -295,6 +356,11 @@ export function SearchPage() {
             {data?.results.length === 0 && !loading && (
               <div className="card p-8 text-center text-stone-600">
                 No availability matches your filters. Try expanding radius or unchecking site-type filters.
+              </div>
+            )}
+            {!data && !loading && (
+              <div className="card p-8 text-center text-stone-500">
+                Type a location, pick dates if you want, then hit Search. Results land here.
               </div>
             )}
             {data?.results.map((r) => <ResultCard key={r.site.id} result={r} />)}
