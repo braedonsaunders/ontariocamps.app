@@ -17,7 +17,7 @@ export function SiteHeader() {
           <Link href="/search" className="px-3 py-1.5 rounded-md hover:bg-stone-100">Search</Link>
           <Link href="/operators" className="px-3 py-1.5 rounded-md hover:bg-stone-100">Operators</Link>
           <Link href="/analytics" className="px-3 py-1.5 rounded-md hover:bg-stone-100">Analytics</Link>
-          <Link href="/data" className="px-3 py-1.5 rounded-md hover:bg-stone-100">Data freshness</Link>
+          <Link href="/freshness" className="px-3 py-1.5 rounded-md hover:bg-stone-100">Data freshness</Link>
         </nav>
         <Link href="/search" className="btn-primary text-xs">Find a campsite</Link>
       </div>

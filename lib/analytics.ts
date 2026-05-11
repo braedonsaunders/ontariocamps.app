@@ -1,7 +1,10 @@
 /**
- * Analytics — every chart is `SELECT * FROM <materialized_view>`.
- * MVs are refreshed by `refresh_aggregates()` at the tail of each
- * availability ingest, so reads are sub-millisecond.
+ * Analytics — one round-trip, one Postgres query, every chart served.
+ *
+ * All charts read denormalized columns or pre-materialized views, then
+ * `json_build_object()` rolls the whole snapshot into a single payload so the
+ * SSR page never juggles 10 parallel connections (which deadlocked on the
+ * pgbouncer transaction-mode pool with `prepare: false`).
  */
 
 import { sql } from "./db/client";
@@ -62,87 +65,80 @@ export type AnalyticsSnapshot = {
 };
 
 export async function getAnalyticsSnapshot(): Promise<AnalyticsSnapshot> {
-  const client = sql();
-  const [
-    meta,
-    totals,
-    statusBreakdown,
-    operators,
-    regions,
-    siteTypes,
-    leaderboard,
-    electric,
-    timeSeries,
-  ] = await Promise.all([
-    client<Array<{ last_success_at: Date | string }>>`SELECT last_success_at FROM refresh_meta WHERE refresh_type = 'availability'`,
-    client<Array<AnalyticsSnapshot["totals"]>>`SELECT * FROM analytics_totals`,
-    client<StatusBreakdown[]>`SELECT status, count FROM analytics_status_breakdown ORDER BY count DESC`,
-    // Per-operator counts come straight off the operators table (denorm'd)
-    client<Array<{
-      id: string; name: string;
-      total_parks: number; total_sites: number;
-      available_sites: number;
-    }>>`SELECT id, name, total_parks, total_sites, available_sites FROM operators ORDER BY total_sites DESC`,
-    client<RegionRow[]>`SELECT region, parks, total_sites, available FROM analytics_region_breakdown ORDER BY total_sites DESC`,
-    client<SiteTypeRow[]>`SELECT label, count FROM analytics_site_type_breakdown ORDER BY count DESC`,
-    parkLeaderboard(12),
-    client<Array<{ electric: number; non_electric: number }>>`SELECT electric, non_electric FROM analytics_electric`,
-    client<Array<{ night_date: Date | string; total_sampled: number; available: number; reserved: number }>>`
-      SELECT night_date, total_sampled, available, reserved FROM analytics_time_series ORDER BY night_date
-    `,
-  ]);
+  const rows = await sql()<Array<{ payload: AnalyticsSnapshot & { generated_at: string | Date | null } }>>`
+    SELECT json_build_object(
+      'generated_at',
+        (SELECT last_success_at FROM refresh_meta WHERE refresh_type = 'availability'),
+      'totals',
+        (SELECT row_to_json(t) FROM analytics_totals t),
+      'statusBreakdown',
+        COALESCE((SELECT json_agg(row_to_json(s) ORDER BY count DESC) FROM analytics_status_breakdown s), '[]'::json),
+      'operators',
+        COALESCE((SELECT json_agg(
+          json_build_object(
+            'operator_id', id,
+            'operator',    name,
+            'parks',       total_parks,
+            'total_sites', total_sites,
+            'available',   available_sites,
+            'reserved',    GREATEST(0, total_sites - available_sites),
+            'closed',      0,
+            'unknown',     0
+          )
+          ORDER BY total_sites DESC
+        ) FROM operators), '[]'::json),
+      'regions',
+        COALESCE((SELECT json_agg(row_to_json(r) ORDER BY total_sites DESC) FROM analytics_region_breakdown r), '[]'::json),
+      'siteTypes',
+        COALESCE((SELECT json_agg(row_to_json(s) ORDER BY count DESC) FROM analytics_site_type_breakdown s), '[]'::json),
+      'electric',
+        COALESCE((SELECT row_to_json(e) FROM analytics_electric e), json_build_object('electric', 0, 'non_electric', 0)),
+      'timeSeries',
+        COALESCE((SELECT json_agg(
+          json_build_object(
+            'night_date',    to_char(night_date, 'YYYY-MM-DD'),
+            'total_sampled', total_sampled,
+            'available',     available,
+            'reserved',      reserved
+          )
+          ORDER BY night_date
+        ) FROM analytics_time_series), '[]'::json),
+      'leaderboard', json_build_object(
+        'mostAvailable', COALESCE((SELECT json_agg(json_build_object(
+          'slug', slug, 'name', name, 'region', region,
+          'operator', operator, 'operator_id', operator_id,
+          'total_sites', total_sites, 'available', available, 'availability_pct', availability_pct
+        )) FROM (
+          SELECT p.slug, p.name, p.region,
+                 o.name AS operator, o.id AS operator_id,
+                 p.total_sites, p.available_sites AS available, p.availability_pct
+            FROM parks p JOIN operators o ON o.id = p.operator_id
+           WHERE p.total_sites >= 5
+           ORDER BY p.availability_pct DESC, p.total_sites DESC
+           LIMIT 12
+        ) top), '[]'::json),
+        'mostBooked', COALESCE((SELECT json_agg(json_build_object(
+          'slug', slug, 'name', name, 'region', region,
+          'operator', operator, 'operator_id', operator_id,
+          'total_sites', total_sites, 'available', available, 'availability_pct', availability_pct
+        )) FROM (
+          SELECT p.slug, p.name, p.region,
+                 o.name AS operator, o.id AS operator_id,
+                 p.total_sites, p.available_sites AS available, p.availability_pct
+            FROM parks p JOIN operators o ON o.id = p.operator_id
+           WHERE p.total_sites >= 5
+           ORDER BY p.availability_pct ASC, p.total_sites DESC
+           LIMIT 12
+        ) bot), '[]'::json)
+      )
+    ) AS payload
+  `;
 
-  const last = meta[0]?.last_success_at;
+  const p = rows[0].payload;
+  const ga: unknown = p.generated_at;
   return {
-    generated_at: last ? (last instanceof Date ? last.toISOString() : String(last)) : null,
-    totals: totals[0],
-    statusBreakdown,
-    operators: operators.map((o) => ({
-      operator_id: o.id,
-      operator: o.name,
-      parks: o.total_parks,
-      total_sites: o.total_sites,
-      available: o.available_sites,
-      // Per-status counts that aren't denormalized on operators — leave 0; the
-      // chart uses available + (total - available) where useful.
-      reserved: Math.max(0, o.total_sites - o.available_sites),
-      closed: 0,
-      unknown: 0,
-    })),
-    regions,
-    siteTypes,
-    leaderboard,
-    electric: electric[0] ?? { electric: 0, non_electric: 0 },
-    timeSeries: timeSeries.map((r) => ({
-      night_date: r.night_date instanceof Date ? r.night_date.toISOString().slice(0, 10) : String(r.night_date).slice(0, 10),
-      total_sampled: r.total_sampled,
-      available: r.available,
-      reserved: r.reserved,
-    })),
+    ...p,
+    generated_at:
+      ga instanceof Date ? ga.toISOString() : ga ? String(ga) : null,
   };
-}
-
-async function parkLeaderboard(limit: number) {
-  const client = sql();
-  const [top, bottom] = await Promise.all([
-    client<ParkRanking[]>`
-      SELECT p.slug, p.name, p.region,
-             o.name AS operator, o.id AS operator_id,
-             p.total_sites, p.available_sites AS available, p.availability_pct
-        FROM parks p JOIN operators o ON o.id = p.operator_id
-       WHERE p.total_sites >= 5
-       ORDER BY p.availability_pct DESC, p.total_sites DESC
-       LIMIT ${limit}
-    `,
-    client<ParkRanking[]>`
-      SELECT p.slug, p.name, p.region,
-             o.name AS operator, o.id AS operator_id,
-             p.total_sites, p.available_sites AS available, p.availability_pct
-        FROM parks p JOIN operators o ON o.id = p.operator_id
-       WHERE p.total_sites >= 5
-       ORDER BY p.availability_pct ASC, p.total_sites DESC
-       LIMIT ${limit}
-    `,
-  ]);
-  return { mostAvailable: top, mostBooked: bottom };
 }

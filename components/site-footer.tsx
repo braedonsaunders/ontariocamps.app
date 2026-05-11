@@ -23,7 +23,7 @@ export function SiteFooter() {
           <div className="font-semibold text-stone-900 mb-2">Project</div>
           <ul className="space-y-1">
             <li><Link href="/about" className="hover:text-forest-700">About</Link></li>
-            <li><Link href="/data" className="hover:text-forest-700">Data freshness</Link></li>
+            <li><Link href="/freshness" className="hover:text-forest-700">Data freshness</Link></li>
             <li><a href="https://github.com/braedonsaunders/ontariocamps.app" className="hover:text-forest-700">Source on GitHub</a></li>
           </ul>
         </div>
