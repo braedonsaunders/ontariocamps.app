@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { CampMap, Site, EquipmentOption } from "@/lib/types";
-import { Minus, Plus, RotateCcw, Move, X, ExternalLink, Zap, Tent as TentIcon, Users } from "lucide-react";
+import { Minus, Plus, RotateCcw, Move, X, ExternalLink, Zap, Tent as TentIcon, Users, Caravan, Home, Mountain, Tent } from "lucide-react";
 
 type SiteStatus = "available" | "reserved" | "closed" | "unknown";
 
@@ -40,12 +40,33 @@ type Props = {
 const MIN_SCALE = 1;
 const MAX_SCALE = 8;
 
-/** Visible dot diameter in CSS pixels at scale=1. Inversely scaled so dots
- *  appear the same size on screen at every zoom level. */
-const DOT_PX = 14;
+/** Visible marker diameter in CSS pixels at scale=1. Inversely scaled so the
+ *  marker appears the same size on screen at every zoom level. Bumped up from
+ *  14 to 20 so the per-site-type icon glyph inside has room to read. */
+const DOT_PX = 20;
 /** Transparent hit-zone diameter — must comfortably exceed DOT_PX for usable
  *  click and tap targets. */
-const HIT_PX = 30;
+const HIT_PX = 32;
+
+/** Lucide icon component to render inside a site marker, picked by site_type. */
+function iconForSiteType(type: Site["site_type"]): typeof Tent {
+  switch (type) {
+    case "rv":
+      return Caravan;
+    case "cabin":
+      return Home;
+    case "yurt":
+      // Yurt and tent share the canonical pyramid silhouette — using Tent for
+      // both is fine at marker-glyph size; the popover spells out the actual
+      // operator label ("Yurt", "Walk-In Tent", etc.).
+      return Tent;
+    case "backcountry":
+      return Mountain;
+    case "tent":
+    default:
+      return Tent;
+  }
+}
 
 function dotColor(status: SiteStatus): { fill: string; ring: string; label: string } {
   // Binary green/red so the map is glanceable: green = bookable, red = not.
@@ -114,6 +135,13 @@ export function CampgroundMap({
   if (!activeMap) return null;
 
   const availableCount = sitesOnMap.filter((s) => s.status === "available").length;
+  const typesPresentOnMap = useMemo(() => {
+    const counts = new Map<Site["site_type"], number>();
+    for (const s of sitesOnMap) counts.set(s.site.site_type, (counts.get(s.site.site_type) ?? 0) + 1);
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([type, count]) => ({ type, count }));
+  }, [sitesOnMap]);
 
   return (
     <div className="card overflow-hidden">
@@ -158,7 +186,7 @@ export function CampgroundMap({
         equipmentOptions={equipmentOptions}
         parkSlug={parkSlug}
       />
-      <div className="flex items-center gap-4 px-4 py-2.5 border-t border-stone-100 text-xs text-stone-600 flex-wrap">
+      <div className="flex items-center gap-x-4 gap-y-1.5 px-4 py-2.5 border-t border-stone-100 text-xs text-stone-600 flex-wrap">
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-full ring-2 ring-white" style={{ backgroundColor: "#10b981" }} />
           <span className="text-stone-700">{availableCount} available</span>
@@ -171,6 +199,22 @@ export function CampgroundMap({
           <span className="h-2.5 w-2.5 rounded-full ring-2 ring-white" style={{ backgroundColor: "#991b1b" }} />
           closed
         </span>
+        {typesPresentOnMap.length > 0 && (
+          <>
+            <span className="hidden sm:inline-block h-3 w-px bg-stone-200" aria-hidden />
+            {typesPresentOnMap.map(({ type, count }) => {
+              const Icon = iconForSiteType(type);
+              return (
+                <span key={type} className="inline-flex items-center gap-1 text-stone-500" title={`${count} ${type} sites`}>
+                  <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-stone-200 text-stone-700">
+                    <Icon size={9} strokeWidth={2.5} aria-hidden />
+                  </span>
+                  <span className="capitalize">{type}</span>
+                </span>
+              );
+            })}
+          </>
+        )}
         <span className="ml-auto inline-flex items-center gap-1 text-stone-500">
           <Move size={11} /> drag · scroll to zoom · click a site
         </span>
@@ -331,6 +375,9 @@ function PanZoomViewer({
               const isSelected = selected === s.site.id;
               const { fill, ring } = dotColor(s.status);
               const grow = isHovered || isSelected ? 1.45 : 1;
+              const SiteIcon = iconForSiteType(s.site.site_type);
+              const markerSize = visibleDot * grow;
+              const iconSize = Math.max(8, markerSize * 0.6);
               return (
                 <button
                   key={s.site.id}
@@ -350,20 +397,22 @@ function PanZoomViewer({
                     height: `${visibleHit}px`,
                     zIndex: isHovered || isSelected ? 30 : 10,
                   }}
-                  aria-label={`Site ${s.site.name}, ${s.status}`}
+                  aria-label={`Site ${s.site.name}, ${s.site.site_type}, ${s.status}`}
                 >
                   <span
-                    className="block rounded-full shadow"
+                    className="grid place-items-center rounded-full text-white shadow"
                     style={{
-                      width: `${visibleDot * grow}px`,
-                      height: `${visibleDot * grow}px`,
+                      width: `${markerSize}px`,
+                      height: `${markerSize}px`,
                       backgroundColor: fill,
                       boxShadow: `0 0 0 ${2 / transform.scale}px white, 0 0 0 ${
                         (isSelected ? 5 : isHovered ? 3.5 : 2.5) / transform.scale
                       }px ${ring}`,
                       transition: "width 120ms ease-out, height 120ms ease-out, box-shadow 120ms",
                     }}
-                  />
+                  >
+                    <SiteIcon size={iconSize} strokeWidth={2.5} aria-hidden />
+                  </span>
                 </button>
               );
             })}

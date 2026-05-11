@@ -68,12 +68,26 @@ function DateBanner({ ctx }: { ctx: DateContext }) {
       </div>
     );
   }
+  // The page resolves ctx.date to the first night with data — operators hold
+  // the first ~14 days back so today's row usually doesn't exist. Make the
+  // banner say *which* night we're actually rendering.
+  const today = new Date().toISOString().slice(0, 10);
+  const isToday = ctx.date === today;
   return (
     <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-stone-100 ring-1 ring-stone-200 text-sm text-stone-700">
       <CalendarRange size={14} className="text-stone-500" />
       <span>
-        No dates selected — showing <span className="font-semibold">tonight&apos;s</span> status.
-        Pick a date range in the Calendar tab or via <Link href="/search" className="text-forest-700 hover:underline">search</Link> to refine.
+        {isToday ? (
+          <>
+            No dates selected — showing <span className="font-semibold">tonight&apos;s</span> status.
+          </>
+        ) : (
+          <>
+            Earliest bookable night — showing <span className="font-semibold">{formatDate(ctx.date)}</span>.
+          </>
+        )}
+        {" "}Pick a date range in the Calendar tab or via{" "}
+        <Link href="/search" className="text-forest-700 hover:underline">search</Link> to refine.
       </span>
     </div>
   );

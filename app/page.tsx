@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { HomeSearch } from "@/components/home-search";
 import { sql } from "@/lib/db/client";
-import { MapPin, Database, Search, Calendar } from "lucide-react";
+import { MapPin, Database, Calendar } from "lucide-react";
 import { MotionHero, MotionFadeUp, MotionStagger, MotionStaggerItem } from "@/components/motion";
 import { AnimatedNumber } from "@/components/animated-number";
 
@@ -22,19 +22,9 @@ type FeaturedPark = {
   hero_image_url: string | null;
 };
 
-type OperatorCard = {
-  id: string;
-  name: string;
-  vendor: string;
-  total_sites: number;
-  available_sites: number;
-  last_availability_at: Date | string | null;
-};
-
 export default async function HomePage() {
   const client = sql();
-  // Three small, indexed queries in parallel. Total round-trip well under 100ms.
-  const [totals, featured, operators] = await Promise.all([
+  const [totals, featured] = await Promise.all([
     client<Totals[]>`SELECT operators, parks, sites, available FROM analytics_totals`,
     client<FeaturedPark[]>`
       SELECT slug, name, description, region, hero_image_url
@@ -42,10 +32,6 @@ export default async function HomePage() {
        WHERE hero_image_url IS NOT NULL
        ORDER BY availability_pct DESC, total_sites DESC
        LIMIT 6
-    `,
-    client<OperatorCard[]>`
-      SELECT id, name, vendor, total_sites, available_sites, last_availability_at
-        FROM operators ORDER BY total_sites DESC
     `,
   ]);
 
@@ -91,31 +77,6 @@ export default async function HomePage() {
       <section className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-14">
         <MotionFadeUp whenInView className="flex items-end justify-between mb-6">
           <div>
-            <h2 className="text-2xl font-semibold tracking-tight">Why ontariocamps.app</h2>
-            <p className="text-stone-600 mt-1">The queries the operator sites can&apos;t answer themselves.</p>
-          </div>
-        </MotionFadeUp>
-        <MotionStagger whenInView className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {[
-            { icon: MapPin, title: "Geo radius search", body: "Anywhere within 90 minutes of Burlington, this weekend, with electric." },
-            { icon: Calendar, title: "Flexible dates", body: "Any 3 consecutive nights between July 15 and July 30 — we'll find them." },
-            { icon: Search, title: "Cross-operator", body: "All available sites for July long weekend across every Ontario operator at once." },
-            { icon: Database, title: "Freshness on every result", body: "Every card shows when we last checked. Median freshness < 10 minutes." },
-            { icon: MapPin, title: "Equipment-aware", body: "Filter for 32-foot trailers with pull-through, or tent-only walk-ins." },
-            { icon: Search, title: "Deep-link to booking", body: "Click through with date + park already populated on the operator's site." },
-          ].map((f) => (
-            <MotionStaggerItem key={f.title} className="card p-5">
-              <f.icon size={20} className="text-forest-700" />
-              <div className="font-semibold mt-3">{f.title}</div>
-              <p className="text-sm text-stone-600 mt-1 leading-relaxed">{f.body}</p>
-            </MotionStaggerItem>
-          ))}
-        </MotionStagger>
-      </section>
-
-      <section className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pb-16">
-        <MotionFadeUp whenInView className="flex items-end justify-between mb-6">
-          <div>
             <h2 className="text-2xl font-semibold tracking-tight">Popular parks</h2>
             <p className="text-stone-600 mt-1">Hand-picked starting points across the province.</p>
           </div>
@@ -154,38 +115,6 @@ export default async function HomePage() {
         </MotionStagger>
       </section>
 
-      <section className="border-t border-stone-200 bg-white">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12">
-          <MotionFadeUp whenInView>
-            <h2 className="text-2xl font-semibold tracking-tight mb-6">Operator coverage</h2>
-          </MotionFadeUp>
-          <MotionStagger whenInView className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {operators.map((o) => {
-              const m = o.last_availability_at;
-              const ms = m ? (m instanceof Date ? m.getTime() : new Date(String(m)).getTime()) : 0;
-              const minutes = ms ? Math.max(0, Math.floor((Date.now() - ms) / 60000)) : 0;
-              return (
-                <MotionStaggerItem key={o.id}>
-                <Link
-                  href={`/operator/${o.id}`}
-                  className="card p-4 flex items-center justify-between hover:ring-forest-300 hover:-translate-y-0.5 transition-all duration-200 block"
-                >
-                  <div>
-                    <div className="font-medium">{o.name}</div>
-                    <div className="text-xs text-stone-500 mt-0.5">
-                      {o.total_sites.toLocaleString()} sites · {o.vendor}
-                    </div>
-                  </div>
-                  <span className="chip bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">
-                    ~{minutes}m fresh
-                  </span>
-                </Link>
-                </MotionStaggerItem>
-              );
-            })}
-          </MotionStagger>
-        </div>
-      </section>
     </div>
   );
 }

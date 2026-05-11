@@ -38,15 +38,26 @@ function isValidDate(s: string | undefined | null): s is string {
 
 /** Build a DateContext from URL search params:
  *   ?from=YYYY-MM-DD&to=YYYY-MM-DD  → range mode (both inclusive bounds)
- *   anything else                   → today mode
+ *   anything else                   → "tonight" mode (falls back to the first
+ *                                     bookable night in the data window if
+ *                                     today's row doesn't exist yet — operators
+ *                                     hold the first ~14 days back so today
+ *                                     usually has no data)
  */
-function resolveDateContext(searchParams: Record<string, string | string[] | undefined>): DateContext {
+function resolveDateContext(
+  searchParams: Record<string, string | string[] | undefined>,
+  firstBookableNight: string | null,
+): DateContext {
   const from = Array.isArray(searchParams.from) ? searchParams.from[0] : searchParams.from;
   const to = Array.isArray(searchParams.to) ? searchParams.to[0] : searchParams.to;
   if (isValidDate(from) && isValidDate(to) && from <= to) {
     return { mode: "range", from, to };
   }
-  return { mode: "today", date: todayUtc() };
+  const today = todayUtc();
+  // If today has data, use today; otherwise fall back to the operator's first
+  // bookable night so dots render with actual status.
+  const date = firstBookableNight && firstBookableNight > today ? firstBookableNight : today;
+  return { mode: "today", date };
 }
 
 export default async function ParkPage({
@@ -70,10 +81,9 @@ export default async function ParkPage({
   ]);
   if (!operator) notFound();
 
-  const dateContext = resolveDateContext(sp);
-
   // Map: site_id → all (date, status, last_checked_at) rows for fast filtering.
   const nightsBySite = new Map<string, Array<{ night_date: string; status: string; last_checked_at: string }>>();
+  let firstBookableNight: string | null = null;
   for (const r of perNight) {
     let arr = nightsBySite.get(r.site_id);
     if (!arr) {
@@ -81,7 +91,10 @@ export default async function ParkPage({
       nightsBySite.set(r.site_id, arr);
     }
     arr.push(r);
+    if (!firstBookableNight || r.night_date < firstBookableNight) firstBookableNight = r.night_date;
   }
+
+  const dateContext = resolveDateContext(sp, firstBookableNight);
 
   // The "in-context" availability summary used to colour map dots. Definition:
   //   range mode: site is available iff EVERY night in [from, to] is "available".
