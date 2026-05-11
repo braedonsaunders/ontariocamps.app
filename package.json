@@ -10,34 +10,37 @@
     "typecheck": "tsc --noEmit",
     "ingest": "tsx scripts/ingest.ts",
     "ingest:metadata": "tsx scripts/ingest-metadata.ts",
-    "ingest:availability": "tsx scripts/ingest-availability.ts"
+    "ingest:availability": "tsx scripts/ingest-availability.ts",
+    "migrate": "tsx --env-file=.env.local scripts/migrate-sqlite-to-postgres.ts"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.105.4",
+    "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
+    "lucide-react": "^0.456.0",
+    "maplibre-gl": "^4.7.1",
     "next": "15.0.3",
+    "nuqs": "^2.2.3",
+    "postgres": "^3.4.9",
     "react": "19.0.0-rc-66855b96-20241106",
     "react-dom": "19.0.0-rc-66855b96-20241106",
-    "nuqs": "^2.2.3",
-    "clsx": "^2.1.1",
-    "tailwind-merge": "^2.5.4",
-    "lucide-react": "^0.456.0",
-    "date-fns": "^4.1.0",
-    "maplibre-gl": "^4.7.1",
-    "better-sqlite3": "^11.5.0",
-    "recharts": "^2.13.3"
+    "recharts": "^2.13.3",
+    "tailwind-merge": "^2.5.4"
   },
   "overrides": {
     "react": "19.0.0-rc-66855b96-20241106",
     "react-dom": "19.0.0-rc-66855b96-20241106"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22",
     "@types/react": "^18",
     "@types/react-dom": "^18",
-    "@types/better-sqlite3": "^7.6.12",
-    "typescript": "^5",
-    "tailwindcss": "^3.4.14",
-    "postcss": "^8",
     "autoprefixer": "^10.4.20",
-    "tsx": "^4.19.2"
+    "better-sqlite3": "^12.9.0",
+    "postcss": "^8",
+    "tailwindcss": "^3.4.14",
+    "tsx": "^4.19.2",
+    "typescript": "^5"
   }
 }

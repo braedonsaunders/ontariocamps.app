@@ -1,13 +1,14 @@
 import Link from "next/link";
 import { HomeSearch } from "@/components/home-search";
-import { parks } from "@/lib/data-source";
-import { dataSource } from "@/lib/data-source";
+import { fetchParks } from "@/lib/data-source";
 import { operatorHealth } from "@/lib/search";
 import { MapPin, Database, Search, Calendar } from "lucide-react";
 
-export default function HomePage() {
+export const dynamic = "force-dynamic";
+
+export default async function HomePage() {
+  const [parks, ops] = await Promise.all([fetchParks(), operatorHealth()]);
   const featured = parks.slice(0, 6);
-  const ops = operatorHealth();
   const totalSitesIndexed = ops.reduce((sum, o) => sum + o.sites_indexed, 0);
 
   return (

@@ -22,7 +22,7 @@ import {
   pruneStaleAvailability,
   type SiteNight,
 } from "../db/queries";
-import { db } from "../db/client";
+import { sqlDirect } from "../db/client";
 
 type AvailabilityCode = "available" | "reserved" | "closed" | "unknown";
 function decodeAvailability(code: number): AvailabilityCode {
@@ -46,26 +46,25 @@ type FetchTarget = {
  * Build the work queue: every site we know about, joined with its operator's
  * fetch config. Returns one record per site.
  */
-function loadFetchTargets(): FetchTarget[] {
-  return db()
-    .prepare(
-      `SELECT s.id              AS site_id,
-              s.vendor_resource_location_id,
-              s.vendor_resource_id,
-              s.vendor_booking_category_id,
-              o.id              AS operator_id,
-              o.base_url        AS operator_base_url,
-              ofc.equipment_category_id,
-              ofc.sub_equipment_category_id
-         FROM sites s
-         JOIN campgrounds c           ON c.id = s.campground_id
-         JOIN parks p                 ON p.id = c.park_id
-         JOIN operators o             ON o.id = p.operator_id
-         JOIN operator_fetch_config ofc ON ofc.operator_id = o.id
-        WHERE s.vendor_resource_location_id IS NOT NULL
-          AND s.vendor_resource_id IS NOT NULL`,
-    )
-    .all() as FetchTarget[];
+async function loadFetchTargets(): Promise<FetchTarget[]> {
+  const rows = await sqlDirect()<FetchTarget[]>`
+    SELECT s.id              AS site_id,
+           s.vendor_resource_location_id,
+           s.vendor_resource_id,
+           s.vendor_booking_category_id,
+           o.id              AS operator_id,
+           o.base_url        AS operator_base_url,
+           ofc.equipment_category_id,
+           ofc.sub_equipment_category_id
+      FROM sites s
+      JOIN campgrounds c           ON c.id = s.campground_id
+      JOIN parks p                 ON p.id = c.park_id
+      JOIN operators o             ON o.id = p.operator_id
+      JOIN operator_fetch_config ofc ON ofc.operator_id = o.id
+     WHERE s.vendor_resource_location_id IS NOT NULL
+       AND s.vendor_resource_id IS NOT NULL
+  `;
+  return rows.map((r) => ({ ...r }));
 }
 
 export type AvailabilityRefreshOptions = {
@@ -105,7 +104,7 @@ export async function refreshAvailability(
   const startStr = startDate.toISOString().slice(0, 10);
   const endStr = endDate.toISOString().slice(0, 10);
 
-  let targets = loadFetchTargets();
+  let targets = await loadFetchTargets();
   if (opts.operatorIds && opts.operatorIds.length) {
     const allowed = new Set(opts.operatorIds);
     targets = targets.filter((t) => allowed.has(t.operator_id));
@@ -117,7 +116,7 @@ export async function refreshAvailability(
     return { sites_seen: 0, sites_updated: 0, nights_updated: 0, errors: [], duration_ms: Date.now() - started };
   }
 
-  const runId = startRefreshLog("availability", opts.operatorIds?.join(",") ?? null);
+  const runId = await startRefreshLog("availability", opts.operatorIds?.join(",") ?? null);
 
   // Shared work queue + per-operator client cache. Each operator gets its own
   // CamisClient so the politeWait() between requests is per-host (Camis's WAF
@@ -138,11 +137,17 @@ export async function refreshAvailability(
 
   // Bounded-channel write buffer — drains in 500-row batches.
   const writeBuffer: SiteNight[] = [];
-  function flush(force = false) {
-    while (writeBuffer.length >= writeBatchSize || (force && writeBuffer.length > 0)) {
-      const batch = writeBuffer.splice(0, writeBatchSize);
-      upsertSiteAvailabilityBatch(batch);
-    }
+  let flushInFlight: Promise<void> | null = null;
+  async function flush(force = false): Promise<void> {
+    if (flushInFlight) await flushInFlight;
+    if (writeBuffer.length < writeBatchSize && !force) return;
+    flushInFlight = (async () => {
+      while (writeBuffer.length >= writeBatchSize || (force && writeBuffer.length > 0)) {
+        const batch = writeBuffer.splice(0, writeBatchSize);
+        await upsertSiteAvailabilityBatch(batch);
+      }
+    })();
+    try { await flushInFlight; } finally { flushInFlight = null; }
   }
 
   // Periodic progress logger
@@ -181,7 +186,7 @@ export async function refreshAvailability(
         }
         sitesUpdated += 1;
         nightsUpdated += added;
-        flush();
+        await flush();
       } catch (err) {
         errors.push(`site ${t.site_id}: ${(err as Error).message}`);
       }
@@ -198,22 +203,22 @@ export async function refreshAvailability(
   }
 
   await Promise.all(Array.from({ length: concurrency }, (_, i) => worker(i)));
-  flush(true);
+  await flush(true);
 
   // Prune nights that have fallen out of the window (yesterday or earlier).
   const today = new Date().toISOString().slice(0, 10);
-  const pruned = pruneStaleAvailability(today);
+  const pruned = await pruneStaleAvailability(today);
   if (pruned > 0) log(`[availability] pruned ${pruned} stale nights before ${today}`);
 
   const duration_ms = Date.now() - started;
   const status: "success" | "partial" | "failed" =
     errors.length === 0 ? "success" : errors.length < targets.length ? "partial" : "failed";
 
-  finishRefreshLog({
+  await finishRefreshLog({
     id: runId, status, sites_seen: totalTargets, sites_updated: sitesUpdated,
     nights_updated: nightsUpdated, duration_ms, errors,
   });
-  if (status !== "failed") setRefreshMeta("availability");
+  if (status !== "failed") await setRefreshMeta("availability");
 
   log(
     `[availability] ${status}: ${sitesUpdated.toLocaleString()}/${totalTargets.toLocaleString()} sites, ` +

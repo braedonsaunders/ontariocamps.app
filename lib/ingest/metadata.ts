@@ -34,7 +34,6 @@ import {
   startRefreshLog,
   finishRefreshLog,
   setRefreshMeta,
-  inTransaction,
   type SiteWrite,
 } from "../db/queries";
 import type { Operator, EquipmentOption, SiteType } from "../types";
@@ -177,8 +176,8 @@ export async function refreshOperatorMetadata(
   let parks_seen = 0;
   let sites_seen = 0;
 
-  const runId = startRefreshLog("metadata", operator.id);
-  upsertOperator(operator);
+  const runId = await startRefreshLog("metadata", operator.id);
+  await upsertOperator(operator);
 
   const client = new CamisClient({ baseUrl: operator.base_url, requestDelayMs: 500 });
 
@@ -193,7 +192,7 @@ export async function refreshOperatorMetadata(
     ]);
   } catch (err) {
     errors.push(`bootstrap: ${(err as Error).message}`);
-    finishRefreshLog({
+    await finishRefreshLog({
       id: runId, status: "failed", duration_ms: Date.now() - started, errors,
     });
     return { status: "failed", parks_seen, sites_seen, errors };
@@ -205,7 +204,7 @@ export async function refreshOperatorMetadata(
 
   // Per-operator fetch config — used by the availability ingest to know which
   // booking category + equipment to query.
-  upsertOperatorFetchConfig({
+  await upsertOperatorFetchConfig({
     operator_id: operator.id,
     campsite_booking_category_id: bookingCategoryId,
     equipment_category_id: equipmentCategoryId,
@@ -217,14 +216,14 @@ export async function refreshOperatorMetadata(
     const icons = await client.getIconLabels();
     for (const i of icons) {
       const name = i.localizedValues.find((lv) => lv.cultureName === "en-CA")?.name ?? i.localizedValues[0]?.name;
-      if (name) upsertSiteTypeLabel(operator.id, i.mapIconType, name);
+      if (name) await upsertSiteTypeLabel(operator.id, i.mapIconType, name);
     }
   } catch (err) {
     errors.push(`iconLabels: ${(err as Error).message}`);
   }
 
   for (const opt of operatorEquipmentList(operator, bookingCategoryRecord, equipmentCats)) {
-    upsertEquipmentOption(opt);
+    await upsertEquipmentOption(opt);
   }
 
   // Per-operator iconType → label lookup for site_type_label
@@ -244,7 +243,7 @@ export async function refreshOperatorMetadata(
     const coord = resolveCoordinates(cand.title)!;
     const parkId = `p_${operator.id}_${cand.resourceLocationId}`;
 
-    upsertPark({
+    await upsertPark({
       id: parkId,
       operator_id: operator.id,
       vendor_park_id: String(cand.resourceLocationId),
@@ -259,7 +258,7 @@ export async function refreshOperatorMetadata(
     });
 
     const cgId = `cg_${parkId}`;
-    upsertCampground({ id: cgId, park_id: parkId, vendor_map_id: String(cand.childMapId ?? ""), name: "Main campground" });
+    await upsertCampground({ id: cgId, park_id: parkId, vendor_map_id: String(cand.childMapId ?? ""), name: "Main campground" });
 
     let parkMaps: CamisMap[];
     try {
@@ -272,48 +271,45 @@ export async function refreshOperatorMetadata(
     const leafMaps = collectLeafMapsFrom(parkMaps);
     if (leafMaps.length === 0) continue;
 
-    // Wrap each park's writes in a transaction for atomicity per-park
-    inTransaction(() => {
-      for (const leaf of leafMaps) {
-        const campMapId = `cm_${parkId}_${leaf.mapId}`;
-        upsertCampMap({
-          id: campMapId, park_id: parkId, campground_id: cgId,
-          vendor_map_id: String(leaf.mapId), name: leaf.name, image_url: leaf.imageUrl,
-          x_dimension: leaf.xDimension, y_dimension: leaf.yDimension,
-        });
-        for (const r of leaf.resources) {
-          const siteId = `s_${parkId}_${r.resourceId}`;
-          const label = labelByIcon.get(r.iconType) ?? null;
-          const site: SiteWrite = {
-            id: siteId,
-            campground_id: cgId,
-            vendor_site_id: String(r.resourceId),
-            name: String(Math.abs(r.resourceId) % 10000),
-            site_type: siteTypeFromLabel(label),
-            site_type_label: label,
-            icon_type: r.iconType,
-            max_party_size: 6,
-            max_equipment_length_ft: null,
-            has_electric: hasElectricFromLabel(label),
-            has_water: false,
-            has_sewer: false,
-            is_pull_through: false,
-            is_accessible: false,
-            is_pet_friendly: true,
-            is_waterfront: false,
-            amenities: ["fire_pit", "picnic_table"],
-            camp_map_id: campMapId,
-            map_x: r.xCoordinate,
-            map_y: r.yCoordinate,
-            vendor_resource_location_id: cand.resourceLocationId,
-            vendor_resource_id: r.resourceId,
-            vendor_booking_category_id: bookingCategoryId,
-          };
-          upsertSite(site);
-          sites_seen += 1;
-        }
+    for (const leaf of leafMaps) {
+      const campMapId = `cm_${parkId}_${leaf.mapId}`;
+      await upsertCampMap({
+        id: campMapId, park_id: parkId, campground_id: cgId,
+        vendor_map_id: String(leaf.mapId), name: leaf.name, image_url: leaf.imageUrl,
+        x_dimension: leaf.xDimension, y_dimension: leaf.yDimension,
+      });
+      for (const r of leaf.resources) {
+        const siteId = `s_${parkId}_${r.resourceId}`;
+        const label = labelByIcon.get(r.iconType) ?? null;
+        const site: SiteWrite = {
+          id: siteId,
+          campground_id: cgId,
+          vendor_site_id: String(r.resourceId),
+          name: String(Math.abs(r.resourceId) % 10000),
+          site_type: siteTypeFromLabel(label),
+          site_type_label: label,
+          icon_type: r.iconType,
+          max_party_size: 6,
+          max_equipment_length_ft: null,
+          has_electric: hasElectricFromLabel(label),
+          has_water: false,
+          has_sewer: false,
+          is_pull_through: false,
+          is_accessible: false,
+          is_pet_friendly: true,
+          is_waterfront: false,
+          amenities: ["fire_pit", "picnic_table"],
+          camp_map_id: campMapId,
+          map_x: r.xCoordinate,
+          map_y: r.yCoordinate,
+          vendor_resource_location_id: cand.resourceLocationId,
+          vendor_resource_id: r.resourceId,
+          vendor_booking_category_id: bookingCategoryId,
+        };
+        await upsertSite(site);
+        sites_seen += 1;
       }
-    });
+    }
 
     if (i % 10 === 9 || i === matched.length - 1) {
       log(`[${operator.id}] ${i + 1}/${matched.length} parks (sites=${sites_seen})`);
@@ -321,7 +317,7 @@ export async function refreshOperatorMetadata(
   }
 
   const status: "success" | "partial" = errors.length === 0 ? "success" : "partial";
-  finishRefreshLog({
+  await finishRefreshLog({
     id: runId, status, parks_seen, sites_seen,
     duration_ms: Date.now() - started, errors,
   });
@@ -335,5 +331,5 @@ export async function refreshAllMetadata(operators: Operator[], log: (m: string)
     const result = await refreshOperatorMetadata(op, log);
     log(`[${op.id}] ${result.status}: ${result.parks_seen} parks, ${result.sites_seen} sites, ${result.errors.length} errors`);
   }
-  setRefreshMeta("metadata");
+  await setRefreshMeta("metadata");
 }

@@ -1,20 +1,29 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { operatorById, operators, parks, campgroundsByPark, sitesByCampground } from "@/lib/data-source";
+import {
+  operatorById as fetchOperatorById,
+  fetchParks,
+  campgroundsByPark as fetchCampgroundsByPark,
+  sitesByCampground as fetchSitesByCampground,
+} from "@/lib/data-source";
 import { operatorHealth } from "@/lib/search";
 import { ArrowUpRight, MapPin } from "lucide-react";
 
-export async function generateStaticParams() {
-  return operators.map((o) => ({ id: o.id }));
-}
+export const dynamic = "force-dynamic";
 
 export default async function OperatorPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const operator = operatorById.get(id);
+  const [opMap, ops, allParks, cgsByPark, sitesByCg] = await Promise.all([
+    fetchOperatorById(),
+    operatorHealth(),
+    fetchParks(),
+    fetchCampgroundsByPark(),
+    fetchSitesByCampground(),
+  ]);
+  const operator = opMap.get(id);
   if (!operator) notFound();
-  const ops = operatorHealth();
   const health = ops.find((h) => h.operator.id === id)!;
-  const operatorParks = parks.filter((p) => p.operator_id === id);
+  const operatorParks = allParks.filter((p) => p.operator_id === id);
 
   return (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10">
@@ -58,8 +67,8 @@ export default async function OperatorPage({ params }: { params: Promise<{ id: s
       <h2 className="mt-10 text-xl font-semibold tracking-tight">Parks</h2>
       <div className="mt-3 grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {operatorParks.map((p) => {
-          const cgs = campgroundsByPark.get(p.id) ?? [];
-          const siteCount = cgs.reduce((sum, c) => sum + (sitesByCampground.get(c.id)?.length ?? 0), 0);
+          const cgs = cgsByPark.get(p.id) ?? [];
+          const siteCount = cgs.reduce((sum, c) => sum + (sitesByCg.get(c.id)?.length ?? 0), 0);
           return (
             <Link
               key={p.id}

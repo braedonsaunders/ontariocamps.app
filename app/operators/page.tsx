@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { campgroundsByPark, parks } from "@/lib/data-source";
+import { fetchParks } from "@/lib/data-source";
 import { operatorHealth } from "@/lib/search";
 import { ArrowUpRight, Tent, MapPin, Activity } from "lucide-react";
 
@@ -8,6 +8,7 @@ export const metadata: Metadata = {
   title: "Operators",
   description: "Every Ontario campsite operator we index — Ontario Parks, Parks Canada, and Conservation Authorities.",
 };
+export const dynamic = "force-dynamic";
 
 /** Group label shown above each tier of operators on the page. */
 function operatorGroup(vendor: string, id: string): "Provincial" | "Federal" | "Conservation Authorities" {
@@ -17,8 +18,8 @@ function operatorGroup(vendor: string, id: string): "Provincial" | "Federal" | "
   return "Conservation Authorities";
 }
 
-export default function OperatorsIndexPage() {
-  const ops = operatorHealth();
+export default async function OperatorsIndexPage() {
+  const [ops, parks] = await Promise.all([operatorHealth(), fetchParks()]);
   const opsByGroup = new Map<string, typeof ops>();
   for (const o of ops) {
     const g = operatorGroup(o.operator.vendor, o.operator.id);
@@ -26,16 +27,9 @@ export default function OperatorsIndexPage() {
     opsByGroup.get(g)!.push(o);
   }
 
-  // Per-operator park count
   const parkCountByOperator = new Map<string, number>();
   for (const p of parks) {
     parkCountByOperator.set(p.operator_id, (parkCountByOperator.get(p.operator_id) ?? 0) + 1);
-  }
-  // Per-operator total campgrounds across parks
-  const cgCountByOperator = new Map<string, number>();
-  for (const p of parks) {
-    const cgs = campgroundsByPark.get(p.id)?.length ?? 0;
-    cgCountByOperator.set(p.operator_id, (cgCountByOperator.get(p.operator_id) ?? 0) + cgs);
   }
 
   const totalParks = parks.length;

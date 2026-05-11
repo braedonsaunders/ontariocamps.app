@@ -1,16 +1,21 @@
 import type { Metadata } from "next";
 import { operatorHealth } from "@/lib/search";
-import { parks, sites } from "@/lib/data-source";
-import { dataSource, dataSourceGeneratedAt, ingestRuns } from "@/lib/data-source";
+import { fetchParks, fetchSites, getDataSourceInfo } from "@/lib/data-source";
 import { Activity, Clock, Database } from "lucide-react";
 
 export const metadata: Metadata = {
   title: "Data freshness",
   description: "How fresh our index is, per operator.",
 };
+export const dynamic = "force-dynamic";
 
-export default function DataPage() {
-  const ops = operatorHealth();
+export default async function DataPage() {
+  const [ops, parks, sites, info] = await Promise.all([
+    operatorHealth(), fetchParks(), fetchSites(), getDataSourceInfo(),
+  ]);
+  const dataSource = info.hasReal ? "real" : "mock";
+  const dataSourceGeneratedAt = info.availabilityLastRefreshedAt ?? info.metadataLastRefreshedAt;
+  const ingestRuns = info.refreshRuns;
   const totalSites = sites.length;
   const totalParks = parks.length;
   const overallMedian = Math.round(
@@ -141,7 +146,7 @@ export default function DataPage() {
                     <td className="p-3 text-right tabular-nums text-stone-600">
                       {r.duration_ms != null ? `${(r.duration_ms / 1000).toFixed(1)}s` : "—"}
                     </td>
-                    <td className="p-3 text-right tabular-nums">{JSON.parse(r.errors).length}</td>
+                    <td className="p-3 text-right tabular-nums">{r.errors.length}</td>
                     <td className="p-3 text-stone-600 text-xs">
                       {r.finished_at ? new Date(r.finished_at).toLocaleTimeString() : "—"}
                     </td>

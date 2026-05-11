@@ -2,12 +2,12 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import type { Metadata } from "next";
 import {
-  campgroundsByPark,
-  campMapsByPark,
-  equipmentByOperator,
-  operatorById,
-  parks,
-  sitesByCampground,
+  campgroundsByPark as fetchCampgroundsByPark,
+  campMapsByPark as fetchCampMapsByPark,
+  equipmentByOperator as fetchEquipmentByOperator,
+  operatorById as fetchOperatorById,
+  sitesByCampground as fetchSitesByCampground,
+  getParkBySlug,
 } from "@/lib/data-source";
 import { getSiteAvailabilityForPark } from "@/lib/db/queries";
 import { timeAgo } from "@/lib/utils";
@@ -15,9 +15,7 @@ import { ArrowUpRight, MapPin, Tent } from "lucide-react";
 import { AvailabilityCalendar, type CalendarRow } from "@/components/availability-calendar";
 import { CampgroundMap } from "@/components/campground-map";
 
-export async function generateStaticParams() {
-  return parks.map((p) => ({ slug: p.slug }));
-}
+export const dynamic = "force-dynamic";
 
 export async function generateMetadata({
   params,
@@ -25,24 +23,27 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const park = parks.find((p) => p.slug === slug);
+  const park = await getParkBySlug(slug);
   if (!park) return { title: "Park not found" };
   return { title: park.name, description: park.description };
 }
 
 export default async function ParkPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const park = parks.find((p) => p.slug === slug);
+  const park = await getParkBySlug(slug);
   if (!park) notFound();
-  const operator = operatorById.get(park.operator_id)!;
-  const cgs = campgroundsByPark.get(park.id) ?? [];
 
-  const allParkSiteIds = new Set<string>();
-  for (const cg of cgs) {
-    for (const s of sitesByCampground.get(cg.id) ?? []) allParkSiteIds.add(s.id);
-  }
-  // Fetch all per-night data for this park once; reused for summary + calendar
-  const perNight = getSiteAvailabilityForPark(park.id);
+  const [opMap, cgsByPark, campMapsMap, sitesByCg, eqByOp, perNight] = await Promise.all([
+    fetchOperatorById(),
+    fetchCampgroundsByPark(),
+    fetchCampMapsByPark(),
+    fetchSitesByCampground(),
+    fetchEquipmentByOperator(),
+    getSiteAvailabilityForPark(park.id),
+  ]);
+
+  const operator = opMap.get(park.operator_id)!;
+  const cgs = cgsByPark.get(park.id) ?? [];
 
   // Per-site availability counts inside the window
   const availBySite = new Map<string, { available: number; total: number; latest: string | null }>();
@@ -56,7 +57,7 @@ export default async function ParkPage({ params }: { params: Promise<{ slug: str
 
   // Build per-campground summary
   const summaries = cgs.map((cg) => {
-    const cgSites = sitesByCampground.get(cg.id) ?? [];
+    const cgSites = sitesByCg.get(cg.id) ?? [];
     let availableNights = 0;
     let totalNights = 0;
     let latest = 0;
@@ -83,7 +84,7 @@ export default async function ParkPage({ params }: { params: Promise<{ slug: str
     summaries.reduce((sum, s) => sum + s.availability_pct, 0) / Math.max(summaries.length, 1),
   );
 
-  const allParkSites = cgs.flatMap((cg) => sitesByCampground.get(cg.id) ?? []);
+  const allParkSites = cgs.flatMap((cg) => sitesByCg.get(cg.id) ?? []);
   const sitesById = new Map(allParkSites.map((s) => [s.id, s]));
   const calendarRows: CalendarRow[] = (() => {
     const byId = new Map<string, CalendarRow>();
@@ -115,7 +116,7 @@ export default async function ParkPage({ params }: { params: Promise<{ slug: str
 
   // Per-site availability summary for the campground map (status of next 14 nights).
   // Built as plain objects so they can cross the server→client boundary.
-  const parkCampMaps = campMapsByPark.get(park.id) ?? [];
+  const parkCampMaps = campMapsMap.get(park.id) ?? [];
   const availabilitySummary: Record<
     string,
     { status: "available" | "reserved" | "closed" | "unknown"; nights_available: number; last_checked_at: string | null }
@@ -209,7 +210,7 @@ export default async function ParkPage({ params }: { params: Promise<{ slug: str
                 availabilitySummary={availabilitySummary}
                 bookingUrls={bookingUrls}
                 operatorName={operator.name}
-                equipmentOptions={equipmentByOperator.get(operator.id) ?? []}
+                equipmentOptions={eqByOp.get(operator.id) ?? []}
               />
             </div>
           )}
@@ -265,7 +266,7 @@ export default async function ParkPage({ params }: { params: Promise<{ slug: str
           </div>
 
           {(() => {
-            const eq = equipmentByOperator.get(operator.id) ?? [];
+            const eq = eqByOp.get(operator.id) ?? [];
             if (eq.length === 0) return null;
             return (
               <div className="card p-5">

@@ -9,7 +9,7 @@ export async function GET(req: Request) {
   const parseList = (key: string) =>
     q.get(key)?.split(",").map((s) => s.trim()).filter(Boolean);
 
-  const data = runSearch({
+  const data = await runSearch({
     lat: q.has("lat") ? Number(q.get("lat")) : undefined,
     lng: q.has("lng") ? Number(q.get("lng")) : undefined,
     radius_km: q.has("radius_km") ? Number(q.get("radius_km")) : undefined,

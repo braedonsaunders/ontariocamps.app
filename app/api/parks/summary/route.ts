@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db/client";
+import { sql } from "@/lib/db/client";
 
 export const dynamic = "force-dynamic";
 
@@ -19,25 +19,21 @@ type Row = {
  * Lightweight rollup of every indexed park + its current availability share.
  * Used by the search-page MapLibre layer so every park pin appears, coloured
  * by % of sites with ≥1 available night.
- *
- * One SQL query for all 149 parks — replaces the previous in-memory aggregation.
  */
 export async function GET() {
-  const rows = db()
-    .prepare(
-      `SELECT
-         p.slug, p.name, p.operator_id, o.name AS operator, p.region,
-         p.lat, p.lng,
-         count(distinct s.id) AS total_sites,
-         count(distinct case when sa.status='available' then s.id end) AS available_count
-       FROM parks p
-       JOIN operators o ON o.id = p.operator_id
-       JOIN campgrounds c ON c.park_id = p.id
-       JOIN sites s ON s.campground_id = c.id
-       LEFT JOIN site_availability sa ON sa.site_id = s.id
-       GROUP BY p.id`,
-    )
-    .all() as Row[];
+  const rows = await sql()<Row[]>`
+    SELECT
+      p.slug, p.name, p.operator_id, o.name AS operator, p.region,
+      p.lat, p.lng,
+      count(distinct s.id)::int AS total_sites,
+      count(distinct case when sa.status='available' then s.id end)::int AS available_count
+    FROM parks p
+    JOIN operators o ON o.id = p.operator_id
+    JOIN campgrounds c ON c.park_id = p.id
+    JOIN sites s ON s.campground_id = c.id
+    LEFT JOIN site_availability sa ON sa.site_id = s.id
+    GROUP BY p.id, p.slug, p.name, p.operator_id, o.name, p.region, p.lat, p.lng
+  `;
   const out = rows.map((r) => ({
     slug: r.slug,
     name: r.name,

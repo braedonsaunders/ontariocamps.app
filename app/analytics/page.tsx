@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default function AnalyticsPage() {
-  const snap = getAnalyticsSnapshot();
+export default async function AnalyticsPage() {
+  const snap = await getAnalyticsSnapshot();
   return <AnalyticsView snapshot={snap} />;
 }
