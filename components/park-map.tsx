@@ -310,7 +310,9 @@ export function ParkMap({ anchor, radiusKm, allParks, matchedSlugs }: Props) {
 
   return (
     <div className="relative h-full w-full rounded-xl overflow-hidden ring-1 ring-stone-200">
-      <div ref={containerRef} className="absolute inset-0" />
+      {/* Inline style — maplibre's `.maplibregl-map` overrides `position: absolute`
+       *  from Tailwind, which kills `inset-0`. See OntarioMap for the full note. */}
+      <div ref={containerRef} style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0 }} />
       {/* Legend overlay */}
       <div className="absolute top-3 left-3 bg-white/95 ring-1 ring-stone-200 rounded-md px-2.5 py-2 text-[11px] shadow-sm">
         <div className="text-stone-500 mb-1.5 font-medium uppercase tracking-wide text-[10px]">Availability now</div>

@@ -215,7 +215,15 @@ export function OntarioMap({ parks }: { parks: Park[] }) {
 
   return (
     <>
-      <div ref={containerRef} className="absolute inset-0" />
+      {/* maplibre adds `.maplibregl-map { position: relative; overflow: hidden }`
+       *  to whatever container we hand it. That overrides Tailwind's `absolute`
+       *  (same specificity, later in cascade), so `inset-0` becomes a no-op and
+       *  the div collapses to 0 height — canvas renders 300 px then gets clipped.
+       *  Inline width/height beats the class entirely. */}
+      <div
+        ref={containerRef}
+        style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0 }}
+      />
       {selected && (
         <div className="absolute bottom-4 left-4 right-4 sm:right-auto sm:w-96 card shadow-xl p-4 z-10">
           <div className="flex items-start justify-between gap-2">
