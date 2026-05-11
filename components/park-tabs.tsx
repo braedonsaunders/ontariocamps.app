@@ -3,11 +3,12 @@
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "motion/react";
-import type { Site, CampMap, EquipmentOption } from "@/lib/types";
+import type { Site, CampMap, EquipmentOption, ParkReview, SiteReviewAggregate, ParkReviewAggregate } from "@/lib/types";
 import { AvailabilityCalendar, type CalendarRow } from "@/components/availability-calendar";
 import { CampgroundMap } from "@/components/campground-map";
+import { ParkReviewAggregateDisplay, ParkReviewList, ParkReviewForm } from "@/components/reviews";
 import { timeAgo } from "@/lib/utils";
-import { Info, Map as MapIcon, Calendar, Tent, ArrowUpRight, CalendarRange } from "lucide-react";
+import { Info, Map as MapIcon, Calendar, Tent, ArrowUpRight, CalendarRange, MessageSquare } from "lucide-react";
 
 type SiteAvailability = {
   status: "available" | "reserved" | "closed" | "unknown";
@@ -45,9 +46,13 @@ type Props = {
   calendarLastChecked: string | null;
   vendorSiteIds: Record<string, string>;
   dateContext: DateContext;
+  parkReviews: ParkReview[];
+  parkReviewAggregate: ParkReviewAggregate;
+  recentSiteReviews: Array<import("@/lib/types").SiteReview & { site_name: string }>;
+  parkId: string;
 };
 
-type Tab = "overview" | "map" | "calendar";
+type Tab = "overview" | "map" | "calendar" | "reviews";
 
 function formatDate(iso: string): string {
   return new Date(iso + "T00:00:00Z").toLocaleDateString("en-CA", {
@@ -114,6 +119,10 @@ export function ParkTabs(props: Props) {
     calendarLastChecked,
     vendorSiteIds,
     dateContext,
+    parkReviews,
+    parkReviewAggregate,
+    recentSiteReviews,
+    parkId,
   } = props;
 
   const [activeTab, setActiveTab] = useState<Tab>("overview");
@@ -142,6 +151,7 @@ export function ParkTabs(props: Props) {
     { id: "overview", label: "Overview", icon: Info },
     { id: "map", label: "Map", icon: MapIcon },
     { id: "calendar", label: "Calendar", icon: Calendar },
+    { id: "reviews", label: "Reviews", icon: MessageSquare },
   ];
 
   return (
@@ -309,6 +319,30 @@ export function ParkTabs(props: Props) {
                   vendorSiteIds={vendorSiteIds}
                   vendorUrl={vendorUrl}
                 />
+              </motion.div>
+            )}
+
+            {activeTab === "reviews" && (
+              <motion.div
+                key="reviews"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={{ duration: 0.25 }}
+                className="space-y-6"
+              >
+                <div className="flex items-baseline justify-between flex-wrap gap-2">
+                  <h2 className="text-xl font-semibold tracking-tight">Reviews</h2>
+                  {parkReviewAggregate.review_count > 0 && (
+                    <span className="text-xs text-stone-500">
+                      {parkReviewAggregate.review_count} park {parkReviewAggregate.review_count === 1 ? "review" : "reviews"}
+                    </span>
+                  )}
+                </div>
+
+                <ParkReviewAggregateDisplay aggregate={parkReviewAggregate} />
+                <ParkReviewList reviews={parkReviews} siteReviews={recentSiteReviews} />
+                <ParkReviewForm parkId={parkId} />
               </motion.div>
             )}
           </AnimatePresence>

@@ -126,15 +126,15 @@ export function ParkReviewAggregateDisplay({
 function SubRatings({ review }: { review: SiteReview | ParkReview }) {
   const entries: Array<{ label: string; value: number | null }> = [];
 
-  if ("privacy" in review && ("privacy" in review)) {
+  if ("cleanliness" in review) {
     for (const attr of SITE_RATING_ATTRS) {
-      const v = review[attr.key];
+      const v = (review as SiteReview)[attr.key];
       if (v !== null && v !== undefined) entries.push({ label: attr.label, value: v });
     }
   }
   if ("facilities" in review) {
     for (const attr of PARK_RATING_ATTRS) {
-      const v = review[attr.key];
+      const v = (review as ParkReview)[attr.key];
       if (v !== null && v !== undefined) entries.push({ label: attr.label, value: v });
     }
   }
@@ -145,7 +145,7 @@ function SubRatings({ review }: { review: SiteReview | ParkReview }) {
     <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-stone-600">
       {entries.map((e) => (
         <span key={e.label} className="inline-flex items-center gap-1">
-          {e.label} <Stars value={e.value} size={10} />
+          {e.label} <Stars value={e.value ?? 0} size={10} />
         </span>
       ))}
     </div>

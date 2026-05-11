@@ -25,8 +25,8 @@
 DROP TRIGGER IF EXISTS trg_site_review_stats ON site_reviews;
 DROP FUNCTION IF EXISTS trg_site_review_stats();
 DROP FUNCTION IF EXISTS refresh_site_review_stats(TEXT);
-DROP TYPE IF EXISTS site_review_status;
 DROP TABLE IF EXISTS site_reviews;
+DROP TYPE IF EXISTS site_review_status;
 
 -- ─── Shared enum ─────────────────────────────────────────────────────────────
 
