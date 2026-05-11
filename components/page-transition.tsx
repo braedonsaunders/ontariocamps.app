@@ -16,12 +16,16 @@ import type { ReactNode } from "react";
  */
 export function PageTransition({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  // Opacity-only animation. A `y` translate would set `transform` on this
+  // wrapper, which establishes a containing block for `fixed` descendants —
+  // breaking the `/map` page that pins maplibre to the viewport. Plain
+  // opacity has no such side effect.
   return (
     <motion.div
       key={pathname}
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
       className="flex-1 flex flex-col"
     >
       {children}

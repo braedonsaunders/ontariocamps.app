@@ -37,35 +37,44 @@ export default async function MapPage() {
      ORDER BY p.total_sites DESC
   `;
 
-  // h-[calc(100dvh-3.5rem)] derives off the header height (3.5rem = h-14).
-  // `dvh` instead of `vh` so the bar in mobile browsers doesn't eat the map.
+  // The map fills the viewport below the sticky header. We use `fixed` so the
+  // map's dimensions are anchored to the viewport and don't depend on the
+  // flex-chain inside main → motion.div → page wrapper, which kept resolving
+  // to 0 px and rendering a white square.
+  //
+  // The empty 100dvh-3.5rem spacer below pushes the footer below the map so
+  // the layout still scrolls normally.
   return (
-    <div className="flex flex-col" style={{ height: "calc(100dvh - 3.5rem)" }}>
-      <div className="px-4 sm:px-6 lg:px-8 py-3 border-b border-stone-200 bg-white flex items-end justify-between flex-wrap gap-3 shrink-0">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">Every park on one map</h1>
-          <p className="text-xs text-stone-500 mt-0.5">
-            {parks.length} parks across Ontario · pin colour reflects current availability
-          </p>
+    <>
+      <div className="fixed top-14 inset-x-0 bottom-0 flex flex-col z-0">
+        <div className="px-4 sm:px-6 lg:px-8 py-3 border-b border-stone-200 bg-white flex items-end justify-between flex-wrap gap-3 shrink-0">
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight">Every park on one map</h1>
+            <p className="text-xs text-stone-500 mt-0.5">
+              {parks.length} parks across Ontario · pin colour reflects current availability
+            </p>
+          </div>
+          <div className="flex items-center gap-3 text-xs text-stone-600">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: "#10b981" }} />
+              Open
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: "#f59e0b" }} />
+              Limited
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: "#ef4444" }} />
+              Booked
+            </span>
+          </div>
         </div>
-        <div className="flex items-center gap-3 text-xs text-stone-600">
-          <span className="inline-flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: "#10b981" }} />
-            Open
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: "#f59e0b" }} />
-            Limited
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: "#ef4444" }} />
-            Booked
-          </span>
+        <div className="flex-1 relative min-h-0">
+          <OntarioMap parks={parks} />
         </div>
       </div>
-      <div className="flex-1 relative min-h-0">
-        <OntarioMap parks={parks} />
-      </div>
-    </div>
+      {/* Spacer so the footer renders below the (fixed) map viewport */}
+      <div aria-hidden style={{ height: "calc(100dvh - 3.5rem)" }} />
+    </>
   );
 }

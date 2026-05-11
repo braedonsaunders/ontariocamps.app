@@ -45,6 +45,25 @@ export type TimeSeriesPoint = {
   closed: number;
 };
 
+/** Column-packed per-park nightly counts. `dates[i]` aligns with each park's
+ *  `available[i]`, `reserved[i]`, `closed[i]`. Lets the client recompute any
+ *  per-period aggregate (operator stack, region stack, leaderboard, status
+ *  donut) without round-tripping. */
+export type ParkNightSeries = {
+  dates: string[];
+  parks: Array<{
+    slug: string;
+    name: string;
+    operator_id: string;
+    operator: string;
+    region: string;
+    total_sites: number;
+    available: number[];
+    reserved: number[];
+    closed: number[];
+  }>;
+};
+
 export type AnalyticsSnapshot = {
   generated_at: string | null;
   totals: {
@@ -69,6 +88,7 @@ export type AnalyticsSnapshot = {
   leaderboard: { mostAvailable: ParkRanking[]; mostBooked: ParkRanking[] };
   electric: { electric: number; non_electric: number };
   timeSeries: TimeSeriesPoint[];
+  parkNightSeries: ParkNightSeries;
 };
 
 export async function getAnalyticsSnapshot(): Promise<AnalyticsSnapshot> {
@@ -156,9 +176,80 @@ export async function getAnalyticsSnapshot(): Promise<AnalyticsSnapshot> {
 
   const p = rows[0].payload;
   const ga: unknown = p.generated_at;
+
+  // Per-park per-night counts, packed column-oriented for compact transport.
+  // ~13.5 k rows from the MV → ~250 KB on the wire after JSON encoding.
+  const parkNightSeries = await loadParkNightSeries();
+
   return {
     ...p,
     generated_at:
       ga instanceof Date ? ga.toISOString() : ga ? String(ga) : null,
+    parkNightSeries,
   };
+}
+
+async function loadParkNightSeries(): Promise<ParkNightSeries> {
+  const rows = await sql()<Array<{
+    park_id: string;
+    slug: string;
+    park_name: string;
+    operator_id: string;
+    operator: string;
+    region: string;
+    total_sites: number;
+    night_date: Date | string;
+    available: number;
+    reserved: number;
+    closed: number;
+  }>>`
+    SELECT park_id, slug, park_name, operator_id, operator, region, total_sites,
+           night_date, available, reserved, closed
+      FROM analytics_park_night
+     ORDER BY park_id, night_date
+  `;
+
+  // First pass: collect the canonical date axis. Every park is sampled on the
+  // same nights, so any park's date set works — but we collect the union just
+  // to be safe.
+  const dateSet = new Set<string>();
+  for (const r of rows) {
+    const d = r.night_date instanceof Date
+      ? r.night_date.toISOString().slice(0, 10)
+      : String(r.night_date).slice(0, 10);
+    dateSet.add(d);
+  }
+  const dates = Array.from(dateSet).sort();
+  const dateIndex = new Map(dates.map((d, i) => [d, i]));
+
+  // Second pass: bucket per-park
+  type ParkAccum = {
+    slug: string; name: string; operator_id: string; operator: string;
+    region: string; total_sites: number;
+    available: number[]; reserved: number[]; closed: number[];
+  };
+  const byPark = new Map<string, ParkAccum>();
+  for (const r of rows) {
+    let acc = byPark.get(r.park_id);
+    if (!acc) {
+      acc = {
+        slug: r.slug, name: r.park_name, operator_id: r.operator_id,
+        operator: r.operator, region: r.region, total_sites: r.total_sites,
+        available: new Array(dates.length).fill(0),
+        reserved:  new Array(dates.length).fill(0),
+        closed:    new Array(dates.length).fill(0),
+      };
+      byPark.set(r.park_id, acc);
+    }
+    const d = r.night_date instanceof Date
+      ? r.night_date.toISOString().slice(0, 10)
+      : String(r.night_date).slice(0, 10);
+    const i = dateIndex.get(d);
+    if (i == null) continue;
+    acc.available[i] = r.available;
+    acc.reserved[i]  = r.reserved;
+    acc.closed[i]    = r.closed;
+  }
+
+  return { dates, parks: Array.from(byPark.values()) };
 }
