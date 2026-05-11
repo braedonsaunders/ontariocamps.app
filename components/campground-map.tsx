@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { CampMap, Site, EquipmentOption } from "@/lib/types";
-import { Minus, Plus, RotateCcw, Move, X, ExternalLink, Zap, Tent as TentIcon, Users, Caravan, Home, Mountain, Tent } from "lucide-react";
+import { Minus, Plus, RotateCcw, Move, X, ExternalLink, Zap, Tent as TentIcon, Users, Tent } from "lucide-react";
 
 type SiteStatus = "available" | "reserved" | "closed" | "unknown";
 
@@ -48,24 +48,17 @@ const DOT_PX = 20;
  *  click and tap targets. */
 const HIT_PX = 32;
 
-/** Lucide icon component to render inside a site marker, picked by site_type. */
-function iconForSiteType(type: Site["site_type"]): typeof Tent {
-  switch (type) {
-    case "rv":
-      return Caravan;
-    case "cabin":
-      return Home;
-    case "yurt":
-      // Yurt and tent share the canonical pyramid silhouette — using Tent for
-      // both is fine at marker-glyph size; the popover spells out the actual
-      // operator label ("Yurt", "Walk-In Tent", etc.).
-      return Tent;
-    case "backcountry":
-      return Mountain;
-    case "tent":
-    default:
-      return Tent;
-  }
+/** Lucide icon component for a site marker — picked by whether the site has
+ *  electrical service, not by site type.
+ *
+ *  We tried using site_type to pick (Tent / Caravan / Home / Mountain) but
+ *  `siteTypeFromLabel()` infers site_type from the operator's text label,
+ *  and operators are wildly inconsistent: a "Non-electric trailer site" gets
+ *  inferred as RV, so it showed a caravan icon when it has no power. Powering
+ *  off the has_electric boolean is the one signal the user actually cares
+ *  about at a glance. */
+function iconForSite(site: Site): typeof Tent {
+  return site.has_electric ? Zap : Tent;
 }
 
 function dotColor(status: SiteStatus): { fill: string; ring: string; label: string } {
@@ -135,12 +128,14 @@ export function CampgroundMap({
   if (!activeMap) return null;
 
   const availableCount = sitesOnMap.filter((s) => s.status === "available").length;
-  const typesPresentOnMap = useMemo(() => {
-    const counts = new Map<Site["site_type"], number>();
-    for (const s of sitesOnMap) counts.set(s.site.site_type, (counts.get(s.site.site_type) ?? 0) + 1);
-    return Array.from(counts.entries())
-      .sort((a, b) => b[1] - a[1])
-      .map(([type, count]) => ({ type, count }));
+  const electricBreakdown = useMemo(() => {
+    let electric = 0;
+    let nonElectric = 0;
+    for (const s of sitesOnMap) {
+      if (s.site.has_electric) electric += 1;
+      else nonElectric += 1;
+    }
+    return { electric, nonElectric };
   }, [sitesOnMap]);
 
   return (
@@ -199,20 +194,25 @@ export function CampgroundMap({
           <span className="h-2.5 w-2.5 rounded-full ring-2 ring-white" style={{ backgroundColor: "#991b1b" }} />
           closed
         </span>
-        {typesPresentOnMap.length > 0 && (
+        {(electricBreakdown.electric > 0 || electricBreakdown.nonElectric > 0) && (
           <>
             <span className="hidden sm:inline-block h-3 w-px bg-stone-200" aria-hidden />
-            {typesPresentOnMap.map(({ type, count }) => {
-              const Icon = iconForSiteType(type);
-              return (
-                <span key={type} className="inline-flex items-center gap-1 text-stone-500" title={`${count} ${type} sites`}>
-                  <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-stone-200 text-stone-700">
-                    <Icon size={9} strokeWidth={2.5} aria-hidden />
-                  </span>
-                  <span className="capitalize">{type}</span>
+            {electricBreakdown.electric > 0 && (
+              <span className="inline-flex items-center gap-1 text-stone-500" title={`${electricBreakdown.electric} electric sites`}>
+                <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+                  <Zap size={9} strokeWidth={2.5} aria-hidden />
                 </span>
-              );
-            })}
+                Electric · {electricBreakdown.electric}
+              </span>
+            )}
+            {electricBreakdown.nonElectric > 0 && (
+              <span className="inline-flex items-center gap-1 text-stone-500" title={`${electricBreakdown.nonElectric} non-electric sites`}>
+                <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-stone-200 text-stone-700">
+                  <TentIcon size={9} strokeWidth={2.5} aria-hidden />
+                </span>
+                Non-electric · {electricBreakdown.nonElectric}
+              </span>
+            )}
           </>
         )}
         <span className="ml-auto inline-flex items-center gap-1 text-stone-500">
@@ -275,21 +275,34 @@ function PanZoomViewer({
     };
   }
 
-  function onWheel(e: React.WheelEvent) {
-    e.preventDefault();
+  // Native non-passive wheel listener.
+  //
+  // React attaches wheel handlers as PASSIVE by default — meaning
+  // `e.preventDefault()` inside an `onWheel` JSX handler is silently ignored
+  // and the page scrolls behind the map. We bypass React by binding a native
+  // listener with `{ passive: false }`, which lets us actually cancel the
+  // default scroll while we zoom the map.
+  useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const cx = e.clientX - rect.left - rect.width / 2;
-    const cy = e.clientY - rect.top - rect.height / 2;
-    const delta = -e.deltaY * 0.0025;
-    const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, transform.scale * Math.exp(delta)));
-    if (newScale === transform.scale) return;
-    const ratio = newScale / transform.scale;
-    const newTx = cx - (cx - transform.tx) * ratio;
-    const newTy = cy - (cy - transform.ty) * ratio;
-    setTransform(clamp(newScale, newTx, newTy));
-  }
+    function handle(e: WheelEvent) {
+      e.preventDefault();
+      const rect = el!.getBoundingClientRect();
+      const cx = e.clientX - rect.left - rect.width / 2;
+      const cy = e.clientY - rect.top - rect.height / 2;
+      const delta = -e.deltaY * 0.0025;
+      setTransform((t) => {
+        const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, t.scale * Math.exp(delta)));
+        if (newScale === t.scale) return t;
+        const ratio = newScale / t.scale;
+        const newTx = cx - (cx - t.tx) * ratio;
+        const newTy = cy - (cy - t.ty) * ratio;
+        return clamp(newScale, newTx, newTy);
+      });
+    }
+    el.addEventListener("wheel", handle, { passive: false });
+    return () => el.removeEventListener("wheel", handle);
+  }, []);
 
   function onPointerDown(e: React.PointerEvent) {
     // Don't intercept clicks on site pins or zoom buttons.
@@ -347,7 +360,6 @@ function PanZoomViewer({
         ref={containerRef}
         className="relative w-full overflow-hidden select-none touch-none cursor-grab active:cursor-grabbing"
         style={{ aspectRatio }}
-        onWheel={onWheel}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -427,7 +439,7 @@ function PanZoomViewer({
               const isSelected = selected === s.site.id;
               const { fill, ring } = dotColor(s.status);
               const grow = isHovered || isSelected ? 1.45 : 1;
-              const SiteIcon = iconForSiteType(s.site.site_type);
+              const SiteIcon = iconForSite(s.site);
               const markerSize = visibleDot * grow;
               const iconSize = Math.max(8, markerSize * 0.6);
               return (
@@ -449,7 +461,7 @@ function PanZoomViewer({
                     height: `${visibleHit}px`,
                     zIndex: isHovered || isSelected ? 30 : 10,
                   }}
-                  aria-label={`Site ${s.site.name}, ${s.site.site_type}, ${s.status}`}
+                  aria-label={`Site ${s.site.name}, ${s.site.has_electric ? "electric" : "non-electric"}, ${s.status}`}
                 >
                   <span
                     className="relative grid place-items-center rounded-full text-white shadow"
