@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { CampMap, Site, EquipmentOption } from "@/lib/types";
 import { Minus, Plus, RotateCcw, Move, X, ExternalLink, Zap, Tent as TentIcon, Users, Tent, MapPin, CircleDot } from "lucide-react";
+import { legendTypeLabel } from "@/lib/legend-types";
 
 type SiteStatus = "available" | "reserved" | "closed" | "unknown";
 
@@ -143,10 +144,7 @@ export function CampgroundMap({
     }
     const types = Array.from(byType.entries())
       .sort((a, b) => b[1] - a[1])
-      .map(([lit, count]) => {
-        const hue = (lit * 137.508) % 360;
-        return { lit, count, hue };
-      });
+      .map(([lit, count]) => ({ lit, count }));
     return { types, accessCount, labelCount, total: feats.length };
   }, [activeMap]);
 
@@ -241,16 +239,10 @@ export function CampgroundMap({
         {featureLegend.total > 0 && (
           <>
             <span className="hidden sm:inline-block h-3 w-px bg-stone-200" aria-hidden />
-            {featureLegend.types.map(({ lit, count, hue }) => (
-              <span key={lit} className="inline-flex items-center gap-1 text-stone-500" title={`Facility type ${lit} · ${count}`}>
-                <span
-                  className="inline-block h-3 w-3 rounded-full border"
-                  style={{
-                    backgroundColor: `hsl(${hue}, 70%, 95%)`,
-                    borderColor: `hsl(${hue}, 55%, 35%)`,
-                  }}
-                />
-                {count}
+            {featureLegend.types.map(({ lit, count }) => (
+              <span key={lit} className="inline-flex items-center gap-1 text-stone-500" title={`${legendTypeLabel(lit)} · ${count}`}>
+                <CircleDot size={10} className="text-stone-400" />
+                {legendTypeLabel(lit)} · {count}
               </span>
             ))}
             {featureLegend.accessCount > 0 && (
@@ -297,12 +289,14 @@ function PanZoomViewer({
   const [transform, setTransform] = useState({ scale: 1, tx: 0, ty: 0 });
   const [hovered, setHovered] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  const [selectedFeature, setSelectedFeature] = useState<number | null>(null);
 
   // Reset on map change
   useEffect(() => {
     setTransform({ scale: 1, tx: 0, ty: 0 });
     setSelected(null);
     setHovered(null);
+    setSelectedFeature(null);
   }, [campMap.id]);
 
   function clamp(scale: number, tx: number, ty: number) {
@@ -393,6 +387,7 @@ function PanZoomViewer({
   function reset() {
     setTransform({ scale: 1, tx: 0, ty: 0 });
     setSelected(null);
+    setSelectedFeature(null);
   }
 
   const aspectRatio = `${campMap.x_dimension} / ${campMap.y_dimension}`;
@@ -475,30 +470,46 @@ function PanZoomViewer({
               const color = `rgb(${f.r},${f.g},${f.b})`;
               const outer = 12 / transform.scale;
               const inner = 8 / transform.scale;
-
-              const hue = (f.legendItemType * 137.508) % 360;
-              const iconColor = `hsl(${hue}, 55%, 35%)`;
-              const bgColor = `hsl(${hue}, 70%, 95%)`;
+              const label = legendTypeLabel(f.legendItemType);
+              const isFeatureHovered = hovered === `feat-${idx}`;
+              const isFeatureSelected = selectedFeature === idx;
+              const fGrow = isFeatureHovered || isFeatureSelected ? 1.3 : 1;
 
               return (
-                <span
+                <button
                   key={`feat-${idx}`}
-                  className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full grid place-items-center"
+                  type="button"
+                  data-feature-pin
+                  className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full grid place-items-center bg-transparent border-0 p-0 focus:outline-none"
                   style={{
                     left: `${left}%`,
                     top: `${top}%`,
-                    width: `${outer}px`,
-                    height: `${outer}px`,
-                    backgroundColor: bgColor,
-                    border: `${1.5 / transform.scale}px solid ${iconColor}`,
-                    boxShadow: `0 0 0 ${1 / transform.scale}px white, 0 ${1 / transform.scale}px ${2 / transform.scale}px rgba(0,0,0,0.15)`,
-                    zIndex: 5,
+                    width: `${outer * fGrow * 1.5}px`,
+                    height: `${outer * fGrow * 1.5}px`,
+                    zIndex: isFeatureHovered || isFeatureSelected ? 15 : 5,
                   }}
-                  title={`Facility (${f.legendItemType})`}
-                  aria-hidden
+                  onMouseEnter={() => setHovered(`feat-${idx}`)}
+                  onMouseLeave={() => setHovered((h) => (h === `feat-${idx}` ? null : h))}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedFeature((cur) => (cur === idx ? null : idx));
+                    setSelected(null);
+                  }}
+                  aria-label={label}
                 >
-                  <CircleDot size={inner * 0.7} style={{ color: iconColor }} strokeWidth={2.5} />
-                </span>
+                  <span
+                    className="rounded-full grid place-items-center"
+                    style={{
+                      width: `${outer * fGrow}px`,
+                      height: `${outer * fGrow}px`,
+                      backgroundColor: "white",
+                      border: `${1.5 / transform.scale}px solid ${color}`,
+                      boxShadow: `0 0 0 ${1 / transform.scale}px white, 0 ${1 / transform.scale}px ${2 / transform.scale}px rgba(0,0,0,0.15)`,
+                    }}
+                  >
+                    <CircleDot size={(inner * fGrow) * 0.7} style={{ color }} strokeWidth={2.5} />
+                  </span>
+                </button>
               );
             })}
           </div>
@@ -512,7 +523,7 @@ function PanZoomViewer({
               const grow = isHovered || isSelected ? 1.45 : 1;
               const SiteIcon = iconForSite(s.site);
               const markerSize = visibleDot * grow;
-              const iconSize = Math.max(8, markerSize * 0.6);
+              const iconSize = markerSize * 0.55;
               return (
                 <button
                   key={s.site.id}
@@ -523,6 +534,7 @@ function PanZoomViewer({
                   onClick={(e) => {
                     e.stopPropagation();
                     setSelected((cur) => (cur === s.site.id ? null : s.site.id));
+                    setSelectedFeature(null);
                   }}
                   className="absolute -translate-x-1/2 -translate-y-1/2 grid place-items-center bg-transparent border-0 p-0 focus:outline-none"
                   style={{
@@ -582,14 +594,62 @@ function PanZoomViewer({
         </div>
 
         {/* Hover tooltip */}
-        {hovered && !selected && (() => {
+        {hovered && !selected && !selectedFeature && (() => {
           const s = sites.find((x) => x.site.id === hovered);
-          if (!s) return null;
+          if (!s) {
+            const fIdx = hovered.startsWith("feat-") ? parseInt(hovered.slice(5)) : null;
+            if (fIdx != null) {
+              const f = (campMap.features ?? [])[fIdx];
+              if (f && f.kind === "legend") {
+                return (
+                  <div className="absolute top-3 left-3 chip bg-white ring-1 ring-stone-200 text-stone-800 z-30 shadow-sm">
+                    <CircleDot size={10} className="text-stone-400" />
+                    {legendTypeLabel(f.legendItemType)}
+                  </div>
+                );
+              }
+            }
+            return null;
+          }
           const c = dotColor(s.status);
           return (
             <div className="absolute top-3 left-3 chip bg-white ring-1 ring-stone-200 text-stone-800 z-30 shadow-sm">
               <span className="h-2 w-2 rounded-full" style={{ backgroundColor: c.fill }} />
               Site {s.site.name} · {c.label}
+            </div>
+          );
+        })()}
+
+        {/* Feature detail popover */}
+        {selectedFeature != null && (() => {
+          const f = (campMap.features ?? [])[selectedFeature];
+          if (!f || f.kind !== "legend") return null;
+          const label = legendTypeLabel(f.legendItemType);
+          return (
+            <div className="absolute left-3 bottom-3 card p-3 shadow-xl ring-stone-300/70 z-40 flex items-center gap-2.5">
+              <span
+                className="shrink-0 rounded-full grid place-items-center"
+                style={{
+                  width: 28,
+                  height: 28,
+                  backgroundColor: "white",
+                  border: "2px solid rgb(" + f.r + "," + f.g + "," + f.b + ")",
+                }}
+              >
+                <CircleDot size={14} style={{ color: `rgb(${f.r},${f.g},${f.b})` }} strokeWidth={2.5} />
+              </span>
+              <div>
+                <div className="font-semibold text-stone-900 text-sm">{label}</div>
+                <div className="text-xs text-stone-500">Type {f.legendItemType}</div>
+              </div>
+              <button
+                onClick={() => setSelectedFeature(null)}
+                className="text-stone-400 hover:text-stone-700 transition-colors shrink-0 ml-2"
+                aria-label="Close"
+                type="button"
+              >
+                <X size={14} />
+              </button>
             </div>
           );
         })()}

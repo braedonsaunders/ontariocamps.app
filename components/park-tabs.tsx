@@ -159,7 +159,7 @@ export function ParkTabs(props: Props) {
       <DateBanner ctx={dateContext} />
 
       {/* Sticky-ish tab strip */}
-      <div className="mt-4 border-b border-stone-200 flex items-end gap-1 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+      <div className="mt-4 border-b border-stone-200 flex items-end gap-1 overflow-x-auto scrollbar-none">
         {TABS.map((t) => {
           const active = activeTab === t.id;
           return (

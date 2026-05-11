@@ -163,7 +163,7 @@ export default async function ParkPage({
       total_sites: cmSites.length,
       available_sites: availSites,
     };
-  });
+  }).sort((a, b) => b.total_sites - a.total_sites);
 
   const totalSites = allParkSites.length;
   const avgAvailability =

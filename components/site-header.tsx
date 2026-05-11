@@ -12,7 +12,7 @@ const NAV = [
   { href: "/map", label: "Map" },
   { href: "/parks", label: "Parks" },
   { href: "/analytics", label: "Analytics" },
-  { href: "/freshness", label: "Data freshness" },
+  { href: "/data", label: "Data" },
 ] as const;
 
 export function SiteHeader() {
