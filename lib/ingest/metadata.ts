@@ -120,10 +120,16 @@ function operatorEquipmentList(
 function extractParkCandidates(rootMaps: CamisMap[]) {
   const byRl = new Map<number, { resourceLocationId: number; childMapId: number | null; title: string }>();
   for (const m of rootMaps) {
+    const parentRl = m.resourceLocationId;
     for (const ml of m.mapLinks ?? []) {
       const rl = ml.resourceLocationId;
       if (rl == null) continue;
-      if (rl === -2147483648 && ml.childMapId === -2147483648) continue;
+      // Skip self-links (a map's link back to its own resourceLocation, which
+      // some operators emit). Previously we hard-coded `-2147483648` here, but
+      // that ID is meaningful in tenant-scoped CAMIS instances — e.g. it's
+      // Maitland Valley's only real park ("Falls Reserve"). Compare against the
+      // parent map's resourceLocationId instead.
+      if (parentRl != null && rl === parentRl && ml.childMapId === m.mapId) continue;
       const title = localizedName(ml.localizations) ?? `RL ${rl}`;
       if (!byRl.has(rl)) byRl.set(rl, { resourceLocationId: rl, childMapId: ml.childMapId, title });
     }

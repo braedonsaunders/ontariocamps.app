@@ -51,9 +51,23 @@ const OPERATORS: Operator[] = [
 
 async function main() {
   mkdirSync(resolve(process.cwd(), "data"), { recursive: true });
+  // Optional --operator <id> (repeatable) to scope a run to specific operators.
+  const wanted: string[] = [];
+  const argv = process.argv.slice(2);
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === "--operator") wanted.push(argv[++i]);
+  }
+  const ops = wanted.length
+    ? OPERATORS.filter((o) => wanted.includes(o.id))
+    : OPERATORS;
+  if (wanted.length && ops.length !== wanted.length) {
+    const missing = wanted.filter((w) => !ops.find((o) => o.id === w));
+    console.error(`[ingest:metadata] unknown operator(s): ${missing.join(", ")}`);
+    process.exit(1);
+  }
   const start = Date.now();
-  console.error(`[ingest:metadata] starting ${OPERATORS.length} operators…`);
-  await refreshAllMetadata(OPERATORS, (m) => console.error(`  ${m}`));
+  console.error(`[ingest:metadata] starting ${ops.length} operator(s)…`);
+  await refreshAllMetadata(ops, (m) => console.error(`  ${m}`));
   console.error(`[ingest:metadata] done in ${((Date.now() - start) / 1000).toFixed(1)}s`);
 }
 
