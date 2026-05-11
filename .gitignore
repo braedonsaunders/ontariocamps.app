@@ -1,0 +1,12 @@
+node_modules/
+.next/
+out/
+.env*.local
+.DS_Store
+*.log
+
+# SQLite database — local, populated by `npm run ingest`
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/*.json

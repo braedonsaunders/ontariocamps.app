@@ -1,0 +1,39 @@
+{
+  "name": "ontariocamps-app",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 4000",
+    "build": "next build",
+    "start": "next start -p 4000",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "ingest": "tsx scripts/ingest.ts",
+    "ingest:metadata": "tsx scripts/ingest-metadata.ts",
+    "ingest:availability": "tsx scripts/ingest-availability.ts"
+  },
+  "dependencies": {
+    "next": "15.0.3",
+    "react": "19.0.0-rc-66855b96-20241106",
+    "react-dom": "19.0.0-rc-66855b96-20241106",
+    "nuqs": "^2.2.3",
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^2.5.4",
+    "lucide-react": "^0.456.0",
+    "date-fns": "^4.1.0",
+    "maplibre-gl": "^4.7.1",
+    "better-sqlite3": "^11.5.0",
+    "recharts": "^2.13.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "@types/better-sqlite3": "^7.6.12",
+    "typescript": "^5",
+    "tailwindcss": "^3.4.14",
+    "postcss": "^8",
+    "autoprefixer": "^10.4.20",
+    "tsx": "^4.19.2"
+  }
+}
