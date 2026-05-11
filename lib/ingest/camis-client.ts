@@ -43,6 +43,31 @@ export type CamisMapResource = {
   yCoordinate: number;
 };
 
+export type CamisMapLegendItem = {
+  mapLegendItemId: number;
+  legendItemType: number;
+  iconType: number;
+  xCoordinate: number;
+  yCoordinate: number;
+  rValue: number; gValue: number; bValue: number;
+};
+
+export type CamisMapLabel = {
+  mapLabelId?: number;
+  xCoordinate: number;
+  yCoordinate: number;
+  localizedValues?: Array<{ cultureName: string; label?: string; text?: string; name?: string }>;
+  rValue?: number; gValue?: number; bValue?: number;
+  fontSize?: number;
+};
+
+export type CamisMapAccessPoint = {
+  resourceId?: number;
+  iconType?: number;
+  xCoordinate: number;
+  yCoordinate: number;
+};
+
 export type CamisMap = {
   mapId: number;
   resourceLocationId: number | null;
@@ -53,6 +78,13 @@ export type CamisMap = {
   mapImageUrls?: Record<string, string>;
   mapLinks: CamisMapLink[];
   mapResources?: CamisMapResource[];
+  /** Non-site decorations the operator plots on its map:
+   *   - mapLegendItems: washrooms, water taps, parking, etc. (point features)
+   *   - mapLabels: free-text labels positioned on the map
+   *   - mapAccessPointResources: bookable access points (boat launches, etc.) */
+  mapLegendItems?: CamisMapLegendItem[];
+  mapLabels?: CamisMapLabel[];
+  mapAccessPointResources?: CamisMapAccessPoint[];
   /** Camis returns `title` (e.g. "Campground 1") not `name`; `description`
    *  carries the human-readable site-range subtitle like "Sites 1-23". */
   localizedValues?: Array<{ cultureName: string; title?: string; name?: string; description?: string }>;

@@ -96,7 +96,31 @@ export type CampMap = {
   /** Pixel size of the PNG. */
   x_dimension: number;
   y_dimension: number;
+  /** Non-site map decorations sourced from CAMIS (washrooms, water taps,
+   *  text labels, etc.). See lib/types CampMapFeature. */
+  features?: CampMapFeature[];
 };
+
+export type CampMapFeature =
+  | {
+      kind: "legend";
+      x: number; y: number;
+      r: number; g: number; b: number;
+      legendItemType: number;
+      iconType: number;
+    }
+  | {
+      kind: "label";
+      x: number; y: number;
+      text: string | null;
+      r?: number; g?: number; b?: number;
+      fontSize?: number;
+    }
+  | {
+      kind: "access";
+      x: number; y: number;
+      iconType?: number;
+    };
 
 export type AvailabilityStatus = "available" | "reserved" | "closed" | "unknown";
 

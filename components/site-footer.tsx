@@ -12,9 +12,9 @@ export function SiteFooter() {
           </p>
         </div>
         <div>
-          <div className="font-semibold text-stone-900 mb-2">Operators</div>
+          <div className="font-semibold text-stone-900 mb-2">Parks</div>
           <ul className="space-y-1">
-            <li><Link href="/operators" className="hover:text-forest-700">All operators</Link></li>
+            <li><Link href="/parks" className="hover:text-forest-700">All parks &amp; networks</Link></li>
             <li><Link href="/operator/ontario_parks" className="hover:text-forest-700">Ontario Parks</Link></li>
             <li><Link href="/operator/parks_canada" className="hover:text-forest-700">Parks Canada (Ontario)</Link></li>
           </ul>

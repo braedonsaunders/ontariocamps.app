@@ -138,10 +138,22 @@ export async function getCampgroundsForPark(parkId: string): Promise<Campground[
 }
 
 export async function getCampMapsForPark(parkId: string): Promise<CampMap[]> {
-  return await sql()<CampMap[]>`
-    SELECT id, park_id, campground_id, vendor_map_id, name, image_url, x_dimension, y_dimension
+  const rows = await sql()<Array<{
+    id: string; park_id: string; campground_id: string; vendor_map_id: string;
+    name: string | null; description: string | null;
+    image_url: string; x_dimension: number; y_dimension: number;
+    features: unknown;
+  }>>`
+    SELECT id, park_id, campground_id, vendor_map_id, name, description,
+           image_url, x_dimension, y_dimension, features
       FROM camp_maps WHERE park_id = ${parkId}
   `;
+  return rows.map((r) => ({
+    id: r.id, park_id: r.park_id, campground_id: r.campground_id,
+    vendor_map_id: r.vendor_map_id, name: r.name, description: r.description,
+    image_url: r.image_url, x_dimension: r.x_dimension, y_dimension: r.y_dimension,
+    features: Array.isArray(r.features) ? (r.features as CampMap["features"]) : [],
+  }));
 }
 
 export async function getSitesForPark(parkId: string): Promise<Site[]> {

@@ -367,6 +367,58 @@ function PanZoomViewer({
             draggable={false}
             className="absolute inset-0 h-full w-full object-contain pointer-events-none"
           />
+          {/* Map features (non-site): washrooms, water taps, labels, access
+           *  points. Rendered UNDER the site pins so site dots stay on top. */}
+          <div className="absolute inset-0 pointer-events-none">
+            {(campMap.features ?? []).map((f, idx) => {
+              const left = (f.x / campMap.x_dimension) * 100;
+              const top = (f.y / campMap.y_dimension) * 100;
+              if (f.kind === "label") {
+                if (!f.text) return null;
+                const color = f.r != null && f.g != null && f.b != null
+                  ? `rgb(${f.r},${f.g},${f.b})`
+                  : "#44403c";
+                return (
+                  <span
+                    key={`label-${idx}`}
+                    className="absolute -translate-x-1/2 -translate-y-1/2 whitespace-nowrap text-[9px] font-medium"
+                    style={{
+                      left: `${left}%`,
+                      top: `${top}%`,
+                      color,
+                      textShadow: "0 0 2px white, 0 0 3px white",
+                    }}
+                  >
+                    {f.text}
+                  </span>
+                );
+              }
+              // Both "legend" and "access" features render as small colored
+              // dots — CAMIS doesn't expose decoded names for legendItemType,
+              // so we use the operator's rgb values to keep visual parity
+              // with their own map and hide the encoded type in a tooltip.
+              const color = f.kind === "legend"
+                ? `rgb(${f.r},${f.g},${f.b})`
+                : "#44403c";
+              const featureDot = 6 / transform.scale;
+              return (
+                <span
+                  key={`feat-${idx}`}
+                  className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full"
+                  style={{
+                    left: `${left}%`,
+                    top: `${top}%`,
+                    width: `${featureDot}px`,
+                    height: `${featureDot}px`,
+                    backgroundColor: color,
+                    boxShadow: `0 0 0 ${1 / transform.scale}px white`,
+                  }}
+                  title={f.kind === "legend" ? `Feature type ${f.legendItemType}` : "Access point"}
+                  aria-hidden
+                />
+              );
+            })}
+          </div>
           <div className="absolute inset-0">
             {sites.map((s) => {
               const left = ((s.site.map_x ?? 0) / campMap.x_dimension) * 100;

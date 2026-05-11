@@ -140,7 +140,42 @@ function extractParkCandidates(rootMaps: CamisMap[]) {
 type LeafMap = {
   mapId: number; name: string | null; description: string | null; imageUrl: string;
   xDimension: number; yDimension: number; resources: CamisMapResource[];
+  features: import("../types").CampMapFeature[];
 };
+
+function buildMapFeatures(m: CamisMap): import("../types").CampMapFeature[] {
+  const out: import("../types").CampMapFeature[] = [];
+  for (const li of m.mapLegendItems ?? []) {
+    out.push({
+      kind: "legend",
+      x: li.xCoordinate,
+      y: li.yCoordinate,
+      r: li.rValue,
+      g: li.gValue,
+      b: li.bValue,
+      legendItemType: li.legendItemType,
+      iconType: li.iconType,
+    });
+  }
+  for (const ml of m.mapLabels ?? []) {
+    const en = ml.localizedValues?.find((l) => l.cultureName === "en-CA") ?? ml.localizedValues?.[0];
+    const text = (en?.label ?? en?.text ?? en?.name ?? "").trim() || null;
+    out.push({
+      kind: "label",
+      x: ml.xCoordinate,
+      y: ml.yCoordinate,
+      text,
+      r: ml.rValue,
+      g: ml.gValue,
+      b: ml.bValue,
+      fontSize: ml.fontSize,
+    });
+  }
+  for (const ap of m.mapAccessPointResources ?? []) {
+    out.push({ kind: "access", x: ap.xCoordinate, y: ap.yCoordinate, iconType: ap.iconType });
+  }
+  return out;
+}
 
 function collectLeafMapsFrom(maps: CamisMap[]): LeafMap[] {
   const seen = new Set<string>();
@@ -163,14 +198,13 @@ function collectLeafMapsFrom(maps: CamisMap[]): LeafMap[] {
       ?? m.localizedValues?.[0];
     leaves.push({
       mapId: m.mapId,
-      // Camis stores the campground/loop label in `title` ("Campground 1",
-      // "Loop A — Walk-In Tents", etc.); `name` is undefined on these rows.
       name: en?.title ?? en?.name ?? null,
       description: en?.description ?? null,
       imageUrl,
       xDimension: typeof m.xDimension === "number" ? m.xDimension : 800,
       yDimension: typeof m.yDimension === "number" ? m.yDimension : 600,
       resources: filtered,
+      features: buildMapFeatures(m),
     });
   }
   return leaves;
@@ -299,6 +333,7 @@ export async function refreshOperatorMetadata(
         vendor_map_id: String(leaf.mapId), name: leaf.name, description: leaf.description,
         image_url: leaf.imageUrl,
         x_dimension: leaf.xDimension, y_dimension: leaf.yDimension,
+        features: leaf.features,
       });
       for (const r of leaf.resources) {
         const siteId = `s_${parkId}_${r.resourceId}`;

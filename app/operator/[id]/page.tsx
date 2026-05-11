@@ -23,7 +23,7 @@ export default async function OperatorPage({ params }: { params: Promise<{ id: s
     <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <Link href="/" className="text-xs text-stone-500 hover:text-forest-700">← Home</Link>
+          <Link href="/parks" className="text-xs text-stone-500 hover:text-forest-700">← Parks</Link>
           <h1 className="text-3xl font-semibold tracking-tight mt-1">{operator.name}</h1>
           <p className="text-stone-600 mt-1">
             Vendor: <span className="font-mono text-stone-700">{operator.vendor}</span> ·{" "}
