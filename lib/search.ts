@@ -203,42 +203,31 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
 }
 
 export async function operatorHealth(): Promise<
-  Array<{ operator: Operator; sites_indexed: number; median_freshness_minutes: number }>
+  Array<{ operator: Operator; sites_indexed: number; available_sites: number; median_freshness_minutes: number }>
 > {
-  // Two independent queries instead of one big join — joining all sites with
-  // 2.2M availability rows is expensive even with indexes. Since every ingest
-  // run timestamps every row at roughly the same moment, a single global
-  // freshness number is accurate enough.
-  const client = sql();
-  const [counts, meta] = await Promise.all([
-    client<Array<{
-      id: string; name: string; vendor: string; base_url: string; booking_url: string;
-      active: boolean; sites_indexed: number;
-    }>>`
-      SELECT o.id, o.name, o.vendor, o.base_url, o.booking_url, o.active,
-             count(distinct s.id)::int AS sites_indexed
-        FROM operators o
-        LEFT JOIN parks p       ON p.operator_id = o.id
-        LEFT JOIN campgrounds c ON c.park_id = p.id
-        LEFT JOIN sites s       ON s.campground_id = c.id
-       GROUP BY o.id, o.name, o.vendor, o.base_url, o.booking_url, o.active
-       ORDER BY o.name
-    `,
-    client<Array<{ last_success_at: Date | string }>>`
-      SELECT last_success_at FROM refresh_meta WHERE refresh_type = 'availability'
-    `,
-  ]);
-  const last = meta[0]?.last_success_at;
-  const lastMs = last
-    ? (last instanceof Date ? last.getTime() : new Date(String(last)).getTime())
-    : 0;
-  const minutes = lastMs ? Math.max(0, Math.floor((Date.now() - lastMs) / 60000)) : 0;
-  return counts.map((r) => ({
-    operator: {
-      id: r.id, name: r.name, vendor: r.vendor as Operator["vendor"],
-      base_url: r.base_url, booking_url: r.booking_url, active: r.active,
-    },
-    sites_indexed: r.sites_indexed,
-    median_freshness_minutes: minutes,
-  }));
+  // Single SELECT off the denormalized operators row. Columns are kept fresh
+  // by `refresh_aggregates()` which the availability ingest calls at its tail.
+  const rows = await sql()<Array<{
+    id: string; name: string; vendor: string; base_url: string; booking_url: string;
+    active: boolean; total_sites: number; available_sites: number;
+    last_availability_at: Date | string | null;
+  }>>`
+    SELECT id, name, vendor, base_url, booking_url, active,
+           total_sites, available_sites, last_availability_at
+      FROM operators ORDER BY name
+  `;
+  return rows.map((r) => {
+    const last = r.last_availability_at;
+    const lastMs = last ? (last instanceof Date ? last.getTime() : new Date(String(last)).getTime()) : 0;
+    const minutes = lastMs ? Math.max(0, Math.floor((Date.now() - lastMs) / 60000)) : 0;
+    return {
+      operator: {
+        id: r.id, name: r.name, vendor: r.vendor as Operator["vendor"],
+        base_url: r.base_url, booking_url: r.booking_url, active: r.active,
+      },
+      sites_indexed: r.total_sites,
+      available_sites: r.available_sites,
+      median_freshness_minutes: minutes,
+    };
+  });
 }

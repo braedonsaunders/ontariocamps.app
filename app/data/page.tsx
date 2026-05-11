@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { operatorHealth } from "@/lib/search";
-import { fetchParks, fetchSites, getDataSourceInfo } from "@/lib/data-source";
+import { getDataSourceInfo } from "@/lib/data-source";
+import { sql } from "@/lib/db/client";
 import { Activity, Clock, Database } from "lucide-react";
 
 export const metadata: Metadata = {
@@ -10,14 +11,16 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function DataPage() {
-  const [ops, parks, sites, info] = await Promise.all([
-    operatorHealth(), fetchParks(), fetchSites(), getDataSourceInfo(),
+  const [ops, totals, info] = await Promise.all([
+    operatorHealth(),
+    sql()<Array<{ parks: number; sites: number }>>`SELECT parks, sites FROM analytics_totals`,
+    getDataSourceInfo(),
   ]);
   const dataSource = info.hasReal ? "real" : "mock";
   const dataSourceGeneratedAt = info.availabilityLastRefreshedAt ?? info.metadataLastRefreshedAt;
   const ingestRuns = info.refreshRuns;
-  const totalSites = sites.length;
-  const totalParks = parks.length;
+  const totalSites = totals[0]?.sites ?? 0;
+  const totalParks = totals[0]?.parks ?? 0;
   const overallMedian = Math.round(
     ops.reduce((sum, o) => sum + o.median_freshness_minutes, 0) / Math.max(ops.length, 1),
   );

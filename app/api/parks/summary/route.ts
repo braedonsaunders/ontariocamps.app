@@ -12,27 +12,19 @@ type Row = {
   lat: number;
   lng: number;
   total_sites: number;
-  available_count: number;
+  available_sites: number;
 };
 
 /**
- * Lightweight rollup of every indexed park + its current availability share.
- * Used by the search-page MapLibre layer so every park pin appears, coloured
- * by % of sites with ≥1 available night.
+ * Read straight from the denormalized parks columns. No joins, no aggregation
+ * at request time — `refresh_aggregates()` keeps the columns up to date.
  */
 export async function GET() {
   const rows = await sql()<Row[]>`
-    SELECT
-      p.slug, p.name, p.operator_id, o.name AS operator, p.region,
-      p.lat, p.lng,
-      count(distinct s.id)::int AS total_sites,
-      count(distinct case when sa.status='available' then s.id end)::int AS available_count
-    FROM parks p
-    JOIN operators o ON o.id = p.operator_id
-    JOIN campgrounds c ON c.park_id = p.id
-    JOIN sites s ON s.campground_id = c.id
-    LEFT JOIN site_availability sa ON sa.site_id = s.id
-    GROUP BY p.id, p.slug, p.name, p.operator_id, o.name, p.region, p.lat, p.lng
+    SELECT p.slug, p.name, p.operator_id, o.name AS operator,
+           p.region, p.lat, p.lng, p.total_sites, p.available_sites
+      FROM parks p
+      JOIN operators o ON o.id = p.operator_id
   `;
   const out = rows.map((r) => ({
     slug: r.slug,
@@ -43,8 +35,8 @@ export async function GET() {
     lat: r.lat,
     lng: r.lng,
     total_sites: r.total_sites,
-    available_sites: r.available_count,
-    availability_pct: r.total_sites > 0 ? Math.round((r.available_count / r.total_sites) * 100) : 0,
+    available_sites: r.available_sites,
+    availability_pct: r.total_sites > 0 ? Math.round((r.available_sites / r.total_sites) * 100) : 0,
   }));
   return NextResponse.json(
     { parks: out, count: out.length },

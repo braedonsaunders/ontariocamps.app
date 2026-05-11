@@ -2,12 +2,12 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import type { Metadata } from "next";
 import {
-  campgroundsByPark as fetchCampgroundsByPark,
-  campMapsByPark as fetchCampMapsByPark,
-  equipmentByOperator as fetchEquipmentByOperator,
-  operatorById as fetchOperatorById,
-  sitesByCampground as fetchSitesByCampground,
   getParkBySlug,
+  getOperatorWithStats,
+  getCampgroundsForPark,
+  getCampMapsForPark,
+  getSitesForPark,
+  getEquipmentForOperator,
 } from "@/lib/data-source";
 import { getSiteAvailabilityForPark } from "@/lib/db/queries";
 import { timeAgo } from "@/lib/utils";
@@ -33,17 +33,24 @@ export default async function ParkPage({ params }: { params: Promise<{ slug: str
   const park = await getParkBySlug(slug);
   if (!park) notFound();
 
-  const [opMap, cgsByPark, campMapsMap, sitesByCg, eqByOp, perNight] = await Promise.all([
-    fetchOperatorById(),
-    fetchCampgroundsByPark(),
-    fetchCampMapsByPark(),
-    fetchSitesByCampground(),
-    fetchEquipmentByOperator(),
+  // Fan out all the per-park scoped queries in parallel. None of these scan
+  // the full sites/availability tables — they all filter on park_id first.
+  const [operator, cgs, parkCampMaps, allParkSites, operatorEquipment, perNight] = await Promise.all([
+    getOperatorWithStats(park.operator_id),
+    getCampgroundsForPark(park.id),
+    getCampMapsForPark(park.id),
+    getSitesForPark(park.id),
+    getEquipmentForOperator(park.operator_id),
     getSiteAvailabilityForPark(park.id),
   ]);
+  if (!operator) notFound();
 
-  const operator = opMap.get(park.operator_id)!;
-  const cgs = cgsByPark.get(park.id) ?? [];
+  // Per-site availability counts inside the window
+  const sitesByCg = new Map<string, typeof allParkSites>();
+  for (const s of allParkSites) {
+    if (!sitesByCg.has(s.campground_id)) sitesByCg.set(s.campground_id, []);
+    sitesByCg.get(s.campground_id)!.push(s);
+  }
 
   // Per-site availability counts inside the window
   const availBySite = new Map<string, { available: number; total: number; latest: string | null }>();
@@ -84,7 +91,6 @@ export default async function ParkPage({ params }: { params: Promise<{ slug: str
     summaries.reduce((sum, s) => sum + s.availability_pct, 0) / Math.max(summaries.length, 1),
   );
 
-  const allParkSites = cgs.flatMap((cg) => sitesByCg.get(cg.id) ?? []);
   const sitesById = new Map(allParkSites.map((s) => [s.id, s]));
   const calendarRows: CalendarRow[] = (() => {
     const byId = new Map<string, CalendarRow>();
@@ -116,7 +122,6 @@ export default async function ParkPage({ params }: { params: Promise<{ slug: str
 
   // Per-site availability summary for the campground map (status of next 14 nights).
   // Built as plain objects so they can cross the server→client boundary.
-  const parkCampMaps = campMapsMap.get(park.id) ?? [];
   const availabilitySummary: Record<
     string,
     { status: "available" | "reserved" | "closed" | "unknown"; nights_available: number; last_checked_at: string | null }
@@ -210,7 +215,7 @@ export default async function ParkPage({ params }: { params: Promise<{ slug: str
                 availabilitySummary={availabilitySummary}
                 bookingUrls={bookingUrls}
                 operatorName={operator.name}
-                equipmentOptions={eqByOp.get(operator.id) ?? []}
+                equipmentOptions={operatorEquipment}
               />
             </div>
           )}
@@ -266,7 +271,7 @@ export default async function ParkPage({ params }: { params: Promise<{ slug: str
           </div>
 
           {(() => {
-            const eq = eqByOp.get(operator.id) ?? [];
+            const eq = operatorEquipment;
             if (eq.length === 0) return null;
             return (
               <div className="card p-5">

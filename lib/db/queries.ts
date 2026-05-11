@@ -397,3 +397,9 @@ export async function pruneStaleAvailability(cutoff_date: string): Promise<numbe
   const rows = await sqlDirect()`DELETE FROM site_availability WHERE night_date < ${cutoff_date}`;
   return rows.count;
 }
+
+/** Refresh denormalized columns + materialized views. Called at the tail of
+ *  every availability ingest run. */
+export async function refreshAggregates(): Promise<void> {
+  await sqlDirect()`SELECT refresh_aggregates()`;
+}

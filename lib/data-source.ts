@@ -90,6 +90,114 @@ export async function parkById(): Promise<Map<string, Park>> {
 
 // ─── Single-record lookups (single SQL query each) ──────────────────────────
 
+export type OperatorWithStats = {
+  id: string; name: string; vendor: string;
+  base_url: string; booking_url: string; active: boolean;
+  total_parks: number; total_campgrounds: number; total_sites: number;
+  available_sites: number;
+  last_metadata_at: string | null;
+  last_availability_at: string | null;
+};
+
+export async function getOperatorWithStats(id: string): Promise<OperatorWithStats | null> {
+  const rows = await sql()<Array<{
+    id: string; name: string; vendor: string;
+    base_url: string; booking_url: string; active: boolean;
+    total_parks: number; total_campgrounds: number; total_sites: number;
+    available_sites: number;
+    last_metadata_at: Date | string | null;
+    last_availability_at: Date | string | null;
+  }>>`
+    SELECT id, name, vendor, base_url, booking_url, active,
+           total_parks, total_campgrounds, total_sites, available_sites,
+           last_metadata_at, last_availability_at
+      FROM operators WHERE id = ${id}
+      LIMIT 1
+  `;
+  if (rows.length === 0) return null;
+  const r = rows[0];
+  const toStr = (d: Date | string | null) =>
+    !d ? null : d instanceof Date ? d.toISOString() : String(d);
+  return {
+    ...r,
+    last_metadata_at: toStr(r.last_metadata_at),
+    last_availability_at: toStr(r.last_availability_at),
+  };
+}
+
+export type ParkRow = {
+  id: string; slug: string; name: string; region: string;
+  operator_id: string; hero_image_url: string | null;
+  total_sites: number; available_sites: number; availability_pct: number;
+};
+
+export async function getCampgroundsForPark(parkId: string): Promise<Campground[]> {
+  return await sql()<Campground[]>`
+    SELECT id, park_id, vendor_map_id, name FROM campgrounds WHERE park_id = ${parkId}
+  `;
+}
+
+export async function getCampMapsForPark(parkId: string): Promise<CampMap[]> {
+  return await sql()<CampMap[]>`
+    SELECT id, park_id, campground_id, vendor_map_id, name, image_url, x_dimension, y_dimension
+      FROM camp_maps WHERE park_id = ${parkId}
+  `;
+}
+
+export async function getSitesForPark(parkId: string): Promise<Site[]> {
+  const rows = await sql()<Array<{
+    id: string; campground_id: string; vendor_site_id: string; name: string;
+    site_type: string; site_type_label: string | null; icon_type: number | null;
+    max_party_size: number; max_equipment_length_ft: number | null;
+    has_electric: boolean; has_water: boolean; has_sewer: boolean;
+    is_pull_through: boolean; is_accessible: boolean;
+    is_pet_friendly: boolean; is_waterfront: boolean;
+    amenities: string[];
+    camp_map_id: string | null; map_x: number | null; map_y: number | null;
+  }>>`
+    SELECT s.id, s.campground_id, s.vendor_site_id, s.name, s.site_type,
+           s.site_type_label, s.icon_type,
+           s.max_party_size, s.max_equipment_length_ft,
+           s.has_electric, s.has_water, s.has_sewer, s.is_pull_through,
+           s.is_accessible, s.is_pet_friendly, s.is_waterfront,
+           s.amenities, s.camp_map_id, s.map_x, s.map_y
+      FROM sites s
+      JOIN campgrounds c ON c.id = s.campground_id
+     WHERE c.park_id = ${parkId}
+  `;
+  return rows.map((r) => ({
+    id: r.id, campground_id: r.campground_id, vendor_site_id: r.vendor_site_id,
+    name: r.name, site_type: r.site_type as Site["site_type"],
+    site_type_label: r.site_type_label, icon_type: r.icon_type,
+    max_party_size: r.max_party_size, max_equipment_length_ft: r.max_equipment_length_ft,
+    has_electric: r.has_electric, has_water: r.has_water, has_sewer: r.has_sewer,
+    is_pull_through: r.is_pull_through, is_accessible: r.is_accessible,
+    is_pet_friendly: r.is_pet_friendly, is_waterfront: r.is_waterfront,
+    amenities: Array.isArray(r.amenities) ? r.amenities : [],
+    camp_map_id: r.camp_map_id, map_x: r.map_x, map_y: r.map_y,
+  }));
+}
+
+export async function getEquipmentForOperator(operatorId: string): Promise<EquipmentOption[]> {
+  return await sql()<EquipmentOption[]>`
+    SELECT operator_id, equipment_category_id, sub_equipment_category_id, name, order_index
+      FROM equipment_categories
+     WHERE operator_id = ${operatorId}
+     ORDER BY order_index, name
+  `;
+}
+
+/** Slim per-operator park list — read straight from the denormalized parks table. */
+export async function getParksForOperator(operatorId: string): Promise<ParkRow[]> {
+  return await sql()<ParkRow[]>`
+    SELECT id, slug, name, region, operator_id, hero_image_url,
+           total_sites, available_sites, availability_pct
+      FROM parks
+     WHERE operator_id = ${operatorId}
+     ORDER BY name
+  `;
+}
+
 export async function getParkBySlug(slug: string): Promise<Park | null> {
   const rows = await sql()<Array<{
     id: string; operator_id: string; vendor_park_id: string; slug: string; name: string;

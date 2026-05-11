@@ -20,6 +20,7 @@ import {
   finishRefreshLog,
   setRefreshMeta,
   pruneStaleAvailability,
+  refreshAggregates,
   type SiteNight,
 } from "../db/queries";
 import { sqlDirect } from "../db/client";
@@ -209,6 +210,16 @@ export async function refreshAvailability(
   const today = new Date().toISOString().slice(0, 10);
   const pruned = await pruneStaleAvailability(today);
   if (pruned > 0) log(`[availability] pruned ${pruned} stale nights before ${today}`);
+
+  // Refresh denormalized columns + materialized views so the app sees the
+  // new data instantly without re-aggregating on every request.
+  const refreshStart = Date.now();
+  try {
+    await refreshAggregates();
+    log(`[availability] refresh_aggregates() done in ${((Date.now() - refreshStart) / 1000).toFixed(1)}s`);
+  } catch (e) {
+    errors.push(`refresh_aggregates: ${(e as Error).message}`);
+  }
 
   const duration_ms = Date.now() - started;
   const status: "success" | "partial" | "failed" =
