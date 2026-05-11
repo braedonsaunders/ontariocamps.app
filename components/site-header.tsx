@@ -10,7 +10,7 @@ const REPO_URL = "https://github.com/braedonsaunders/ontariocamps.app";
 const NAV = [
   { href: "/search", label: "Search" },
   { href: "/map", label: "Map" },
-  { href: "/operators", label: "Operators" },
+  { href: "/operators", label: "Networks" },
   { href: "/analytics", label: "Analytics" },
   { href: "/freshness", label: "Data freshness" },
 ] as const;

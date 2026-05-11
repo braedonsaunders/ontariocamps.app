@@ -23,8 +23,6 @@ type ParkRow = {
 };
 
 export default async function MapPage() {
-  // One SELECT — all the data we need for every pin. The denormalised
-  // availability columns mean no aggregation at request time.
   const parks = await sql()<ParkRow[]>`
     SELECT p.slug, p.name, p.operator_id, o.name AS operator,
            p.region, p.lat, p.lng,
@@ -39,9 +37,11 @@ export default async function MapPage() {
      ORDER BY p.total_sites DESC
   `;
 
+  // h-[calc(100dvh-3.5rem)] derives off the header height (3.5rem = h-14).
+  // `dvh` instead of `vh` so the bar in mobile browsers doesn't eat the map.
   return (
-    <div className="flex flex-col h-[calc(100vh-3.5rem)]">
-      <div className="px-4 sm:px-6 lg:px-8 py-3 border-b border-stone-200 bg-white flex items-end justify-between flex-wrap gap-3">
+    <div className="flex flex-col" style={{ height: "calc(100dvh - 3.5rem)" }}>
+      <div className="px-4 sm:px-6 lg:px-8 py-3 border-b border-stone-200 bg-white flex items-end justify-between flex-wrap gap-3 shrink-0">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Every park on one map</h1>
           <p className="text-xs text-stone-500 mt-0.5">
@@ -63,7 +63,7 @@ export default async function MapPage() {
           </span>
         </div>
       </div>
-      <div className="flex-1 relative">
+      <div className="flex-1 relative min-h-0">
         <OntarioMap parks={parks} />
       </div>
     </div>

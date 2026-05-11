@@ -42,6 +42,7 @@ export type TimeSeriesPoint = {
   total_sampled: number;
   available: number;
   reserved: number;
+  closed: number;
 };
 
 export type AnalyticsSnapshot = {
@@ -117,7 +118,8 @@ export async function getAnalyticsSnapshot(): Promise<AnalyticsSnapshot> {
             'night_date',    to_char(night_date, 'YYYY-MM-DD'),
             'total_sampled', total_sampled,
             'available',     available,
-            'reserved',      reserved
+            'reserved',      reserved,
+            'closed',        closed
           )
           ORDER BY night_date
         ) FROM analytics_time_series), '[]'::json),

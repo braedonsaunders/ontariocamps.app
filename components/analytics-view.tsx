@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { useMemo, useState } from "react";
 import {
   PieChart,
   Pie,
@@ -14,10 +15,9 @@ import {
   Legend,
   AreaChart,
   Area,
-  ReferenceLine,
 } from "recharts";
-import type { AnalyticsSnapshot } from "@/lib/analytics";
-import { Activity, Database, MapPin, Flame, Zap, TrendingUp, TrendingDown, Clock } from "lucide-react";
+import type { AnalyticsSnapshot, TimeSeriesPoint } from "@/lib/analytics";
+import { Database, MapPin, Flame, Zap, TrendingUp, TrendingDown, Tent, Calendar } from "lucide-react";
 
 const STATUS_COLORS: Record<string, string> = {
   available: "#10b981",
@@ -41,19 +41,186 @@ function formatRelative(iso: string | null): string {
   return `${Math.floor(hr / 24)}d ago`;
 }
 
+function fmtDate(iso: string): string {
+  return new Date(iso + "T00:00:00Z").toLocaleDateString("en-CA", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+type PeriodKey = "tonight" | "weekend" | "month" | "summer" | "window";
+
+const PERIODS: Array<{ key: PeriodKey; label: string }> = [
+  { key: "tonight", label: "Tonight" },
+  { key: "weekend", label: "This weekend" },
+  { key: "month", label: "This month" },
+  { key: "summer", label: "This summer" },
+  { key: "window", label: "Next 90 days" },
+];
+
+/**
+ * Slice the 90-day time series to the user's selected period. The `tonight`
+ * label is a polite fiction — operators hold the first ~14 days back, so
+ * tonight is really "the soonest night you could book". We treat the first
+ * row of timeSeries as `tonight` for that reason.
+ */
+function sliceForPeriod(series: TimeSeriesPoint[], key: PeriodKey): TimeSeriesPoint[] {
+  if (series.length === 0) return [];
+  if (key === "window") return series;
+  if (key === "tonight") return series.slice(0, 1);
+
+  const first = new Date(series[0].night_date + "T00:00:00Z");
+
+  if (key === "weekend") {
+    // First Fri-Sat-Sun starting on or after the first bookable night.
+    // We include Friday + Saturday + Sunday (the camping weekend).
+    const start = new Date(first);
+    while (start.getUTCDay() !== 5) start.setUTCDate(start.getUTCDate() + 1); // 5 = Friday
+    const startIso = start.toISOString().slice(0, 10);
+    const end = new Date(start);
+    end.setUTCDate(end.getUTCDate() + 2); // Sunday
+    const endIso = end.toISOString().slice(0, 10);
+    return series.filter((p) => p.night_date >= startIso && p.night_date <= endIso);
+  }
+
+  if (key === "month") {
+    // From the first available night to the end of THAT calendar month.
+    const endOfMonth = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0));
+    const endIso = endOfMonth.toISOString().slice(0, 10);
+    return series.filter((p) => p.night_date <= endIso);
+  }
+
+  if (key === "summer") {
+    // Through to August 31 of the first year in the window. Most ON parks
+    // wind down by Labour Day; we round up to end-of-Aug for simplicity.
+    const summerEnd = new Date(Date.UTC(first.getUTCFullYear(), 7, 31)); // 7 = August
+    const endIso = summerEnd.toISOString().slice(0, 10);
+    return series.filter((p) => p.night_date <= endIso);
+  }
+  return series;
+}
+
+function PeriodTabs({ value, onChange }: { value: PeriodKey; onChange: (k: PeriodKey) => void }) {
+  return (
+    <div className="flex items-center gap-1 p-1 rounded-lg bg-stone-100 ring-1 ring-stone-200 overflow-x-auto">
+      {PERIODS.map((p) => {
+        const active = value === p.key;
+        return (
+          <button
+            key={p.key}
+            type="button"
+            onClick={() => onChange(p.key)}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md whitespace-nowrap transition-colors ${
+              active ? "bg-white text-stone-900 shadow-sm ring-1 ring-stone-200" : "text-stone-600 hover:text-stone-900"
+            }`}
+          >
+            {p.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function Stat({
+  icon: Icon,
+  title,
+  value,
+  sub,
+  accent,
+}: {
+  icon: typeof Database;
+  title: string;
+  value: string;
+  sub: string;
+  accent?: "emerald" | "red" | "stone" | "amber";
+}) {
+  const bar =
+    accent === "emerald"
+      ? "from-emerald-400 to-emerald-600"
+      : accent === "red"
+      ? "from-red-400 to-red-600"
+      : accent === "amber"
+      ? "from-amber-400 to-amber-600"
+      : "from-stone-400 to-stone-600";
+  return (
+    <div className="card p-5 relative overflow-hidden">
+      <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${bar}`} />
+      <div className="flex items-center justify-between">
+        <div className="text-xs text-stone-500 uppercase tracking-wide">{title}</div>
+        <Icon size={14} className="text-stone-400" />
+      </div>
+      <div className="mt-2 text-3xl font-semibold tabular-nums text-stone-900">{value}</div>
+      <div className="mt-1.5 text-xs text-stone-500 leading-tight">{sub}</div>
+    </div>
+  );
+}
+
+function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ name?: string; value?: number; color?: string }>; label?: string }) {
+  if (!active || !payload?.length) return null;
+  const fmtLabel = label && /^\d{4}-\d{2}-\d{2}$/.test(label) ? fmtDate(label) : label;
+  return (
+    <div className="rounded-md bg-white shadow-md ring-1 ring-stone-200 px-3 py-2 text-xs">
+      {fmtLabel && <div className="font-semibold text-stone-900 mb-1">{fmtLabel}</div>}
+      {payload.map((p, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: p.color }} />
+          <span className="text-stone-700">{p.name}</span>
+          <span className="ml-2 font-medium text-stone-900 tabular-nums">{fmt(Number(p.value ?? 0))}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function AnalyticsView({ snapshot }: { snapshot: AnalyticsSnapshot }) {
   const { totals, statusBreakdown, operators, regions, siteTypes, leaderboard, electric, timeSeries } = snapshot;
-  // Two distinct denominators in play:
-  //   - site-level: `sites_with_availability / sites` ⇒ "% of campsites with any open dates"
-  //   - night-level: `nights_<state> / nights_total` ⇒ "% of nights in this state"
-  // Mixing them produces "millions of available sites" nonsense.
-  const nightsDenom = Math.max(totals.nights_total, 1);
-  const availSitesPct = totals.sites > 0
-    ? Math.round((totals.sites_with_availability / totals.sites) * 100)
-    : 0;
-  const availNightsPct = Math.round((totals.nights_available / nightsDenom) * 100);
-  const reservedNightsPct = Math.round((totals.nights_reserved / nightsDenom) * 100);
-  const closedNightsPct = Math.round((totals.nights_closed / nightsDenom) * 100);
+  const [period, setPeriod] = useState<PeriodKey>("tonight");
+
+  const periodSeries = useMemo(() => sliceForPeriod(timeSeries, period), [timeSeries, period]);
+
+  // Site-nights inside the selected period
+  const periodNights = periodSeries.reduce(
+    (acc, p) => {
+      acc.available += p.available;
+      acc.reserved += p.reserved;
+      acc.closed += p.closed;
+      acc.total += p.total_sampled;
+      return acc;
+    },
+    { available: 0, reserved: 0, closed: 0, total: 0 },
+  );
+
+  // For the headline numbers we mostly care about how many *sites* a user
+  // could actually book during the period. For single-night periods that's
+  // exactly `periodSeries[0].available`. For multi-night periods we report
+  // the median, which approximates "how many sites are available on a
+  // typical night in this range".
+  const sitesAvailableInPeriod = (() => {
+    if (periodSeries.length === 0) return 0;
+    if (periodSeries.length === 1) return periodSeries[0].available;
+    const sorted = [...periodSeries].map((p) => p.available).sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 === 0 ? Math.round((sorted[mid - 1] + sorted[mid]) / 2) : sorted[mid];
+  })();
+  const sitesBookedInPeriod = (() => {
+    if (periodSeries.length === 0) return 0;
+    if (periodSeries.length === 1) return periodSeries[0].reserved;
+    const sorted = [...periodSeries].map((p) => p.reserved).sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 === 0 ? Math.round((sorted[mid - 1] + sorted[mid]) / 2) : sorted[mid];
+  })();
+  const sitesAvailPct = totals.sites > 0 ? Math.round((sitesAvailableInPeriod / totals.sites) * 100) : 0;
+  const sitesBookedPct = totals.sites > 0 ? Math.round((sitesBookedInPeriod / totals.sites) * 100) : 0;
+
+  const periodRangeLabel = (() => {
+    if (periodSeries.length === 0) return "no data";
+    if (periodSeries.length === 1) return fmtDate(periodSeries[0].night_date);
+    return `${fmtDate(periodSeries[0].night_date)} – ${fmtDate(periodSeries[periodSeries.length - 1].night_date)}`;
+  })();
+
+  const periodLabel = PERIODS.find((p) => p.key === period)?.label ?? "Selected window";
 
   const operatorStacked = operators.map((o) => ({
     name: o.operator.replace(/ Region CA$/, " CA").replace(/ Peninsula CA$/, " CA"),
@@ -69,7 +236,6 @@ export function AnalyticsView({ snapshot }: { snapshot: AnalyticsSnapshot }) {
     pct: r.total_sites > 0 ? Math.round((r.available / r.total_sites) * 100) : 0,
   }));
 
-  // Top 10 site types — anything past 10 → "Other"
   const siteTypePieData = (() => {
     const top = siteTypes.slice(0, 10);
     const rest = siteTypes.slice(10);
@@ -89,109 +255,135 @@ export function AnalyticsView({ snapshot }: { snapshot: AnalyticsSnapshot }) {
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Ontario camping right now</h1>
           <p className="text-stone-600 mt-1">
-            Live booking pressure across every operator we index. Updated{" "}
+            Live availability across every park network we index. Updated{" "}
             <span className="font-medium text-stone-900">{formatRelative(snapshot.generated_at)}</span>.
           </p>
         </div>
-        <Link
-          href="/search"
-          className="btn-primary"
-        >
+        <Link href="/search" className="btn-primary">
           Search available sites →
         </Link>
       </div>
 
-      {/* Headline cards.
-       *
-       * Top row counts *campsites* (one row per site). Bottom row counts
-       * *site-nights* across the 90-day window — i.e. each site contributes
-       * up to 90 entries, so totals run into the millions. Keeping these
-       * separate avoids the "millions of available sites" misread. */}
-      <div className="mt-8 grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Period selector */}
+      <div className="mt-6 flex items-center justify-between flex-wrap gap-3">
+        <PeriodTabs value={period} onChange={setPeriod} />
+        <div className="text-xs text-stone-500 inline-flex items-center gap-1.5">
+          <Calendar size={12} />
+          {periodLabel} · <span className="text-stone-700">{periodRangeLabel}</span>
+        </div>
+      </div>
+
+      {/* Period-aware headline cards */}
+      <div className="mt-4 grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Stat
           icon={Database}
           title="Sites indexed"
           value={fmt(totals.sites)}
-          sub={`${fmt(totals.parks)} parks · ${fmt(totals.operators)} operators`}
+          sub={`${fmt(totals.parks)} parks · ${fmt(totals.operators)} networks`}
         />
         <Stat
           icon={TrendingUp}
-          title="Sites with open dates"
-          value={fmt(totals.sites_with_availability)}
-          sub={`${availSitesPct}% of indexed sites have at least one open night`}
+          title={periodSeries.length <= 1 ? "Sites available" : "Sites available (median night)"}
+          value={fmt(sitesAvailableInPeriod)}
+          sub={`${sitesAvailPct}% of indexed sites · ${periodLabel.toLowerCase()}`}
           accent="emerald"
         />
         <Stat
           icon={Flame}
-          title="Booked nights"
-          value={fmt(totals.nights_reserved)}
-          sub={`${reservedNightsPct}% of nights in the 90-day window`}
+          title={periodSeries.length <= 1 ? "Sites booked" : "Sites booked (median night)"}
+          value={fmt(sitesBookedInPeriod)}
+          sub={`${sitesBookedPct}% of indexed sites · ${periodLabel.toLowerCase()}`}
           accent="red"
         />
         <Stat
-          icon={Clock}
-          title="Closed nights"
-          value={fmt(totals.nights_closed)}
-          sub={`${closedNightsPct}% of nights · seasonal or unbookable`}
-          accent="stone"
+          icon={Tent}
+          title="Site-nights in window"
+          value={fmt(periodNights.total)}
+          sub={`${fmt(periodNights.available)} bookable nights across ${periodSeries.length} ${
+            periodSeries.length === 1 ? "night" : "nights"
+          }`}
+          accent="amber"
         />
       </div>
-      <p className="mt-2 text-xs text-stone-500">
-        {fmt(totals.nights_available)} bookable site-nights ({availNightsPct}%) across {fmt(totals.nights_total)} total
-        site-nights sampled. One site checked over 90 days counts as 90 nights — not 90 sites.
-      </p>
 
-      {/* Time series — booking pressure across the future window */}
-      {timeSeries.length > 1 && (
-        <section className="mt-10 card p-5">
+      {/* Stacked sites-over-time area chart. Across the selected period,
+       *  shows site count broken down by status per night.
+       */}
+      {periodSeries.length > 1 && (
+        <section className="mt-8 card p-5">
           <div className="flex items-start justify-between mb-1 flex-wrap gap-3">
             <div>
-              <h2 className="text-lg font-semibold tracking-tight">Booking pressure across the window</h2>
+              <h2 className="text-lg font-semibold tracking-tight">Sites available over time</h2>
               <p className="text-xs text-stone-500 mt-0.5">
-                One representative site sampled per park (n = {timeSeries[0]?.total_sampled ?? 0}), per-night availability
-                across {timeSeries.length} days. Higher peaks = more parks open that night.
+                Stacked count of every indexed site by status, night-by-night across {periodLabel.toLowerCase()}
+                ({periodRangeLabel}).
               </p>
             </div>
             <div className="text-xs text-stone-600">
               <span className="font-semibold text-stone-900">
-                {Math.round(
-                  (timeSeries.reduce((sum, p) => sum + p.available, 0) /
-                    Math.max(timeSeries.reduce((sum, p) => sum + p.total_sampled, 0), 1)) * 100,
-                )}%
+                {periodNights.total > 0 ? Math.round((periodNights.available / periodNights.total) * 100) : 0}%
               </span>{" "}
-              avg openness over window
+              avg openness
             </div>
           </div>
-          <div className="h-72 mt-4 -ml-2">
+          <div className="h-80 mt-4 -ml-2">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={timeSeries} margin={{ top: 8, right: 12, left: 0, bottom: 4 }}>
+              <AreaChart data={periodSeries} margin={{ top: 8, right: 12, left: 0, bottom: 4 }}>
                 <defs>
-                  <linearGradient id="avAvail" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#10b981" stopOpacity={0.45} />
-                    <stop offset="100%" stopColor="#10b981" stopOpacity={0.05} />
+                  <linearGradient id="g-av" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#10b981" stopOpacity={0.85} />
+                    <stop offset="100%" stopColor="#10b981" stopOpacity={0.55} />
+                  </linearGradient>
+                  <linearGradient id="g-re" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#ef4444" stopOpacity={0.85} />
+                    <stop offset="100%" stopColor="#ef4444" stopOpacity={0.55} />
+                  </linearGradient>
+                  <linearGradient id="g-cl" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#78716c" stopOpacity={0.85} />
+                    <stop offset="100%" stopColor="#78716c" stopOpacity={0.55} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e7e5e4" />
                 <XAxis
                   dataKey="night_date"
                   tick={{ fontSize: 10, fill: "#78716c" }}
-                  tickFormatter={(v) => {
-                    const d = new Date(v + "T00:00:00Z");
-                    return `${d.toLocaleDateString("en-CA", { month: "short", day: "numeric", timeZone: "UTC" })}`;
-                  }}
-                  interval={Math.max(0, Math.floor(timeSeries.length / 8))}
+                  tickFormatter={(v) => fmtDate(v)}
+                  interval={Math.max(0, Math.floor(periodSeries.length / 8))}
                 />
                 <YAxis tick={{ fontSize: 11, fill: "#78716c" }} tickFormatter={(v) => v.toLocaleString()} />
-                <Tooltip content={<TimeSeriesTooltip />} />
-                <ReferenceLine
-                  x={timeSeries[0]?.night_date}
-                  stroke="#a8a29e"
-                  strokeDasharray="3 3"
-                  label={{ value: "window start", fontSize: 10, fill: "#78716c", position: "insideTopLeft" }}
-                />
-                <Area type="monotone" dataKey="available" stroke="#059669" strokeWidth={2} fill="url(#avAvail)" />
+                <Tooltip content={<ChartTooltip />} />
+                <Legend iconType="circle" wrapperStyle={{ fontSize: 12, paddingTop: 6 }} />
+                <Area type="monotone" stackId="1" dataKey="available" name="Available" stroke="#059669" strokeWidth={1} fill="url(#g-av)" />
+                <Area type="monotone" stackId="1" dataKey="reserved"  name="Reserved"  stroke="#b91c1c" strokeWidth={1} fill="url(#g-re)" />
+                <Area type="monotone" stackId="1" dataKey="closed"    name="Closed"    stroke="#57534e" strokeWidth={1} fill="url(#g-cl)" />
               </AreaChart>
             </ResponsiveContainer>
+          </div>
+        </section>
+      )}
+
+      {periodSeries.length === 1 && (
+        <section className="mt-8 card p-5">
+          <h2 className="text-lg font-semibold tracking-tight">Tonight at a glance</h2>
+          <p className="text-xs text-stone-500 mt-0.5">
+            Single-night snapshot for {periodRangeLabel}. Pick a wider window for the over-time chart.
+          </p>
+          <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
+            <div className="rounded-lg p-4 bg-emerald-50 ring-1 ring-emerald-200">
+              <div className="text-emerald-700 uppercase text-[10px] font-semibold tracking-wide">Available</div>
+              <div className="text-2xl font-semibold text-stone-900 tabular-nums mt-1">{fmt(periodNights.available)}</div>
+              <div className="text-xs text-stone-500 mt-0.5">sites bookable</div>
+            </div>
+            <div className="rounded-lg p-4 bg-red-50 ring-1 ring-red-200">
+              <div className="text-red-700 uppercase text-[10px] font-semibold tracking-wide">Reserved</div>
+              <div className="text-2xl font-semibold text-stone-900 tabular-nums mt-1">{fmt(periodNights.reserved)}</div>
+              <div className="text-xs text-stone-500 mt-0.5">sites taken</div>
+            </div>
+            <div className="rounded-lg p-4 bg-stone-100 ring-1 ring-stone-200">
+              <div className="text-stone-700 uppercase text-[10px] font-semibold tracking-wide">Closed</div>
+              <div className="text-2xl font-semibold text-stone-900 tabular-nums mt-1">{fmt(periodNights.closed)}</div>
+              <div className="text-xs text-stone-500 mt-0.5">seasonal / unbookable</div>
+            </div>
           </div>
         </section>
       )}
@@ -200,8 +392,10 @@ export function AnalyticsView({ snapshot }: { snapshot: AnalyticsSnapshot }) {
       <section className="mt-6 card p-5">
         <div className="flex items-start justify-between mb-1">
           <div>
-            <h2 className="text-lg font-semibold tracking-tight">Booking pressure by operator</h2>
-            <p className="text-xs text-stone-500 mt-0.5">Stack shows every site under that operator coloured by current status.</p>
+            <h2 className="text-lg font-semibold tracking-tight">Booking pressure by network</h2>
+            <p className="text-xs text-stone-500 mt-0.5">
+              Each network&apos;s sites split by current status. Reflects the first bookable night.
+            </p>
           </div>
         </div>
         <div className="h-72 mt-4 -ml-2">
@@ -212,9 +406,9 @@ export function AnalyticsView({ snapshot }: { snapshot: AnalyticsSnapshot }) {
               <YAxis type="category" dataKey="name" tick={{ fontSize: 12, fill: "#1c1917" }} width={150} />
               <Tooltip content={<ChartTooltip />} />
               <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
-              <Bar dataKey="Available" stackId="s" fill="#10b981" radius={[0, 0, 0, 0]} />
-              <Bar dataKey="Reserved"  stackId="s" fill="#ef4444" />
-              <Bar dataKey="Closed"    stackId="s" fill="#991b1b" />
+              <Bar dataKey="Available" stackId="s" fill="#10b981" />
+              <Bar dataKey="Reserved" stackId="s" fill="#ef4444" />
+              <Bar dataKey="Closed" stackId="s" fill="#991b1b" />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -224,7 +418,7 @@ export function AnalyticsView({ snapshot }: { snapshot: AnalyticsSnapshot }) {
       <section className="mt-6 grid lg:grid-cols-3 gap-6">
         <div className="card p-5 lg:col-span-2">
           <h2 className="text-lg font-semibold tracking-tight">Availability by region</h2>
-          <p className="text-xs text-stone-500 mt-0.5">How many of each region&apos;s sites are bookable right now.</p>
+          <p className="text-xs text-stone-500 mt-0.5">How many of each region&apos;s sites are bookable on the first night.</p>
           <div className="h-64 mt-4 -ml-2">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={regionStacked} margin={{ top: 8, right: 12, left: 0, bottom: 4 }}>
@@ -234,7 +428,7 @@ export function AnalyticsView({ snapshot }: { snapshot: AnalyticsSnapshot }) {
                 <Tooltip content={<ChartTooltip />} />
                 <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
                 <Bar dataKey="Available" stackId="s" fill="#10b981" />
-                <Bar dataKey="Booked"    stackId="s" fill="#ef4444" />
+                <Bar dataKey="Booked" stackId="s" fill="#ef4444" />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -359,56 +553,25 @@ export function AnalyticsView({ snapshot }: { snapshot: AnalyticsSnapshot }) {
         />
       </section>
 
-      {/* Footnote */}
       <p className="mt-10 text-xs text-stone-500 leading-relaxed">
-        Sources: Ontario Parks (Camis5), Parks Canada (PCRSv3), and six GoingToCamp-backed Conservation Authorities,
+        Sources: Ontario Parks (Camis5), Parks Canada (PCRSv3), and the GoingToCamp-backed Conservation Authorities,
         polled live for this snapshot. <Link href="/freshness" className="text-forest-700 hover:underline">See data freshness</Link>{" "}
-        for per-operator update times. Per-night precision varies — these counts reflect each site&apos;s status across our 90-day forward window.
+        for per-operator update times.
       </p>
     </div>
   );
 }
 
-function Stat({
-  icon: Icon,
-  title,
-  value,
-  sub,
-  accent,
-}: {
-  icon: typeof Activity;
-  title: string;
-  value: string;
-  sub: string;
-  accent?: "emerald" | "red" | "stone";
-}) {
-  const ring =
-    accent === "emerald"
-      ? "ring-emerald-200/60 bg-gradient-to-br from-emerald-50 to-white"
-      : accent === "red"
-      ? "ring-red-200/60 bg-gradient-to-br from-red-50 to-white"
-      : accent === "stone"
-      ? "ring-stone-200 bg-gradient-to-br from-stone-50 to-white"
-      : "ring-stone-200";
-  const iconBg =
-    accent === "emerald"
-      ? "bg-emerald-100 text-emerald-700"
-      : accent === "red"
-      ? "bg-red-100 text-red-700"
-      : accent === "stone"
-      ? "bg-stone-200 text-stone-700"
-      : "bg-forest-100 text-forest-700";
-  return (
-    <div className={`card p-5 ${ring}`}>
-      <div className={`inline-flex h-9 w-9 items-center justify-center rounded-lg ${iconBg}`}>
-        <Icon size={18} />
-      </div>
-      <div className="mt-3 text-xs text-stone-500 uppercase tracking-wide">{title}</div>
-      <div className="text-3xl font-semibold mt-0.5 tabular-nums">{value}</div>
-      <div className="text-xs text-stone-500 mt-1 leading-relaxed">{sub}</div>
-    </div>
-  );
-}
+type LeaderRow = {
+  slug: string;
+  name: string;
+  operator: string;
+  operator_id: string;
+  region: string;
+  total_sites: number;
+  available: number;
+  availability_pct: number;
+};
 
 function Leaderboard({
   title,
@@ -419,105 +582,46 @@ function Leaderboard({
 }: {
   title: string;
   subtitle: string;
-  icon: typeof Activity;
+  icon: typeof TrendingUp;
   accent: "emerald" | "red";
-  rows: AnalyticsSnapshot["leaderboard"]["mostAvailable"];
+  rows: LeaderRow[];
 }) {
-  const fill = accent === "emerald" ? "#10b981" : "#ef4444";
-  const text = accent === "emerald" ? "text-emerald-700" : "text-red-700";
   return (
     <div className="card p-5">
-      <div className="flex items-baseline gap-2">
-        <Icon size={16} className={text} />
-        <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
+      <div className="flex items-start justify-between">
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight inline-flex items-center gap-2">
+            <Icon size={16} className={accent === "emerald" ? "text-emerald-600" : "text-red-600"} />
+            {title}
+          </h2>
+          <p className="text-xs text-stone-500 mt-0.5">{subtitle}</p>
+        </div>
       </div>
-      <p className="text-xs text-stone-500 mt-0.5">{subtitle}</p>
-      <ul className="mt-4 space-y-2">
-        {rows.map((p, i) => (
-          <li key={p.slug} className="flex items-center gap-3">
-            <span className="w-5 text-xs text-stone-400 tabular-nums shrink-0">{i + 1}</span>
-            <div className="flex-1 min-w-0">
-              <Link href={`/park/${p.slug}`} className="text-sm font-medium text-stone-900 hover:text-forest-700 truncate block">
-                {p.name}
+      <ol className="mt-4 space-y-1.5">
+        {rows.map((r, i) => {
+          const pctColor =
+            accent === "emerald"
+              ? r.availability_pct >= 50
+                ? "text-emerald-700"
+                : "text-stone-700"
+              : r.availability_pct < 20
+              ? "text-red-700"
+              : "text-stone-700";
+          return (
+            <li key={r.slug} className="flex items-baseline justify-between gap-3 py-1 group">
+              <span className="text-xs text-stone-400 w-5 shrink-0 tabular-nums">{i + 1}</span>
+              <Link
+                href={`/park/${r.slug}`}
+                className="flex-1 truncate text-sm text-stone-800 hover:text-forest-700"
+              >
+                {r.name}
               </Link>
-              <div className="text-[11px] text-stone-500 truncate">
-                {p.operator} · {p.region}
-              </div>
-            </div>
-            <div className="text-xs text-stone-600 tabular-nums shrink-0 text-right min-w-[120px]">
-              <div className="flex items-center gap-2 justify-end">
-                <span className="text-stone-500">{fmt(p.available)} / {fmt(p.total_sites)}</span>
-                <span
-                  className="font-semibold tabular-nums w-9 text-right"
-                  style={{ color: fill }}
-                >
-                  {p.availability_pct}%
-                </span>
-              </div>
-              <div className="mt-1 h-1 w-full bg-stone-100 rounded-full overflow-hidden">
-                <div
-                  className="h-full rounded-full"
-                  style={{ width: `${p.availability_pct}%`, backgroundColor: fill }}
-                />
-              </div>
-            </div>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function TimeSeriesTooltip({
-  active,
-  payload,
-  label,
-}: {
-  active?: boolean;
-  payload?: Array<{ value?: number; payload?: { total_sampled?: number; reserved?: number } }>;
-  label?: string;
-}) {
-  if (!active || !payload || payload.length === 0) return null;
-  const p = payload[0];
-  const total = p.payload?.total_sampled ?? 0;
-  const avail = p.value ?? 0;
-  const pct = total > 0 ? Math.round((avail / total) * 100) : 0;
-  const d = label ? new Date(label + "T00:00:00Z") : null;
-  return (
-    <div className="bg-white ring-1 ring-stone-200 shadow-md rounded-md px-3 py-2 text-xs">
-      {d && (
-        <div className="font-semibold text-stone-900 mb-1">
-          {d.toLocaleDateString("en-CA", { weekday: "short", month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}
-        </div>
-      )}
-      <div className="flex items-center gap-2 text-stone-700">
-        <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
-        <span>Available: <span className="font-medium tabular-nums">{avail.toLocaleString()}</span> of {total.toLocaleString()} ({pct}%)</span>
-      </div>
-    </div>
-  );
-}
-
-function ChartTooltip({
-  active,
-  payload,
-  label,
-}: {
-  active?: boolean;
-  payload?: Array<{ name?: string; value?: number; payload?: { name?: string } }>;
-  label?: string;
-}) {
-  if (!active || !payload || payload.length === 0) return null;
-  const heading = label || payload[0]?.payload?.name || payload[0]?.name;
-  return (
-    <div className="bg-white ring-1 ring-stone-200 shadow-md rounded-md px-3 py-2 text-xs">
-      {heading && <div className="font-semibold text-stone-900 mb-1">{heading}</div>}
-      {payload.map((entry, i) => (
-        <div key={i} className="flex items-center gap-2 text-stone-700">
-          <span>{entry.name}:</span>
-          <span className="font-medium tabular-nums">{(entry.value ?? 0).toLocaleString()}</span>
-        </div>
-      ))}
+              <span className="text-xs text-stone-500 truncate hidden sm:inline">{r.region}</span>
+              <span className={`text-sm font-semibold tabular-nums ${pctColor}`}>{r.availability_pct}%</span>
+            </li>
+          );
+        })}
+      </ol>
     </div>
   );
 }

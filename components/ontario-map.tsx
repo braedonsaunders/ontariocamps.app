@@ -69,6 +69,14 @@ export function OntarioMap({ parks }: { parks: Park[] }) {
     });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
     map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
+    // Force a resize after the layout settles. If the container had 0 height
+    // when init ran (flex layout still resolving inside a motion.div), this
+    // catches it once the browser paints.
+    const ro = new ResizeObserver(() => map.resize());
+    ro.observe(containerRef.current);
+    // Also trigger once after the next frame, which fixes the common case
+    // where width/height resolve right after first paint.
+    requestAnimationFrame(() => map.resize());
 
     map.on("load", () => {
       map.addSource("parks", {
@@ -190,6 +198,7 @@ export function OntarioMap({ parks }: { parks: Park[] }) {
     });
 
     return () => {
+      ro.disconnect();
       map.remove();
       mapRef.current = null;
     };
