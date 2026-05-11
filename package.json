@@ -25,6 +25,10 @@
     "better-sqlite3": "^11.5.0",
     "recharts": "^2.13.3"
   },
+  "overrides": {
+    "react": "19.0.0-rc-66855b96-20241106",
+    "react-dom": "19.0.0-rc-66855b96-20241106"
+  },
   "devDependencies": {
     "@types/node": "^22",
     "@types/react": "^18",
