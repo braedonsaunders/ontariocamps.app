@@ -10,12 +10,14 @@ import {
   getParkReviews,
   getParkReviewAggregate,
   getRecentSiteReviewsForPark,
+  getSiteReviewStatsForPark,
 } from "@/lib/data-source";
 import { getSiteAvailabilityForPark } from "@/lib/db/queries";
 import { MapPin } from "lucide-react";
 import { type CalendarRow } from "@/components/availability-calendar";
 import { MotionHero } from "@/components/motion";
 import { ParkTabs, type DateContext } from "@/components/park-tabs";
+import type { SiteStatsEntry } from "@/components/site-field-notes";
 
 export const dynamic = "force-dynamic";
 
@@ -75,7 +77,7 @@ export default async function ParkPage({
   const park = await getParkBySlug(slug);
   if (!park) notFound();
 
-  const [operator, parkCampMaps, allParkSites, operatorEquipment, perNight, parkReviews, parkReviewAggregate, recentSiteReviews] = await Promise.all([
+  const [operator, parkCampMaps, allParkSites, operatorEquipment, perNight, parkReviews, parkReviewAggregate, recentSiteReviews, siteReviewStats] = await Promise.all([
     getOperatorWithStats(park.operator_id),
     getCampMapsForPark(park.id),
     getSitesForPark(park.id),
@@ -84,6 +86,7 @@ export default async function ParkPage({
     getParkReviews(park.id),
     getParkReviewAggregate(park.id),
     getRecentSiteReviewsForPark(park.id),
+    getSiteReviewStatsForPark(park.id),
   ]);
   if (!operator) notFound();
 
@@ -213,6 +216,37 @@ export default async function ParkPage({
     vendorSiteIds[s.id] = s.vendor_site_id;
   }
 
+  const siteBookingData: Record<string, { total: number; available: number; reserved: number }> = {};
+  for (const s of allParkSites) {
+    const rows = nightsBySite.get(s.id) ?? [];
+    let available = 0;
+    let reserved = 0;
+    for (const r of rows) {
+      if (r.status === "available") available++;
+      else if (r.status === "reserved") reserved++;
+    }
+    siteBookingData[s.id] = { total: rows.length, available, reserved };
+  }
+
+  const reviewStatsMap = new Map(siteReviewStats.map((r) => [r.site_id, r]));
+  const siteStats: SiteStatsEntry[] = allParkSites.map((s) => {
+    const booking = siteBookingData[s.id] ?? { total: 0, available: 0, reserved: 0 };
+    const review = reviewStatsMap.get(s.id);
+    return {
+      id: s.id,
+      name: s.name,
+      siteTypeLabel: s.site_type_label ?? s.site_type,
+      hasElectric: s.has_electric,
+      isWaterfront: s.is_waterfront,
+      isPetFriendly: s.is_pet_friendly,
+      totalNights: booking.total,
+      availableNights: booking.available,
+      reservedNights: booking.reserved,
+      reviewCount: review?.review_count ?? 0,
+      ratingAvg: review?.rating_avg ?? null,
+    };
+  });
+
   return (
     <div>
       <section className="relative h-64 sm:h-80 lg:h-96 bg-gradient-to-br from-forest-700 to-forest-900 overflow-hidden">
@@ -271,6 +305,7 @@ export default async function ParkPage({
         parkReviewAggregate={parkReviewAggregate}
         recentSiteReviews={recentSiteReviews}
         parkId={park.id}
+        siteStats={siteStats}
       />
     </div>
   );

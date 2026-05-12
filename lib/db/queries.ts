@@ -527,6 +527,16 @@ export async function getRecentSiteReviewsForPark(parkId: string, limit = 5): Pr
   return rows.map((r) => ({ ...rowToSiteReview(r), site_name: r.site_name }));
 }
 
+export async function getSiteReviewStatsForPark(parkId: string): Promise<Array<{ site_id: string; review_count: number; rating_avg: number | null }>> {
+  const rows = await sql()<Array<{ site_id: string; review_count: number; rating_avg: number | null }>>`
+    SELECT s.id AS site_id, COALESCE(s.review_count, 0) AS review_count, s.rating_avg
+      FROM sites s
+      JOIN campgrounds c ON c.id = s.campground_id
+     WHERE c.park_id = ${parkId}
+  `;
+  return rows;
+}
+
 // ─── Review writes ────────────────────────────────────────────────────────────
 
 export async function insertSiteReview(input: {

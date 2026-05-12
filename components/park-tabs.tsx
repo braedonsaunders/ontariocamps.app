@@ -7,8 +7,9 @@ import type { Site, CampMap, EquipmentOption, ParkReview, SiteReviewAggregate, P
 import { AvailabilityCalendar, type CalendarRow } from "@/components/availability-calendar";
 import { CampgroundMap } from "@/components/campground-map";
 import { ParkReviewAggregateDisplay, ParkReviewList, ParkReviewForm } from "@/components/reviews";
+import { SiteFieldNotes, type SiteStatsEntry } from "@/components/site-field-notes";
 import { timeAgo } from "@/lib/utils";
-import { Info, Map as MapIcon, Calendar, Tent, ArrowUpRight, CalendarRange, MessageSquare } from "lucide-react";
+import { Info, Map as MapIcon, Calendar, Tent, ArrowUpRight, CalendarRange, MessageSquare, TreePine } from "lucide-react";
 
 type SiteAvailability = {
   status: "available" | "reserved" | "closed" | "unknown";
@@ -50,9 +51,11 @@ type Props = {
   parkReviewAggregate: ParkReviewAggregate;
   recentSiteReviews: Array<import("@/lib/types").SiteReview & { site_name: string }>;
   parkId: string;
+  siteStats: SiteStatsEntry[];
 };
 
-type Tab = "overview" | "map" | "calendar" | "reviews";
+type Tab = "overview" | "sites" | "calendar" | "reviews";
+type SitesSubTab = "map" | "field-notes";
 
 function formatDate(iso: string): string {
   return new Date(iso + "T00:00:00Z").toLocaleDateString("en-CA", {
@@ -123,9 +126,11 @@ export function ParkTabs(props: Props) {
     parkReviewAggregate,
     recentSiteReviews,
     parkId,
+    siteStats,
   } = props;
 
   const [activeTab, setActiveTab] = useState<Tab>("overview");
+  const [sitesSubTab, setSitesSubTab] = useState<SitesSubTab>("map");
   const [selectedSection, setSelectedSection] = useState<string | undefined>(undefined);
 
   const siteTypeCounts = useMemo(() => {
@@ -139,8 +144,8 @@ export function ParkTabs(props: Props) {
 
   function jumpToSection(campMapId: string) {
     setSelectedSection(campMapId);
-    setActiveTab("map");
-    // Scroll the tab content into view on mobile where the map sits below
+    setActiveTab("sites");
+    setSitesSubTab("map");
     setTimeout(() => {
       const el = document.getElementById("park-tab-content");
       el?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -149,10 +154,20 @@ export function ParkTabs(props: Props) {
 
   const TABS: Array<{ id: Tab; label: string; icon: typeof Info }> = [
     { id: "overview", label: "Overview", icon: Info },
-    { id: "map", label: "Map", icon: MapIcon },
+    { id: "sites", label: "Sites", icon: Tent },
     { id: "calendar", label: "Calendar", icon: Calendar },
     { id: "reviews", label: "Reviews", icon: MessageSquare },
   ];
+
+  const SITES_SUBTABS: Array<{ id: SitesSubTab; label: string; icon: typeof MapIcon }> = [
+    { id: "map", label: "Map", icon: MapIcon },
+    { id: "field-notes", label: "Field Notes", icon: TreePine },
+  ];
+
+  const availableNowCount = useMemo(
+    () => Object.values(availabilitySummary).filter((a) => a.status === "available").length,
+    [availabilitySummary],
+  );
 
   return (
     <section className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
@@ -205,7 +220,7 @@ export function ParkTabs(props: Props) {
                   <div className="flex items-baseline justify-between mb-3 flex-wrap gap-2">
                     <h2 className="text-xl font-semibold tracking-tight">Campgrounds</h2>
                     <span className="text-xs text-stone-500">
-                      {campMapSummaries.length} {campMapSummaries.length === 1 ? "section" : "sections"} · click any card to open in the Map tab
+                      {campMapSummaries.length} {campMapSummaries.length === 1 ? "section" : "sections"} · click any card to open in the Sites tab
                     </span>
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
@@ -263,35 +278,78 @@ export function ParkTabs(props: Props) {
               </motion.div>
             )}
 
-            {activeTab === "map" && (
+            {activeTab === "sites" && (
               <motion.div
-                key="map"
+                key="sites"
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -4 }}
                 transition={{ duration: 0.25 }}
               >
-                {campMapSummaries.length === 0 ? (
-                  <div className="card p-8 text-center text-stone-500">
-                    No campground layouts available for this park yet.
-                  </div>
-                ) : (
+                <div className="flex items-center gap-1 p-1 rounded-lg bg-stone-100 ring-1 ring-stone-200 mb-4 w-fit">
+                  {SITES_SUBTABS.map((st) => {
+                    const active = sitesSubTab === st.id;
+                    return (
+                      <button
+                        key={st.id}
+                        type="button"
+                        onClick={() => setSitesSubTab(st.id)}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md whitespace-nowrap transition-colors ${
+                          active
+                            ? "bg-white text-stone-900 shadow-sm ring-1 ring-stone-200"
+                            : "text-stone-600 hover:text-stone-900"
+                        }`}
+                      >
+                        <st.icon size={12} />
+                        {st.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {sitesSubTab === "map" && (
+                  <>
+                    {campMapSummaries.length === 0 ? (
+                      <div className="card p-8 text-center text-stone-500">
+                        No campground layouts available for this park yet.
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex items-baseline justify-between mb-3 flex-wrap gap-2">
+                          <h2 className="text-xl font-semibold tracking-tight">Campground layout</h2>
+                          <span className="text-xs text-stone-500">
+                            Click any site for details · open in {operatorName} to book
+                          </span>
+                        </div>
+                        <CampgroundMap
+                          campMaps={campMapSummaries}
+                          sites={sites}
+                          availabilitySummary={availabilitySummary}
+                          bookingUrls={bookingUrls}
+                          operatorName={operatorName}
+                          equipmentOptions={equipmentOptions}
+                          parkSlug={parkSlug}
+                          initialMapId={selectedSection}
+                        />
+                      </>
+                    )}
+                  </>
+                )}
+
+                {sitesSubTab === "field-notes" && (
                   <>
                     <div className="flex items-baseline justify-between mb-3 flex-wrap gap-2">
-                      <h2 className="text-xl font-semibold tracking-tight">Campground layout</h2>
+                      <h2 className="text-xl font-semibold tracking-tight">Field Notes</h2>
                       <span className="text-xs text-stone-500">
-                        Click any site for details · open in {operatorName} to book
+                        Stats, ratings, and popularity rankings for this park&apos;s campsites
                       </span>
                     </div>
-                    <CampgroundMap
-                      campMaps={campMapSummaries}
-                      sites={sites}
-                      availabilitySummary={availabilitySummary}
-                      bookingUrls={bookingUrls}
-                      operatorName={operatorName}
-                      equipmentOptions={equipmentOptions}
+                    <SiteFieldNotes
                       parkSlug={parkSlug}
-                      initialMapId={selectedSection}
+                      totalSites={totalSites}
+                      availableCount={availableNowCount}
+                      siteStats={siteStats}
+                      recentSiteReviews={recentSiteReviews}
                     />
                   </>
                 )}

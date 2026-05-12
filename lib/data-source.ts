@@ -25,6 +25,7 @@ import {
   getParkReviews,
   getParkReviewAggregate,
   getRecentSiteReviewsForPark,
+  getSiteReviewStatsForPark,
   type RefreshLogRow,
 } from "./db/queries";
 import type { Operator, Park, Campground, Site, CampMap, EquipmentOption, SiteReview, ParkReview, SiteReviewAggregate, ParkReviewAggregate } from "./types";
@@ -35,6 +36,7 @@ export {
   getParkReviews,
   getParkReviewAggregate,
   getRecentSiteReviewsForPark,
+  getSiteReviewStatsForPark,
 };
 export type { SiteReview, ParkReview, SiteReviewAggregate, ParkReviewAggregate };
 
