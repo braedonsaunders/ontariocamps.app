@@ -149,6 +149,66 @@
     "lng": -81.185625,
     "region": "Southwestern"
   },
+  "st_lawrence_parks:-2147483647": {
+    "lat": 44.3692416,
+    "lng": -75.9843592,
+    "region": "Southeastern",
+    "heroImageUrl": "https://www.stlawrenceparks.com/wp-content/uploads/sites/4/2026/02/DavidTaillon_SeniorParkWorker_IvyLea_2025_4-scaled.jpg"
+  },
+  "st_lawrence_parks:-2147483646": {
+    "lat": 44.9341281,
+    "lng": -75.1213076,
+    "region": "Eastern",
+    "heroImageUrl": "https://www.stlawrenceparks.com/wp-content/uploads/sites/4/2022/07/Riverside_Cedar_2022-6.jpg"
+  },
+  "st_lawrence_parks:-2147483643": {
+    "lat": 44.4560025,
+    "lng": -75.8576922,
+    "region": "Southeastern",
+    "heroImageUrl": "https://www.stlawrenceparks.com/wp-content/uploads/sites/4/2024/05/Parks-BB-Drone-2023-H-13-scaled.jpg"
+  },
+  "st_lawrence_parks:-2147483642": {
+    "lat": 44.937509,
+    "lng": -75.090845,
+    "region": "Eastern",
+    "heroImageUrl": "https://www.stlawrenceparks.com/wp-content/uploads/sites/4/2025/05/V-Lake-16.jpg"
+  },
+  "st_lawrence_parks:-2147483641": {
+    "lat": 44.9864226,
+    "lng": -74.9946702,
+    "region": "Eastern",
+    "heroImageUrl": "https://www.stlawrenceparks.com/wp-content/uploads/sites/4/2021/11/cimg-4.jpg"
+  },
+  "st_lawrence_parks:-2147483640": {
+    "lat": 45.1510026,
+    "lng": -74.4639958,
+    "region": "Eastern",
+    "heroImageUrl": "https://www.stlawrenceparks.com/wp-content/uploads/sites/4/2024/09/DSC07885-scaled-e1727291632754.jpg"
+  },
+  "st_lawrence_parks:-2147483639": {
+    "lat": 44.960847,
+    "lng": -75.0198879,
+    "region": "Eastern",
+    "heroImageUrl": "https://www.stlawrenceparks.com/wp-content/uploads/sites/4/2026/04/UCMBS_WaterfrontWalkIn_Sites-scaled.jpg"
+  },
+  "st_lawrence_parks:-2147483638": {
+    "lat": 44.996081,
+    "lng": -74.9740718,
+    "region": "Eastern",
+    "heroImageUrl": "https://www.stlawrenceparks.com/wp-content/uploads/sites/4/2022/02/McLaren-1.jpg"
+  },
+  "st_lawrence_parks:-2147483637": {
+    "lat": 44.9937225,
+    "lng": -74.954585,
+    "region": "Eastern",
+    "heroImageUrl": "https://www.stlawrenceparks.com/wp-content/uploads/sites/4/2026/04/Camping-Woodlands-2023-H-98-2048x1356.png"
+  },
+  "st_lawrence_parks:-2147483636": {
+    "lat": 45.0180088,
+    "lng": -74.8935755,
+    "region": "Eastern",
+    "heroImageUrl": "https://www.stlawrenceparks.com/wp-content/uploads/sites/4/2022/02/Mille-Roches-1.jpg"
+  },
   "ontario_parks:-2147483452": {
     "lat": 48.7910854,
     "lng": -88.6703283,

@@ -6,6 +6,7 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "images.unsplash.com" },
       // Park hero photos sourced from each operator's Camis/PCRS/GoingToCamp images CDN.
       { protocol: "https", hostname: "reservations.ontarioparks.ca" },
+      { protocol: "https", hostname: "reservations.parks.on.ca" },
       { protocol: "https", hostname: "reservation.pc.gc.ca" },
       { protocol: "https", hostname: "*.goingtocamp.com" },
       { protocol: "https", hostname: "www.grcacamping.ca" },
@@ -19,6 +20,7 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "www.scrca.on.ca" },
       { protocol: "https", hostname: "www.otonabeeconservation.com" },
       { protocol: "https", hostname: "www.lprca.on.ca" },
+      { protocol: "https", hostname: "www.stlawrenceparks.com" },
     ],
   },
 };

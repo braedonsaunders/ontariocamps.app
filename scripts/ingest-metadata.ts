@@ -26,6 +26,12 @@ const PARKS_CANADA: Operator = {
   booking_url: "https://reservation.pc.gc.ca/create-booking/results",
   active: true,
 };
+const ST_LAWRENCE_PARKS: Operator = {
+  id: "st_lawrence_parks", name: "Parks of the St. Lawrence", vendor: "camis5",
+  base_url: "https://reservations.parks.on.ca",
+  booking_url: "https://reservations.parks.on.ca/create-booking/results",
+  active: true,
+};
 function gtc(id: string, name: string, host: string): Operator {
   return {
     id: `gtc_${id}`, name, vendor: "goingtocamp",
@@ -38,6 +44,7 @@ function gtc(id: string, name: string, host: string): Operator {
 const OPERATORS: Operator[] = [
   ONTARIO_PARKS,
   PARKS_CANADA,
+  ST_LAWRENCE_PARKS,
   gtc("lprca",        "Long Point Region CA",   "longpoint.goingtocamp.com"),
   gtc("stclair",      "St. Clair Region CA",    "stclair.goingtocamp.com"),
   gtc("otonabee",     "Otonabee Region CA",     "otonabee.goingtocamp.com"),

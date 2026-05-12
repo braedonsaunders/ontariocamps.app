@@ -475,47 +475,48 @@ export async function getAvailabilityHealth(): Promise<AvailabilityHealth> {
       planning_due_sites: number;
       deep_due_sites: number;
     }>>`
-      WITH per_site AS (
+      WITH site_state AS (
         SELECT s.id,
-               today.status AS today_status,
-               today.last_checked_at AS today_last_checked_at,
                ars.hot_last_checked_at,
+               ars.hot_available_nights,
                ars.hot_due_at,
                ars.near_due_at,
                ars.planning_due_at,
                ars.deep_due_at
           FROM sites s
-          LEFT JOIN site_availability today
-                 ON today.site_id = s.id
-                AND today.night_date = CURRENT_DATE
           LEFT JOIN availability_refresh_state ars ON ars.site_id = s.id
+      ),
+      operator_totals AS (
+        SELECT COALESCE(sum(total_sites), 0)::int AS total_sites,
+               COALESCE(sum(available_sites), 0)::int AS available_today
+          FROM operators
       )
-      SELECT count(*)::int AS total_sites,
-             count(today_last_checked_at)::int AS checked_today,
-             count(*) FILTER (WHERE today_status = 'available')::int AS available_today,
-             count(*) FILTER (WHERE today_last_checked_at > now() - interval '1 hour')::int AS checked_last_hour,
-             count(*) FILTER (WHERE today_last_checked_at > now() - interval '2 hours')::int AS checked_last_two_hours,
-             count(*) FILTER (WHERE today_last_checked_at > now() - interval '6 hours')::int AS checked_last_six_hours,
-             count(*) FILTER (WHERE today_last_checked_at > now() - interval '12 hours')::int AS checked_last_twelve_hours,
+      SELECT operator_totals.total_sites,
+             count(hot_last_checked_at)::int AS checked_today,
+             operator_totals.available_today,
+             count(*) FILTER (WHERE hot_last_checked_at > now() - interval '1 hour')::int AS checked_last_hour,
+             count(*) FILTER (WHERE hot_last_checked_at > now() - interval '2 hours')::int AS checked_last_two_hours,
+             count(*) FILTER (WHERE hot_last_checked_at > now() - interval '6 hours')::int AS checked_last_six_hours,
+             count(*) FILTER (WHERE hot_last_checked_at > now() - interval '12 hours')::int AS checked_last_twelve_hours,
              round((
                percentile_cont(0.5) WITHIN GROUP (
-                 ORDER BY extract(epoch FROM (now() - today_last_checked_at)) / 60
-               ) FILTER (WHERE today_last_checked_at IS NOT NULL)
+                 ORDER BY extract(epoch FROM (now() - hot_last_checked_at)) / 60
+               ) FILTER (WHERE hot_last_checked_at IS NOT NULL)
              )::numeric)::int AS current_p50_minutes,
              round((
                percentile_cont(0.9) WITHIN GROUP (
-                 ORDER BY extract(epoch FROM (now() - today_last_checked_at)) / 60
-               ) FILTER (WHERE today_last_checked_at IS NOT NULL)
+                 ORDER BY extract(epoch FROM (now() - hot_last_checked_at)) / 60
+               ) FILTER (WHERE hot_last_checked_at IS NOT NULL)
              )::numeric)::int AS current_p90_minutes,
              round((
                percentile_cont(0.5) WITHIN GROUP (
-                 ORDER BY extract(epoch FROM (now() - today_last_checked_at)) / 60
-               ) FILTER (WHERE today_status = 'available' AND today_last_checked_at IS NOT NULL)
+                 ORDER BY extract(epoch FROM (now() - hot_last_checked_at)) / 60
+               ) FILTER (WHERE hot_available_nights > 0 AND hot_last_checked_at IS NOT NULL)
              )::numeric)::int AS available_p50_minutes,
              round((
                percentile_cont(0.9) WITHIN GROUP (
-                 ORDER BY extract(epoch FROM (now() - today_last_checked_at)) / 60
-               ) FILTER (WHERE today_status = 'available' AND today_last_checked_at IS NOT NULL)
+                 ORDER BY extract(epoch FROM (now() - hot_last_checked_at)) / 60
+               ) FILTER (WHERE hot_available_nights > 0 AND hot_last_checked_at IS NOT NULL)
              )::numeric)::int AS available_p90_minutes,
              round((
                percentile_cont(0.5) WITHIN GROUP (
@@ -531,7 +532,9 @@ export async function getAvailabilityHealth(): Promise<AvailabilityHealth> {
              count(*) FILTER (WHERE near_due_at IS NULL OR near_due_at <= now())::int AS near_due_sites,
              count(*) FILTER (WHERE planning_due_at IS NULL OR planning_due_at <= now())::int AS planning_due_sites,
              count(*) FILTER (WHERE deep_due_at IS NULL OR deep_due_at <= now())::int AS deep_due_sites
-        FROM per_site
+        FROM site_state
+        CROSS JOIN operator_totals
+       GROUP BY operator_totals.total_sites, operator_totals.available_today
     `,
     sql()<Array<{
       id: number;
@@ -580,7 +583,10 @@ export async function getAvailabilityHealth(): Promise<AvailabilityHealth> {
       latest_started_at: MaybeDate;
       average_duration_ms: number | null;
     }>>`
-      SELECT COALESCE(scope, 'all') AS scope,
+      SELECT CASE
+               WHEN scope LIKE 'park:%' THEN 'park-specific'
+               ELSE COALESCE(scope, 'all')
+             END AS scope,
              count(*)::int AS runs,
              COALESCE(sum(sites_updated), 0)::int AS sites_updated,
              COALESCE(sum(nights_updated), 0)::int AS nights_updated,
@@ -589,8 +595,8 @@ export async function getAvailabilityHealth(): Promise<AvailabilityHealth> {
         FROM refresh_log
        WHERE refresh_type = 'availability'
          AND started_at > now() - interval '6 hours'
-       GROUP BY COALESCE(scope, 'all')
-       ORDER BY COALESCE(scope, 'all')
+       GROUP BY 1
+       ORDER BY 1
     `,
     sql()<Array<{
       operator_id: string;
@@ -608,60 +614,46 @@ export async function getAvailabilityHealth(): Promise<AvailabilityHealth> {
       latest_checked_at: MaybeDate;
       latest_checked_minutes_ago: number | null;
     }>>`
-      WITH per_site AS (
-        SELECT o.id AS operator_id,
-               o.name AS operator_name,
-               o.vendor AS operator_vendor,
-               s.id AS site_id,
-               today.status AS today_status,
-               today.last_checked_at AS today_last_checked_at,
-               ars.hot_last_checked_at,
-               ars.hot_due_at
-          FROM sites s
-          JOIN campgrounds c ON c.id = s.campground_id
-          JOIN parks p ON p.id = c.park_id
-          JOIN operators o ON o.id = p.operator_id
-          LEFT JOIN site_availability today
-                 ON today.site_id = s.id
-                AND today.night_date = CURRENT_DATE
-          LEFT JOIN availability_refresh_state ars ON ars.site_id = s.id
-      )
-      SELECT operator_id,
-             operator_name,
-             operator_vendor,
-             count(*)::int AS sites_indexed,
-             count(*) FILTER (WHERE today_status = 'available')::int AS available_today,
-             count(*) FILTER (WHERE today_last_checked_at > now() - interval '2 hours')::int AS checked_last_two_hours,
-             count(*) FILTER (WHERE today_last_checked_at > now() - interval '6 hours')::int AS checked_last_six_hours,
+      SELECT o.id AS operator_id,
+             o.name AS operator_name,
+             o.vendor AS operator_vendor,
+             o.total_sites::int AS sites_indexed,
+             o.available_sites::int AS available_today,
+             count(*) FILTER (WHERE ars.hot_last_checked_at > now() - interval '2 hours')::int AS checked_last_two_hours,
+             count(*) FILTER (WHERE ars.hot_last_checked_at > now() - interval '6 hours')::int AS checked_last_six_hours,
              round((
                percentile_cont(0.5) WITHIN GROUP (
-                 ORDER BY extract(epoch FROM (now() - today_last_checked_at)) / 60
-               ) FILTER (WHERE today_last_checked_at IS NOT NULL)
+                 ORDER BY extract(epoch FROM (now() - ars.hot_last_checked_at)) / 60
+               ) FILTER (WHERE ars.hot_last_checked_at IS NOT NULL)
              )::numeric)::int AS current_p50_minutes,
              round((
                percentile_cont(0.9) WITHIN GROUP (
-                 ORDER BY extract(epoch FROM (now() - today_last_checked_at)) / 60
-               ) FILTER (WHERE today_last_checked_at IS NOT NULL)
+                 ORDER BY extract(epoch FROM (now() - ars.hot_last_checked_at)) / 60
+               ) FILTER (WHERE ars.hot_last_checked_at IS NOT NULL)
              )::numeric)::int AS current_p90_minutes,
              round((
                percentile_cont(0.5) WITHIN GROUP (
-                 ORDER BY extract(epoch FROM (now() - today_last_checked_at)) / 60
-               ) FILTER (WHERE today_status = 'available' AND today_last_checked_at IS NOT NULL)
+                 ORDER BY extract(epoch FROM (now() - ars.hot_last_checked_at)) / 60
+               ) FILTER (WHERE ars.hot_available_nights > 0 AND ars.hot_last_checked_at IS NOT NULL)
              )::numeric)::int AS available_p50_minutes,
              round((
                percentile_cont(0.5) WITHIN GROUP (
-                 ORDER BY extract(epoch FROM (now() - hot_last_checked_at)) / 60
-               ) FILTER (WHERE hot_last_checked_at IS NOT NULL)
+                 ORDER BY extract(epoch FROM (now() - ars.hot_last_checked_at)) / 60
+               ) FILTER (WHERE ars.hot_last_checked_at IS NOT NULL)
              )::numeric)::int AS hot_p50_minutes,
-             count(*) FILTER (WHERE hot_due_at IS NULL OR hot_due_at <= now())::int AS hot_due_sites,
-             max(today_last_checked_at) AS latest_checked_at,
-             round(min(extract(epoch FROM (now() - today_last_checked_at)) / 60))::int AS latest_checked_minutes_ago
-        FROM per_site
-       GROUP BY operator_id, operator_name, operator_vendor
+             count(*) FILTER (WHERE ars.hot_due_at IS NULL OR ars.hot_due_at <= now())::int AS hot_due_sites,
+             max(ars.hot_last_checked_at) AS latest_checked_at,
+             round(min(extract(epoch FROM (now() - ars.hot_last_checked_at)) / 60))::int AS latest_checked_minutes_ago
+        FROM operators o
+        LEFT JOIN parks p ON p.operator_id = o.id
+        LEFT JOIN campgrounds c ON c.park_id = p.id
+        LEFT JOIN sites s ON s.campground_id = c.id
+        LEFT JOIN availability_refresh_state ars ON ars.site_id = s.id
+       GROUP BY o.id, o.name, o.vendor, o.total_sites, o.available_sites
        ORDER BY
-         count(*) FILTER (WHERE today_last_checked_at > now() - interval '2 hours') ASC,
-         count(*) FILTER (WHERE hot_due_at IS NULL OR hot_due_at <= now()) DESC,
-         operator_name ASC
+         count(*) FILTER (WHERE ars.hot_last_checked_at > now() - interval '2 hours') ASC,
+         count(*) FILTER (WHERE ars.hot_due_at IS NULL OR ars.hot_due_at <= now()) DESC,
+         o.name ASC
     `,
   ]);
 

@@ -238,6 +238,14 @@ const PARKS_CANADA_RULES: RuleItem[] = [
   { label: "Backcountry", value: "Pack out garbage and follow area-specific food storage and permit rules" },
 ];
 
+const ST_LAWRENCE_RULES: RuleItem[] = [
+  { label: "Permits", value: "Camping and roofed accommodation guests must hold a valid reservation or permit" },
+  { label: "Pets", value: "Pets must be controlled on a leash no longer than 2 metres and are not permitted in beach areas" },
+  { label: "Clean site", value: "Keep campsites clean and leave them in a natural state" },
+  { label: "Changes / cancellations", value: "Change and cancellation fees apply; short-notice changes can forfeit one night" },
+  { label: "Rangers", value: "Park Rangers are Provincial Offences Officers under St. Lawrence Parks Commission rules" },
+];
+
 const GRAND_RIVER_RULES: RuleItem[] = [
   { label: "Quiet hours", value: "11:00 p.m. to 7:00 a.m." },
   { label: "Occupancy", value: "Maximum 6 overnight occupants per campsite" },
@@ -301,6 +309,15 @@ export function operatorRuleProfile(operator: Operator): OperatorRuleSource {
       "Parks Canada Camping 101",
       "https://parks.canada.ca/voyage-travel/hebergement-accommodation/camping-101",
       "https://parks.canada.ca/voyage-travel/securite-safety/bulletins",
+    );
+  }
+  if (operator.id === "st_lawrence_parks") {
+    return profile(
+      operator,
+      ST_LAWRENCE_RULES,
+      "Parks of the St. Lawrence Rules and Legislation",
+      "https://www.stlawrenceparks.com/rules-legislation/",
+      "https://www.stlawrenceparks.com/alerts/",
     );
   }
   if (operator.id === "gtc_grca" || operator.id === "gtc_grand") {

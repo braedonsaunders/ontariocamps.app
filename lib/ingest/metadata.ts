@@ -286,6 +286,7 @@ export async function refreshOperatorMetadata(
 
   const bookingCategoryRecord = pickCampsiteBookingCategory(bookingCats);
   const bookingCategoryId = bookingCategoryRecord?.bookingCategoryId ?? 0;
+  const allowedResourceCategoryIds = new Set(bookingCategoryRecord?.allowedResourceCategoryIds ?? []);
   const { equipmentCategoryId, subEquipmentCategoryId } = pickTentEquipment(equipmentCats);
 
   // Per-operator fetch config — used by the availability ingest to know which
@@ -385,6 +386,13 @@ export async function refreshOperatorMetadata(
         const siteId = `s_${parkId}_${r.resourceId}`;
         const label = labelByIcon.get(r.iconType) ?? null;
         const detail = resourceDetails[String(r.resourceId)];
+        if (
+          allowedResourceCategoryIds.size > 0
+          && detail?.resourceCategoryId != null
+          && !allowedResourceCategoryIds.has(detail.resourceCategoryId)
+        ) {
+          continue;
+        }
         const en = detail?.localizedValues?.find((l) => l.cultureName === "en-CA")
           ?? detail?.localizedValues?.[0];
         const photos = (detail?.photos ?? [])

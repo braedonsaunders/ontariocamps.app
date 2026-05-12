@@ -321,6 +321,7 @@ async function updateRefreshState(env: Env, siteId: string, window: RefreshWindo
   if (rows.length === 0) return;
   const checkedAt = rows[0].last_checked_at;
   const patch: Record<string, unknown> = {
+    site_id: siteId,
     [`${window}_last_checked_at`]: checkedAt,
     [`${window}_due_at`]: dueAt(window, checkedAt, rows),
     [`${window}_sampled_nights`]: rows.length,
@@ -328,9 +329,9 @@ async function updateRefreshState(env: Env, siteId: string, window: RefreshWindo
     [`${window}_reserved_nights`]: rows.filter((row) => row.status === "reserved").length,
     updated_at: new Date().toISOString(),
   };
-  await rest(env, `availability_refresh_state?site_id=eq.${encodeURIComponent(siteId)}`, {
-    method: "PATCH",
-    headers: { Prefer: "return=minimal" },
+  await rest(env, "availability_refresh_state?on_conflict=site_id", {
+    method: "POST",
+    headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
     body: JSON.stringify(patch),
   });
 }

@@ -52,6 +52,7 @@ const GROUP_OPTIONS = ["park", "campground", "operator", "none"] as const;
 const OPERATOR_OPTIONS: { id: string; label: string }[] = [
   { id: "ontario_parks", label: "Ontario Parks" },
   { id: "parks_canada", label: "Parks Canada" },
+  { id: "st_lawrence_parks", label: "Parks of the St. Lawrence" },
   { id: "gtc_lprca", label: "Long Point CA" },
   { id: "gtc_stclair", label: "St. Clair CA" },
   { id: "gtc_grca", label: "Grand River CA" },
@@ -61,6 +62,7 @@ const OPERATOR_OPTIONS: { id: string; label: string }[] = [
   { id: "gtc_upperthames", label: "Upper Thames CA" },
   { id: "gtc_maitland", label: "Maitland Valley CA" },
   { id: "gtc_catfish", label: "Catfish Creek CA" },
+  { id: "gtc_hca", label: "Hamilton CA" },
 ];
 const SORT_OPTIONS = ["distance", "route", "moves", "availability", "freshness", "name", "price"] as const;
 const RAW_RESULTS_PER_PAGE = 60;

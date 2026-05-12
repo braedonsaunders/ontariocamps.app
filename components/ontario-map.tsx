@@ -107,6 +107,7 @@ function parkPreviewDescription(park: Pick<Park, "description" | "operator">): s
 
 function categoryForOperator(operatorId: string): ParkCategory {
   if (operatorId === "ontario_parks") return "provincial";
+  if (operatorId === "st_lawrence_parks") return "provincial";
   if (operatorId === "parks_canada") return "federal";
   return "conservation";
 }

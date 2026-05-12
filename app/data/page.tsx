@@ -51,8 +51,9 @@ export default async function DataPage() {
     getAvailabilityHealth(),
     sql()<Array<{ parks: number; sites: number }>>`
       SELECT
-        (SELECT count(*) FROM parks)::int AS parks,
-        (SELECT count(*) FROM sites)::int AS sites
+        COALESCE(sum(total_parks), 0)::int AS parks,
+        COALESCE(sum(total_sites), 0)::int AS sites
+      FROM operators
     `,
     getDataSourceInfo(),
   ]);
@@ -152,7 +153,7 @@ export default async function DataPage() {
 
       <div className="mt-4 grid gap-3 sm:grid-cols-3 text-sm">
         <div className="rounded-lg border border-stone-200 bg-white px-4 py-3">
-          <div className="text-xs uppercase tracking-wide text-stone-500">All current-day sites</div>
+          <div className="text-xs uppercase tracking-wide text-stone-500">Hot-window sites</div>
           <div className="mt-1 font-semibold text-stone-900">
             p50 {formatMinutes(health.freshness.currentP50Minutes)} · p90 {formatMinutes(health.freshness.currentP90Minutes)}
           </div>
