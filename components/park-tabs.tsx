@@ -188,7 +188,9 @@ export function ParkTabs(props: Props) {
       parkName,
       parkSlug,
       operatorName,
+      operatorId,
       bookingUrl: bookingUrls[site.id],
+      equipment: equipmentOptions,
       calendarRow: calendarRows.find((row) => row.site.id === site.id) ?? null,
       lastCheckedAt: availabilitySummary[site.id]?.last_checked_at ?? calendarLastChecked,
       stats: siteStats.find((entry) => entry.id === site.id) ?? null,
@@ -200,7 +202,9 @@ export function ParkTabs(props: Props) {
     parkName,
     parkSlug,
     operatorName,
+    operatorId,
     bookingUrls,
+    equipmentOptions,
     calendarRows,
     availabilitySummary,
     calendarLastChecked,
@@ -367,7 +371,6 @@ export function ParkTabs(props: Props) {
                           bookingUrls={bookingUrls}
                           operatorName={operatorName}
                           equipmentOptions={equipmentOptions}
-                          parkSlug={parkSlug}
                           initialMapId={selectedSection}
                           onOpenSiteDetails={openSiteFlyout}
                         />
@@ -385,12 +388,10 @@ export function ParkTabs(props: Props) {
                       </span>
                     </div>
                     <SiteFieldNotes
-                      parkSlug={parkSlug}
                       totalSites={totalSites}
                       availableCount={availableNowCount}
                       siteStats={siteStats}
                       recentSiteReviews={recentSiteReviews}
-                      vendorSiteIds={vendorSiteIds}
                       onOpenSiteDetails={openSiteFlyout}
                     />
                   </>

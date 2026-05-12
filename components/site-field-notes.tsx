@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { Star, Flame, TrendingUp, Tent, Zap, Waves, Dog, ArrowUpRight, BarChart3, MessageSquare } from "lucide-react";
 import type { SiteReview } from "@/lib/types";
 
@@ -20,12 +19,10 @@ export type SiteStatsEntry = {
 };
 
 type Props = {
-  parkSlug: string;
   totalSites: number;
   availableCount: number;
   siteStats: SiteStatsEntry[];
   recentSiteReviews: Array<SiteReview & { site_name: string }>;
-  vendorSiteIds: Record<string, string>;
   onOpenSiteDetails?: (siteId: string) => void;
 };
 
@@ -68,12 +65,10 @@ function MiniStat({
 }
 
 export function SiteFieldNotes({
-  parkSlug,
   totalSites,
   availableCount,
   siteStats,
   recentSiteReviews,
-  vendorSiteIds,
   onOpenSiteDetails,
 }: Props) {
   const withBooking = siteStats.filter((s) => s.totalNights > 0);
@@ -105,12 +100,8 @@ export function SiteFieldNotes({
   const availPct =
     totalSites > 0 ? Math.round((availableCount / totalSites) * 100) : 0;
 
-  function siteUrl(vendorSiteId: string) {
-    return `/park/${parkSlug}/site/${vendorSiteId}`;
-  }
-
   function siteAction(
-    site: Pick<SiteStatsEntry, "id" | "vendorSiteId" | "name">,
+    site: Pick<SiteStatsEntry, "id" | "name">,
     className: string,
   ) {
     if (onOpenSiteDetails) {
@@ -124,11 +115,7 @@ export function SiteFieldNotes({
         </button>
       );
     }
-    return (
-      <Link href={siteUrl(site.vendorSiteId)} className={className}>
-        {site.name}
-      </Link>
-    );
+    return <span className={className}>{site.name}</span>;
   }
 
   return (
@@ -299,30 +286,19 @@ export function SiteFieldNotes({
             What campers are saying about specific sites.
           </p>
           <div className="space-y-3">
-            {recentSiteReviews.map((r) => {
-              const vid = vendorSiteIds[r.site_id];
-              return (
+            {recentSiteReviews.map((r) => (
                 <div key={r.id} className="card p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        {vid ? (
-                          onOpenSiteDetails ? (
-                            <button
-                              type="button"
-                              onClick={() => onOpenSiteDetails(r.site_id)}
-                              className="text-left text-sm font-semibold text-stone-900 hover:text-forest-700 transition-colors"
-                            >
-                              {r.site_name}
-                            </button>
-                          ) : (
-                            <Link
-                              href={siteUrl(vid)}
-                              className="text-sm font-semibold text-stone-900 hover:text-forest-700 transition-colors"
-                            >
-                              {r.site_name}
-                            </Link>
-                          )
+                        {onOpenSiteDetails ? (
+                          <button
+                            type="button"
+                            onClick={() => onOpenSiteDetails(r.site_id)}
+                            className="text-left text-sm font-semibold text-stone-900 hover:text-forest-700 transition-colors"
+                          >
+                            {r.site_name}
+                          </button>
                         ) : (
                           <span className="text-sm font-semibold text-stone-900">
                             {r.site_name}
@@ -339,29 +315,19 @@ export function SiteFieldNotes({
                         {r.body}
                       </p>
                     </div>
-                    {vid && (
-                      onOpenSiteDetails ? (
-                        <button
-                          type="button"
-                          onClick={() => onOpenSiteDetails(r.site_id)}
-                          className="text-stone-400 hover:text-forest-700 shrink-0 transition-colors"
-                          aria-label={`Open site ${r.site_name}`}
-                        >
-                          <ArrowUpRight size={14} />
-                        </button>
-                      ) : (
-                        <Link
-                          href={siteUrl(vid)}
-                          className="text-stone-400 hover:text-forest-700 shrink-0 transition-colors"
-                        >
-                          <ArrowUpRight size={14} />
-                        </Link>
-                      )
+                    {onOpenSiteDetails && (
+                      <button
+                        type="button"
+                        onClick={() => onOpenSiteDetails(r.site_id)}
+                        className="text-stone-400 hover:text-forest-700 shrink-0 transition-colors"
+                        aria-label={`Open site ${r.site_name}`}
+                      >
+                        <ArrowUpRight size={14} />
+                      </button>
                     )}
                   </div>
                 </div>
-              );
-            })}
+              ))}
           </div>
         </div>
       )}

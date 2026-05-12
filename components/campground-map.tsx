@@ -1,6 +1,5 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import type { CampMap, Site, EquipmentOption } from "@/lib/types";
 import { Minus, Plus, RotateCcw, Move, X, ExternalLink, Zap, Tent as TentIcon, Users, Tent, MapPin, CircleDot, Accessibility, Anchor, Bike, BookOpen, Bus, Church, CigaretteOff, Cross, Dog, DollarSign, DoorOpen, Droplet, Droplets, Dumbbell, Eye, Fish, Flag, Flame, Footprints, Heart, House, Info, Landmark, Lightbulb, Lock, Mountain, ParkingCircle, Phone, PlugZap, Radio, Recycle, Sailboat, Ship, ShoppingBag, ShowerHead, Snowflake, Store, TentTree, Theater, TreePine, Trophy, Umbrella, UtensilsCrossed, Volleyball, WashingMachine, Waves, Wifi, Wrench, type LucideIcon } from "lucide-react";
 import { legendTypeLabel, legendTypeIcon } from "@/lib/legend-types";
@@ -41,8 +40,6 @@ type Props = {
   operatorName?: string;
   /** Equipment options at this operator (Tent / Van / Trailer-up-to-Nft / …). */
   equipmentOptions?: EquipmentOption[];
-  /** Park slug, so the popover can deep-link to the site-detail page. */
-  parkSlug?: string;
   /** Opens the in-page site flyout without navigating away from the map. */
   onOpenSiteDetails?: (siteId: string) => void;
   /** ID of the section tab to show first; defaults to the first map. */
@@ -96,7 +93,6 @@ export function CampgroundMap({
   bookingUrls,
   operatorName,
   equipmentOptions,
-  parkSlug,
   onOpenSiteDetails,
   initialMapId,
 }: Props) {
@@ -212,7 +208,6 @@ export function CampgroundMap({
         bookingUrls={bookingUrls}
         operatorName={operatorName}
         equipmentOptions={equipmentOptions}
-        parkSlug={parkSlug}
         onOpenSiteDetails={onOpenSiteDetails}
       />
       <div className="flex items-center gap-x-4 gap-y-1.5 px-4 py-2.5 border-t border-stone-100 text-xs text-stone-600 flex-wrap">
@@ -280,7 +275,6 @@ function PanZoomViewer({
   bookingUrls,
   operatorName,
   equipmentOptions,
-  parkSlug,
   onOpenSiteDetails,
 }: {
   campMap: CampMap;
@@ -288,7 +282,6 @@ function PanZoomViewer({
   bookingUrls?: Record<string, string>;
   operatorName?: string;
   equipmentOptions?: EquipmentOption[];
-  parkSlug?: string;
   onOpenSiteDetails?: (siteId: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -660,7 +653,6 @@ function PanZoomViewer({
           bookingUrl={bookingUrls?.[selectedSite.site.id]}
           operatorName={operatorName}
           equipmentOptions={equipmentOptions}
-          parkSlug={parkSlug}
           onOpenSiteDetails={onOpenSiteDetails}
           onClose={() => setSelected(null)}
         />
@@ -675,7 +667,6 @@ function SitePopover({
   bookingUrl,
   operatorName,
   equipmentOptions,
-  parkSlug,
   onOpenSiteDetails,
   onClose,
 }: {
@@ -684,7 +675,6 @@ function SitePopover({
   bookingUrl: string | undefined;
   operatorName?: string;
   equipmentOptions?: EquipmentOption[];
-  parkSlug?: string;
   onOpenSiteDetails?: (siteId: string) => void;
   onClose: () => void;
 }) {
@@ -817,7 +807,7 @@ function SitePopover({
       </div>
 
       <div className="flex gap-2 px-3 pb-3 pt-0">
-        {onOpenSiteDetails ? (
+        {onOpenSiteDetails && (
           <button
             type="button"
             onClick={() => onOpenSiteDetails(site.site.id)}
@@ -825,14 +815,7 @@ function SitePopover({
           >
             Details
           </button>
-        ) : parkSlug ? (
-          <Link
-            href={`/park/${parkSlug}/site/${site.site.vendor_site_id}`}
-            className="btn-secondary flex-1 text-xs justify-center"
-          >
-            Details
-          </Link>
-        ) : null}
+        )}
         {bookingUrl && (
           <a
             href={bookingUrl}
