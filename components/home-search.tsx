@@ -35,7 +35,7 @@ export function HomeSearch() {
   return (
     <form
       onSubmit={submit}
-      className="card text-stone-900 p-3 grid gap-2 sm:grid-cols-[1.4fr_1fr_1fr_0.8fr_auto] shadow-xl ring-stone-300/50"
+      className="card rounded-lg bg-white/95 text-stone-900 p-3 grid gap-2 sm:grid-cols-[1.4fr_1fr_1fr_0.8fr_auto] shadow-2xl shadow-black/25 ring-white/55 backdrop-blur-md"
     >
       <div className="flex flex-col">
         <label className="label flex items-center gap-1.5"><MapPin size={12} /> Near</label>
