@@ -203,27 +203,27 @@ export function HomeSearch() {
   return (
     <form
       onSubmit={submit}
-      className="relative rounded-lg bg-white p-2 text-stone-900 shadow-2xl shadow-black/25 ring-1 ring-white/70 sm:p-3"
+      className="relative z-[60] rounded-lg bg-white p-1.5 text-stone-900 shadow-2xl shadow-black/25 ring-1 ring-white/70 sm:p-2"
     >
-      <div className="grid gap-2 lg:grid-cols-[minmax(18rem,1.45fr)_minmax(9rem,0.75fr)_minmax(9rem,0.75fr)_minmax(12rem,0.95fr)_minmax(8rem,0.65fr)_auto]">
-        <div className="relative rounded-md bg-stone-50 p-3 ring-1 ring-stone-200 transition focus-within:bg-white focus-within:ring-forest-600">
-          <div className="mb-1 flex items-center justify-between gap-3">
-            <label htmlFor="home-location" className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-stone-500">
-              <MapPin size={13} /> Near
+      <div className="grid gap-1.5 lg:grid-cols-[minmax(18rem,1.45fr)_minmax(9rem,0.75fr)_minmax(9rem,0.75fr)_minmax(12rem,0.95fr)_minmax(8rem,0.65fr)_auto]">
+        <div className="relative rounded-md bg-stone-50 px-3 py-2 ring-1 ring-stone-200 transition focus-within:bg-white focus-within:ring-forest-600">
+          <div className="mb-0.5 flex items-center justify-between gap-3">
+            <label htmlFor="home-location" className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-stone-500">
+              <MapPin size={12} /> Near
             </label>
             <button
               type="button"
               onClick={useDeviceLocation}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-forest-700 ring-1 ring-stone-200 transition hover:bg-forest-50"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-forest-700 ring-1 ring-stone-200 transition hover:bg-forest-50"
             >
-              {locating ? <Loader2 size={13} className="animate-spin" /> : <LocateFixed size={13} />}
+              {locating ? <Loader2 size={12} className="animate-spin" /> : <LocateFixed size={12} />}
               <span>Use location</span>
             </button>
           </div>
           <input
             id="home-location"
             type="text"
-            className="w-full min-w-0 bg-transparent text-base font-semibold text-stone-950 outline-none placeholder:text-stone-400"
+            className="w-full min-w-0 bg-transparent text-sm font-semibold text-stone-950 outline-none placeholder:text-stone-400"
             placeholder="Town, city, park, or postal code"
             value={locationQuery}
             autoComplete="off"
@@ -236,7 +236,7 @@ export function HomeSearch() {
           />
 
           {placeOpen && (placeLoading || placeMessage || suggestions.length > 0) && (
-            <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-40 overflow-hidden rounded-lg bg-white p-1.5 shadow-2xl ring-1 ring-stone-200">
+            <div className="absolute left-0 right-0 top-[calc(100%+0.375rem)] z-[90] overflow-hidden rounded-lg bg-white p-1.5 shadow-2xl ring-1 ring-stone-200">
               {placeLoading && (
                 <div className="flex items-center gap-2 px-3 py-2 text-sm text-stone-500">
                   <Loader2 size={14} className="animate-spin" />
@@ -267,9 +267,9 @@ export function HomeSearch() {
           )}
         </div>
 
-        <label className="rounded-md bg-stone-50 p-3 ring-1 ring-stone-200 transition focus-within:bg-white focus-within:ring-forest-600">
-          <span className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-stone-500">
-            <Calendar size={13} /> Arrive
+        <label className="rounded-md bg-stone-50 px-3 py-2 ring-1 ring-stone-200 transition focus-within:bg-white focus-within:ring-forest-600">
+          <span className="mb-0.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-stone-500">
+            <Calendar size={12} /> Arrive
           </span>
           <input
             type="date"
@@ -279,9 +279,9 @@ export function HomeSearch() {
           />
         </label>
 
-        <label className="rounded-md bg-stone-50 p-3 ring-1 ring-stone-200 transition focus-within:bg-white focus-within:ring-forest-600">
-          <span className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-stone-500">
-            <Calendar size={13} /> Leave
+        <label className="rounded-md bg-stone-50 px-3 py-2 ring-1 ring-stone-200 transition focus-within:bg-white focus-within:ring-forest-600">
+          <span className="mb-0.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-stone-500">
+            <Calendar size={12} /> Leave
           </span>
           <input
             type="date"
@@ -291,9 +291,9 @@ export function HomeSearch() {
           />
         </label>
 
-        <div className="relative rounded-md bg-stone-50 p-3 ring-1 ring-stone-200">
-          <span className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-stone-500">
-            <EquipmentIcon size={13} /> Equipment
+        <div className="relative rounded-md bg-stone-50 px-3 py-2 ring-1 ring-stone-200">
+          <span className="mb-0.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-stone-500">
+            <EquipmentIcon size={12} /> Equipment
           </span>
           <button
             type="button"
@@ -304,12 +304,12 @@ export function HomeSearch() {
           >
             <span className="min-w-0">
               <span className="block truncate text-sm font-semibold text-stone-950">{selectedEquipment.label}</span>
-              <span className="block truncate text-xs text-stone-500">{selectedEquipment.description}</span>
+              <span className="block truncate text-[11px] leading-4 text-stone-500">{selectedEquipment.description}</span>
             </span>
             <ChevronDown size={16} className="shrink-0 text-stone-400" />
           </button>
           {equipmentOpen && (
-            <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-30 overflow-hidden rounded-lg bg-white p-1.5 shadow-2xl ring-1 ring-stone-200">
+            <div className="absolute left-0 right-0 top-[calc(100%+0.375rem)] z-[90] overflow-hidden rounded-lg bg-white p-1.5 shadow-2xl ring-1 ring-stone-200">
               {SEARCH_EQUIPMENT_OPTIONS.map((option) => {
                 const Icon = EQUIPMENT_ICONS[option.id];
                 const active = option.id === selectedEquipment.id;
@@ -341,9 +341,9 @@ export function HomeSearch() {
           )}
         </div>
 
-        <label className="rounded-md bg-stone-50 p-3 ring-1 ring-stone-200 transition focus-within:bg-white focus-within:ring-forest-600">
-          <span className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-stone-500">
-            <Navigation size={13} /> Range
+        <label className="rounded-md bg-stone-50 px-3 py-2 ring-1 ring-stone-200 transition focus-within:bg-white focus-within:ring-forest-600">
+          <span className="mb-0.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-stone-500">
+            <Navigation size={12} /> Range
           </span>
           <span className="flex items-center gap-2">
             <input
@@ -361,7 +361,7 @@ export function HomeSearch() {
 
         <button
           type="submit"
-          className="inline-flex min-h-[4.9rem] items-center justify-center gap-2 rounded-md bg-forest-700 px-5 text-sm font-semibold text-white shadow-lg shadow-forest-950/20 transition hover:-translate-y-0.5 hover:bg-forest-800 disabled:translate-y-0 disabled:opacity-70"
+          className="inline-flex min-h-[3.45rem] items-center justify-center gap-2 rounded-md bg-forest-700 px-5 text-sm font-semibold text-white shadow-lg shadow-forest-950/20 transition hover:-translate-y-0.5 hover:bg-forest-800 disabled:translate-y-0 disabled:opacity-70"
           disabled={placeLoading && Boolean(locationQuery.trim())}
         >
           {placeLoading && locationQuery.trim() ? <Loader2 size={18} className="animate-spin" /> : <SearchIcon size={18} />}
