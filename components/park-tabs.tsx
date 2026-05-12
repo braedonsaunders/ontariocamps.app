@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
@@ -12,7 +12,7 @@ import { SiteFieldNotes, type SiteStatsEntry } from "@/components/site-field-not
 import { SiteDetailFlyout, type SiteFlyoutDetails } from "@/components/site-detail-flyout";
 import { RulesPanel } from "@/components/rules-panel";
 import { timeAgo } from "@/lib/utils";
-import { Info, Map as MapIcon, Calendar, Tent, ArrowUpRight, CalendarRange, MessageSquare, TreePine, ShieldCheck } from "lucide-react";
+import { Info, Map as MapIcon, Calendar, Tent, ArrowUpRight, CalendarRange, MessageSquare, TreePine, ShieldCheck, Loader2 } from "lucide-react";
 
 type SiteAvailability = {
   status: "available" | "reserved" | "closed" | "unknown";
@@ -60,6 +60,26 @@ type Props = {
 
 type Tab = "overview" | "sites" | "calendar" | "rules" | "reviews";
 type SitesSubTab = "map" | "field-notes";
+
+const PARK_REFRESH_COOLDOWN_MS = 5 * 60 * 1000;
+const SITE_REFRESH_COOLDOWN_MS = 2 * 60 * 1000;
+const availabilityRefreshAttempts = new Map<string, number>();
+const availabilityRefreshesInFlight = new Map<string, Promise<void>>();
+
+function wasRecentlyAttempted(key: string, cooldownMs: number): boolean {
+  const attemptedAt = availabilityRefreshAttempts.get(key);
+  if (!attemptedAt) return false;
+  if (Date.now() - attemptedAt < cooldownMs) return true;
+  availabilityRefreshAttempts.delete(key);
+  return false;
+}
+
+function isFreshEnough(iso: string | null | undefined, minutes: number): boolean {
+  if (!iso) return false;
+  const checkedAt = new Date(iso).getTime();
+  if (!Number.isFinite(checkedAt)) return false;
+  return Date.now() - checkedAt < minutes * 60 * 1000;
+}
 
 function formatDate(iso: string): string {
   return new Date(iso + "T00:00:00Z").toLocaleDateString("en-CA", {
@@ -138,17 +158,44 @@ export function ParkTabs(props: Props) {
   const [sitesSubTab, setSitesSubTab] = useState<SitesSubTab>("map");
   const [selectedSection, setSelectedSection] = useState<string | undefined>(undefined);
   const [selectedSiteFlyoutId, setSelectedSiteFlyoutId] = useState<string | null>(null);
-  const [refreshingAvailability, setRefreshingAvailability] = useState(false);
+  const [parkRefreshKeyInFlight, setParkRefreshKeyInFlight] = useState<string | null>(null);
   const [refreshingSiteId, setRefreshingSiteId] = useState<string | null>(null);
   const router = useRouter();
-  const checkingParkLive = refreshingAvailability && refreshingSiteId === null;
+
+  const dateWindowKey = useMemo(() => (
+    dateContext.mode === "range"
+      ? `${dateContext.from}:${dateContext.to}`
+      : dateContext.date
+  ), [dateContext]);
+  const parkRefreshKey = `park:${parkId}:${dateWindowKey}`;
+  const parkRefreshInFlight = parkRefreshKeyInFlight === parkRefreshKey;
 
   const refreshLiveAvailability = useCallback(async (payload: { siteId?: string; park?: boolean }) => {
     const scopedSiteId = payload.siteId ?? null;
-    setRefreshingSiteId(scopedSiteId);
-    setRefreshingAvailability(true);
-    try {
-      await fetch("/api/availability/refresh", {
+    const refreshKey = scopedSiteId ? `site:${parkId}:${scopedSiteId}:${dateWindowKey}` : parkRefreshKey;
+    const cooldownMs = scopedSiteId ? SITE_REFRESH_COOLDOWN_MS : PARK_REFRESH_COOLDOWN_MS;
+    const lastCheckedAt = scopedSiteId
+      ? availabilitySummary[scopedSiteId]?.last_checked_at
+      : calendarLastChecked;
+
+    if (isFreshEnough(lastCheckedAt, scopedSiteId ? 2 : 3)) return;
+
+    const pending = availabilityRefreshesInFlight.get(refreshKey);
+    if (pending) {
+      await pending;
+      return;
+    }
+    if (wasRecentlyAttempted(refreshKey, cooldownMs)) return;
+
+    availabilityRefreshAttempts.set(refreshKey, Date.now());
+    if (scopedSiteId) {
+      setRefreshingSiteId(scopedSiteId);
+    } else {
+      setParkRefreshKeyInFlight(refreshKey);
+    }
+
+    const refreshPromise = (async () => {
+      const response = await fetch("/api/availability/refresh", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -163,16 +210,29 @@ export function ParkTabs(props: Props) {
               : 14,
         }),
       });
-      router.refresh();
-    } catch {
-      // Freshening availability is opportunistic; stale cached data is still usable.
-    } finally {
-      window.setTimeout(() => {
-        setRefreshingAvailability(false);
-        setRefreshingSiteId(null);
-      }, 1500);
+      if (response.ok) router.refresh();
+    })()
+      .catch(() => {
+        // Freshening availability is opportunistic; stale cached data is still usable.
+      })
+      .finally(() => {
+        availabilityRefreshesInFlight.delete(refreshKey);
+        if (scopedSiteId) {
+          setRefreshingSiteId((current) => (current === scopedSiteId ? null : current));
+        } else {
+          setParkRefreshKeyInFlight((current) => (current === refreshKey ? null : current));
+        }
+      });
+
+    availabilityRefreshesInFlight.set(refreshKey, refreshPromise);
+    await refreshPromise;
+  }, [availabilitySummary, calendarLastChecked, dateContext, dateWindowKey, parkId, parkRefreshKey, parkSlug, router]);
+
+  useEffect(() => {
+    if (activeTab === "sites" || activeTab === "calendar") {
+      void refreshLiveAvailability({ park: true });
     }
-  }, [dateContext, parkId, parkSlug, router]);
+  }, [activeTab, refreshLiveAvailability]);
 
   const openSiteFlyout = useCallback((siteId: string) => {
     setSelectedSiteFlyoutId(siteId);
@@ -256,39 +316,45 @@ export function ParkTabs(props: Props) {
   return (
     <section className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
       <DateBanner ctx={dateContext} />
-      {refreshingAvailability && (
-        <div className="mt-2 text-xs font-medium text-forest-700" aria-live="polite">
-          Refreshing live availability…
-        </div>
-      )}
 
       {/* Sticky-ish tab strip */}
-      <div className="mt-4 border-b border-stone-200 flex items-end gap-1 overflow-x-auto scrollbar-none">
-        {TABS.map((t) => {
-          const active = activeTab === t.id;
-          return (
-            <button
-              key={t.id}
+      <div className="relative mt-4 border-b border-stone-200">
+        <div className="flex items-end gap-1 overflow-x-auto scrollbar-none sm:pr-48">
+          {TABS.map((t) => {
+            const active = activeTab === t.id;
+            return (
+              <button
+                key={t.id}
+                type="button"
                 onClick={() => setActiveTab(t.id)}
-                onMouseDown={() => {
-                  if (t.id === "calendar" || t.id === "sites") void refreshLiveAvailability({ park: true });
-                }}
                 className={`relative inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors ${
-                active ? "text-forest-700" : "text-stone-600 hover:text-stone-900"
-              }`}
-            >
-              <t.icon size={14} />
-              {t.label}
-              {active && (
-                <motion.span
-                  layoutId="park-tab-underline"
-                  className="absolute left-3 right-3 -bottom-px h-0.5 rounded-full bg-forest-600"
-                  transition={{ type: "spring", stiffness: 380, damping: 30 }}
-                />
-              )}
-            </button>
-          );
-        })}
+                  active ? "text-forest-700" : "text-stone-600 hover:text-stone-900"
+                }`}
+              >
+                <t.icon size={14} />
+                {t.label}
+                {active && (
+                  <motion.span
+                    layoutId="park-tab-underline"
+                    className="absolute left-3 right-3 -bottom-px h-0.5 rounded-full bg-forest-600"
+                    transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                  />
+                )}
+              </button>
+            );
+          })}
+        </div>
+        {parkRefreshInFlight && (
+          <>
+            <span className="sr-only" aria-live="polite">
+              Updating availability in the background.
+            </span>
+            <div className="pointer-events-none absolute right-0 top-1/2 hidden -translate-y-1/2 items-center gap-1.5 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-medium text-stone-600 shadow-sm ring-1 ring-stone-200 backdrop-blur sm:inline-flex">
+              <Loader2 size={11} className="animate-spin text-forest-700" />
+              Updating in background
+            </div>
+          </>
+        )}
       </div>
 
       <div id="park-tab-content" className="mt-6 grid lg:grid-cols-3 gap-6 lg:gap-8">
@@ -422,7 +488,6 @@ export function ParkTabs(props: Props) {
                           equipmentOptions={equipmentOptions}
                           initialMapId={selectedSection}
                           onOpenSiteDetails={openSiteFlyout}
-                          checkingLive={checkingParkLive}
                         />
                       </>
                     )}
@@ -460,9 +525,7 @@ export function ParkTabs(props: Props) {
                 <div className="flex items-baseline justify-between mb-3 flex-wrap gap-2">
                   <h2 className="text-xl font-semibold tracking-tight">Availability calendar</h2>
                   <span className="text-xs text-stone-500">
-                    {checkingParkLive
-                      ? `Checking ${operatorName} live status before enabling booking links`
-                      : `Real per-night status from ${operatorName} · click a green cell to book`}
+                    Real per-night status from {operatorName} · click a green cell to book
                   </span>
                 </div>
                 <AvailabilityCalendar
@@ -473,7 +536,6 @@ export function ParkTabs(props: Props) {
                   bookingUrls={bookingUrls}
                   vendorUrl={vendorUrl}
                   onOpenSiteDetails={openSiteFlyout}
-                  checkingLive={checkingParkLive}
                 />
               </motion.div>
             )}
