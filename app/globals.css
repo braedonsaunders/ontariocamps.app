@@ -48,15 +48,93 @@
 
 /* Hover-only popup on /map — quiet styling, no maplibre default chrome. */
 .park-hover-popup .maplibregl-popup-content {
-  padding: 9px 11px;
+  padding: 0;
   border-radius: 8px;
   border: 1px solid #e7e5e4;
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
   pointer-events: none; /* don't intercept the next pin hover */
-  min-width: 180px;
+  width: 300px;
+  overflow: hidden;
 }
 .park-hover-popup .maplibregl-popup-tip {
   border-top-color: #e7e5e4;
+}
+.park-hover-card {
+  background: #fff;
+  color: #1c1917;
+}
+.park-hover-card__image {
+  display: block;
+  width: 100%;
+  height: 118px;
+  object-fit: cover;
+  background: #e7e5e4;
+}
+.park-hover-card__image--fallback {
+  background:
+    linear-gradient(135deg, rgba(52, 83, 45, 0.22), rgba(16, 185, 129, 0.16)),
+    #f5f5f4;
+}
+.park-hover-card__body {
+  padding: 10px 12px 11px;
+}
+.park-hover-card__eyebrow,
+.park-hover-card__stats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  line-height: 1.2;
+  color: #78716c;
+}
+.park-hover-card__type {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
+  color: #44403c;
+}
+.park-hover-card__title {
+  margin-top: 4px;
+  font-size: 14px;
+  line-height: 1.2;
+  font-weight: 700;
+}
+.park-hover-card__region {
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.25;
+  color: #78716c;
+}
+.park-hover-card__description {
+  margin-top: 7px;
+  color: #57534e;
+  font-size: 12px;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+.park-hover-card__stats {
+  margin-top: 9px;
+  justify-content: space-between;
+  color: #57534e;
+}
+.park-hover-card__stats span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.park-hover-card__stats i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+.park-hover-card__stats strong {
+  color: #1c1917;
+  font-weight: 700;
 }
 
 .maplibregl-ctrl-attrib { font-size: 10px; }
