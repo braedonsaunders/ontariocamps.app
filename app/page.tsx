@@ -80,7 +80,7 @@ export default async function HomePage() {
             </div>
             <div className="flex items-center gap-2">
               <Calendar size={16} className="text-emerald-300" />
-              <AnimatedNumber value={t.available} duration={1.6} /> bookable nights across the window
+              <AnimatedNumber value={t.available} duration={1.6} /> bookable nights
             </div>
           </MotionFadeUp>
         </div>
