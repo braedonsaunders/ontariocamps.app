@@ -481,7 +481,7 @@ function PanZoomViewer({
               const isFeatureHovered = hovered === `feat-${idx}`;
               const isFeatureSelected = selectedFeature === idx;
               const fGrow = isFeatureHovered || isFeatureSelected ? 1.3 : 1;
-              const iconSz = (14 / transform.scale) * fGrow;
+              const iconSz = (18 / transform.scale) * fGrow;
 
               return (
                 <button
