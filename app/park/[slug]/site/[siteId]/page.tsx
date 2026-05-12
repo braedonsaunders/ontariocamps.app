@@ -79,6 +79,9 @@ export default async function SiteDetailPage({
     }));
 
   const openNights = availability.filter((a) => a.status === "available").length;
+  const reservedNights = availability.filter((a) => a.status === "reserved").length;
+  const bookableNights = openNights + reservedNights;
+  const bookingRate = bookableNights > 0 ? reservedNights / bookableNights : null;
   const sep = park.vendor_url.includes("?") ? "&" : "?";
   const bookingUrl = `${park.vendor_url}${sep}resourceId=${site.vendor_site_id}&isReserving=true`;
 
@@ -133,6 +136,9 @@ export default async function SiteDetailPage({
         equipment={equipment}
         reviews={reviews}
         reviewAggregate={reviewAggregate}
+        bookingRate={bookingRate}
+        reservedNights={reservedNights}
+        bookableNights={bookableNights}
       />
     </div>
   );

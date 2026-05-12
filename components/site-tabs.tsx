@@ -21,6 +21,8 @@ import {
   Accessibility,
   PawPrint,
   Tent,
+  Star,
+  Flame,
 } from "lucide-react";
 
 type MonthCalendar = {
@@ -43,6 +45,9 @@ type Props = {
   equipment: EquipmentOption[];
   reviews: SiteReview[];
   reviewAggregate: SiteReviewAggregate;
+  bookingRate: number | null;
+  reservedNights: number;
+  bookableNights: number;
 };
 
 type Tab = "overview" | "photos" | "calendar" | "reviews";
@@ -69,6 +74,9 @@ export function SiteTabs(props: Props) {
     equipment,
     reviews,
     reviewAggregate,
+    bookingRate,
+    reservedNights,
+    bookableNights,
   } = props;
 
   const [activeTab, setActiveTab] = useState<Tab>("overview");
@@ -356,6 +364,65 @@ export function SiteTabs(props: Props) {
               Book on {operatorName} <ArrowUpRight size={14} />
             </a>
           </div>
+
+          {(bookingRate !== null || reviewAggregate.review_count > 0) && (
+            <div className="card p-5">
+              <div className="text-xs text-stone-500 uppercase tracking-wide">Site stats</div>
+              <dl className="mt-3 space-y-3 text-sm">
+                {bookingRate !== null && (
+                  <div>
+                    <dt className="text-stone-500 flex items-center gap-1.5">
+                      <Flame size={12} className="text-orange-500" /> Popularity
+                    </dt>
+                    <dd className="mt-1">
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-2 rounded-full bg-stone-100 overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-gradient-to-r from-orange-400 to-red-500"
+                            style={{ width: `${Math.round(bookingRate * 100)}%` }}
+                          />
+                        </div>
+                        <span className="text-xs font-semibold tabular-nums text-stone-700">
+                          {Math.round(bookingRate * 100)}%
+                        </span>
+                      </div>
+                      <span className="text-xs text-stone-500">
+                        {reservedNights} of {bookableNights} bookable nights reserved
+                      </span>
+                    </dd>
+                  </div>
+                )}
+                {reviewAggregate.review_count > 0 && (
+                  <div>
+                    <dt className="text-stone-500 flex items-center gap-1.5">
+                      <Star size={12} className="text-amber-500" /> Rating
+                    </dt>
+                    <dd className="mt-1 flex items-center gap-2">
+                      <span className="inline-flex items-center gap-0.5">
+                        {[1, 2, 3, 4, 5].map((i) => (
+                          <Star
+                            key={i}
+                            size={12}
+                            className={
+                              reviewAggregate.rating_avg && i <= Math.round(reviewAggregate.rating_avg)
+                                ? "fill-amber-400 text-amber-400"
+                                : "text-stone-300"
+                            }
+                          />
+                        ))}
+                      </span>
+                      <span className="text-xs font-medium text-stone-700 tabular-nums">
+                        {reviewAggregate.rating_avg?.toFixed(1)}
+                      </span>
+                      <span className="text-xs text-stone-500 tabular-nums">
+                        ({reviewAggregate.review_count} {reviewAggregate.review_count === 1 ? "review" : "reviews"})
+                      </span>
+                    </dd>
+                  </div>
+                )}
+              </dl>
+            </div>
+          )}
 
           {equipment.length > 0 && (
             <div className="card p-5">

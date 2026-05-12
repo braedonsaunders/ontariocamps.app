@@ -350,6 +350,7 @@ export function ParkTabs(props: Props) {
                       availableCount={availableNowCount}
                       siteStats={siteStats}
                       recentSiteReviews={recentSiteReviews}
+                      vendorSiteIds={vendorSiteIds}
                     />
                   </>
                 )}

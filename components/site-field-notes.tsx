@@ -6,6 +6,7 @@ import type { SiteReview } from "@/lib/types";
 
 export type SiteStatsEntry = {
   id: string;
+  vendorSiteId: string;
   name: string;
   siteTypeLabel: string;
   hasElectric: boolean;
@@ -24,6 +25,7 @@ type Props = {
   availableCount: number;
   siteStats: SiteStatsEntry[];
   recentSiteReviews: Array<SiteReview & { site_name: string }>;
+  vendorSiteIds: Record<string, string>;
 };
 
 function StarRating({ rating }: { rating: number }) {
@@ -70,6 +72,7 @@ export function SiteFieldNotes({
   availableCount,
   siteStats,
   recentSiteReviews,
+  vendorSiteIds,
 }: Props) {
   const withBooking = siteStats.filter((s) => s.totalNights > 0);
   const withReviews = siteStats.filter(
@@ -81,6 +84,7 @@ export function SiteFieldNotes({
       const bookable = s.availableNights + s.reservedNights;
       return {
         ...s,
+        bookableNights: bookable,
         bookingRate: bookable > 0 ? s.reservedNights / bookable : 0,
       };
     })
@@ -98,6 +102,10 @@ export function SiteFieldNotes({
   const topRated = bestRated[0];
   const availPct =
     totalSites > 0 ? Math.round((availableCount / totalSites) * 100) : 0;
+
+  function siteUrl(vendorSiteId: string) {
+    return `/park/${parkSlug}/site/${vendorSiteId}`;
+  }
 
   return (
     <div className="space-y-8">
@@ -120,7 +128,7 @@ export function SiteFieldNotes({
           value={
             hottest ? (
               <Link
-                href={`/park/${parkSlug}/site/${hottest.id}`}
+                href={siteUrl(hottest.vendorSiteId)}
                 className="hover:text-forest-700 transition-colors truncate block"
               >
                 {hottest.name}
@@ -131,7 +139,7 @@ export function SiteFieldNotes({
           }
           sub={
             hottest
-              ? `${Math.round(hottest.bookingRate * 100)}% booking rate`
+              ? `${hottest.reservedNights} of ${hottest.bookableNights} nights booked (${Math.round(hottest.bookingRate * 100)}%)`
               : "No availability data"
           }
         />
@@ -141,7 +149,7 @@ export function SiteFieldNotes({
           value={
             topRated ? (
               <Link
-                href={`/park/${parkSlug}/site/${topRated.id}`}
+                href={siteUrl(topRated.vendorSiteId)}
                 className="hover:text-forest-700 transition-colors truncate block"
               >
                 {topRated.name}
@@ -165,8 +173,7 @@ export function SiteFieldNotes({
             Campsite Popularity
           </h3>
           <p className="text-xs text-stone-500 mt-0.5 mb-3">
-            Sites ranked by booking rate &mdash; how often each site is reserved
-            vs.&nbsp;available.
+            Sites ranked by booking rate &mdash; how many bookable nights are reserved.
           </p>
           <div className="card divide-y divide-stone-100">
             {popularityRanking.slice(0, 10).map((s, i) => (
@@ -175,7 +182,7 @@ export function SiteFieldNotes({
                   {i + 1}
                 </span>
                 <Link
-                  href={`/park/${parkSlug}/site/${s.id}`}
+                  href={siteUrl(s.vendorSiteId)}
                   className="flex-1 min-w-0 text-sm font-medium text-stone-800 hover:text-forest-700 truncate transition-colors"
                 >
                   {s.name}
@@ -193,8 +200,11 @@ export function SiteFieldNotes({
                     />
                   </div>
                 </div>
-                <span className="text-xs font-semibold tabular-nums text-stone-700 w-10 text-right shrink-0">
+                <span className="text-xs font-semibold tabular-nums text-stone-700 shrink-0">
                   {Math.round(s.bookingRate * 100)}%
+                </span>
+                <span className="text-[10px] text-stone-500 tabular-nums shrink-0 hidden sm:inline">
+                  {s.reservedNights}/{s.bookableNights}
                 </span>
               </div>
             ))}
@@ -218,7 +228,7 @@ export function SiteFieldNotes({
                   {i + 1}
                 </span>
                 <Link
-                  href={`/park/${parkSlug}/site/${s.id}`}
+                  href={siteUrl(s.vendorSiteId)}
                   className="flex-1 min-w-0 text-sm font-medium text-stone-800 hover:text-forest-700 truncate transition-colors"
                 >
                   {s.name}
@@ -279,37 +289,48 @@ export function SiteFieldNotes({
             What campers are saying about specific sites.
           </p>
           <div className="space-y-3">
-            {recentSiteReviews.map((r) => (
-              <div key={r.id} className="card p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <Link
-                        href={`/park/${parkSlug}/site/${r.site_id}`}
-                        className="text-sm font-semibold text-stone-900 hover:text-forest-700 transition-colors"
-                      >
-                        {r.site_name}
-                      </Link>
-                      <StarRating rating={r.overall} />
-                    </div>
-                    {r.title && (
-                      <div className="text-sm font-medium text-stone-700 mt-1">
-                        {r.title}
+            {recentSiteReviews.map((r) => {
+              const vid = vendorSiteIds[r.site_id];
+              return (
+                <div key={r.id} className="card p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {vid ? (
+                          <Link
+                            href={siteUrl(vid)}
+                            className="text-sm font-semibold text-stone-900 hover:text-forest-700 transition-colors"
+                          >
+                            {r.site_name}
+                          </Link>
+                        ) : (
+                          <span className="text-sm font-semibold text-stone-900">
+                            {r.site_name}
+                          </span>
+                        )}
+                        <StarRating rating={r.overall} />
                       </div>
+                      {r.title && (
+                        <div className="text-sm font-medium text-stone-700 mt-1">
+                          {r.title}
+                        </div>
+                      )}
+                      <p className="text-sm text-stone-600 mt-1 line-clamp-2">
+                        {r.body}
+                      </p>
+                    </div>
+                    {vid && (
+                      <Link
+                        href={siteUrl(vid)}
+                        className="text-stone-400 hover:text-forest-700 shrink-0 transition-colors"
+                      >
+                        <ArrowUpRight size={14} />
+                      </Link>
                     )}
-                    <p className="text-sm text-stone-600 mt-1 line-clamp-2">
-                      {r.body}
-                    </p>
                   </div>
-                  <Link
-                    href={`/park/${parkSlug}/site/${r.site_id}`}
-                    className="text-stone-400 hover:text-forest-700 shrink-0 transition-colors"
-                  >
-                    <ArrowUpRight size={14} />
-                  </Link>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

@@ -234,6 +234,7 @@ export default async function ParkPage({
     const review = reviewStatsMap.get(s.id);
     return {
       id: s.id,
+      vendorSiteId: s.vendor_site_id,
       name: s.name,
       siteTypeLabel: s.site_type_label ?? s.site_type,
       hasElectric: s.has_electric,
