@@ -43,7 +43,11 @@ type SearchRow = {
   site_id: string;
   site_name: string;
   site_type: string;
+  site_type_label: string | null;
   site_amenities: string[];
+  site_rule_summary: unknown;
+  campground_id: string;
+  campground_name: string;
   matched_nights: (Date | string)[];
   last_checked_at: Date;
   distance_m: number | null;
@@ -80,7 +84,9 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
         s.id  AS site_id,
         s.name AS site_name,
         s.site_type,
+        s.site_type_label,
         s.amenities AS site_amenities,
+        s.rule_summary AS site_rule_summary,
         s.campground_id,
         array_agg(sa.night_date ORDER BY sa.night_date) AS matched_nights,
         max(sa.last_checked_at) AS last_checked_at
@@ -105,7 +111,11 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
       m.site_id,
       m.site_name,
       m.site_type,
+      m.site_type_label,
       m.site_amenities,
+      m.site_rule_summary,
+      c.id AS campground_id,
+      c.name AS campground_name,
       m.matched_nights,
       m.last_checked_at,
       ${hasAnchor
@@ -126,6 +136,9 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
 
   for (const r of rows) {
     const amenities = Array.isArray(r.site_amenities) ? r.site_amenities : [];
+    const ruleSummary = r.site_rule_summary && typeof r.site_rule_summary === "object"
+      ? r.site_rule_summary as { highlights?: SearchResult["site"]["rule_highlights"] }
+      : null;
     if (params.amenities && params.amenities.length > 0) {
       let ok = true;
       for (const code of params.amenities) {
@@ -157,9 +170,11 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
         id: r.site_id,
         name: r.site_name,
         site_type: r.site_type as SiteType,
+        site_type_label: r.site_type_label,
         amenities,
+        rule_highlights: Array.isArray(ruleSummary?.highlights) ? ruleSummary.highlights.slice(0, 4) : [],
       },
-      campground: { id: "", name: "" },
+      campground: { id: r.campground_id, name: r.campground_name },
       park: {
         slug: r.park_slug,
         name: r.park_name,

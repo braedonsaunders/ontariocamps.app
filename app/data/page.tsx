@@ -45,7 +45,7 @@ export default async function DataPage() {
     {
       id: "sites",
       label: "Sites",
-      description: `${totalSites.toLocaleString()} individual campsites — type, amenities, max party/equipment size, and campground reference.`,
+      description: `${totalSites.toLocaleString()} individual campsites — type, amenities, rule highlights, restrictions, nearby features, and fit details.`,
       filename: "ontariocamps-sites.csv",
       rowCount: totalSites,
       dataUrl: "/api/data/sites",

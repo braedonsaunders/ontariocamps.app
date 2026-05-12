@@ -83,7 +83,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ dat
       campground_id: site.campground_id,
       site_type: site.site_type,
       site_type_label: site.site_type_label ?? "",
+      min_party_size: site.min_party_size ?? "",
       max_party_size: site.max_party_size,
+      max_stay_nights: site.max_stay_nights ?? "",
       max_equipment_length_ft: site.max_equipment_length_ft ?? "",
       has_electric: site.has_electric,
       has_water: site.has_water,
@@ -92,6 +94,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ dat
       is_accessible: site.is_accessible,
       is_pet_friendly: site.is_pet_friendly,
       is_waterfront: site.is_waterfront,
+      rule_highlights: site.rule_summary?.highlights?.map((h) => h.label).join("; ") ?? "",
+      restrictions: site.rule_summary?.restrictions?.join("; ") ?? "",
+      nearby: site.rule_summary?.nearby?.join("; ") ?? "",
+      conditions: site.rule_summary?.character?.conditions?.join("; ") ?? "",
     })),
   );
 }

@@ -98,15 +98,38 @@ export type CamisPhoto = {
   aspectType?: number;
 };
 
+export type CamisDefinedAttribute = {
+  attributeDefinitionId: number;
+  attributeId?: number | null;
+  attributeVisibility?: number | null;
+  value?: number | string | null;
+  values?: number[];
+};
+
 export type CamisResourceDetail = {
   resourceId: number;
   resourceLocationId: number;
+  resourceCategoryId?: number | null;
+  feeScheduleId?: number | null;
+  dateScheduleId?: number | null;
+  dateScheduleOverrides?: unknown[];
+  reservableTransactionLocationIds?: number[];
+  geographyIds?: number[];
+  minCapacity?: number | null;
   localizedValues?: Array<{ cultureName: string; name?: string; description?: string }>;
   photos?: CamisPhoto[];
   mapIds?: number[];
   order?: number;
+  maxStay?: number | null;
+  maxStayIsAggregate?: boolean | null;
   maxCapacity?: number;
   maxAdultCapacity?: number | null;
+  minBoatLength?: number | null;
+  maxBoatLength?: number | null;
+  maxBoatDraft?: number | null;
+  slipWidth?: number | null;
+  customAttributes?: unknown[];
+  definedAttributes?: CamisDefinedAttribute[];
   allowedEquipment?: Array<{ equipmentCategoryId: number; subEquipmentCategoryId: number }>;
 };
 
@@ -144,6 +167,25 @@ export type CamisBookingCategory = {
     subEquipmentCategoryId: number;
   }>;
   allowedResourceCategoryIds?: number[];
+};
+
+export type CamisAttributeDefinition = {
+  attributeDefinitionId: number;
+  attributeType: number;
+  order: number;
+  isFilterable: boolean;
+  isDisabled: boolean;
+  isMultiSelect?: boolean;
+  minValue?: number | null;
+  maxValue?: number | null;
+  localizedValues: Array<{ cultureName: string; displayName?: string; name?: string }>;
+  values?: Array<{
+    enumValue: number;
+    order: number;
+    isActive: boolean;
+    icon?: string | null;
+    localizedValues: Array<{ cultureName: string; displayName?: string; name?: string }>;
+  }>;
 };
 
 export type CamisClientOptions = {
@@ -251,6 +293,10 @@ export class CamisClient {
 
   getBookingCategories(): Promise<CamisBookingCategory[]> {
     return this.get<CamisBookingCategory[]>("/api/bookingcategories");
+  }
+
+  getAttributeDefinitions(): Promise<Record<string, CamisAttributeDefinition>> {
+    return this.get<Record<string, CamisAttributeDefinition>>("/api/attribute/filterable");
   }
 
   /** Per-operator iconType → human label dictionary used to render legends on

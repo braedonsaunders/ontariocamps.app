@@ -69,7 +69,9 @@ CREATE TABLE IF NOT EXISTS sites (
   site_type                TEXT NOT NULL,
   site_type_label          TEXT,
   icon_type                INTEGER,
+  min_party_size           INTEGER,
   max_party_size           INTEGER NOT NULL,
+  max_stay_nights          INTEGER,
   max_equipment_length_ft  INTEGER,
   has_electric             INTEGER NOT NULL DEFAULT 0,
   has_water                INTEGER NOT NULL DEFAULT 0,
@@ -87,6 +89,11 @@ CREATE TABLE IF NOT EXISTS sites (
   vendor_resource_location_id INTEGER,
   vendor_resource_id          INTEGER,
   vendor_booking_category_id  INTEGER,
+  defined_attributes          TEXT NOT NULL DEFAULT '[]',
+  allowed_equipment           TEXT NOT NULL DEFAULT '[]',
+  rule_summary                TEXT NOT NULL DEFAULT '{}',
+  source_detail               TEXT NOT NULL DEFAULT '{}',
+  source_detail_updated_at    TEXT,
   UNIQUE (campground_id, vendor_site_id)
 );
 CREATE INDEX IF NOT EXISTS sites_campground_idx ON sites(campground_id);
@@ -118,6 +125,34 @@ CREATE TABLE IF NOT EXISTS operator_fetch_config (
   campsite_booking_category_id INTEGER NOT NULL,
   equipment_category_id        INTEGER NOT NULL,
   sub_equipment_category_id    INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS operator_attribute_definitions (
+  operator_id             TEXT NOT NULL REFERENCES operators(id) ON DELETE CASCADE,
+  attribute_definition_id INTEGER NOT NULL,
+  display_name            TEXT NOT NULL,
+  order_index             INTEGER NOT NULL DEFAULT 9999,
+  attribute_type          INTEGER NOT NULL DEFAULT 0,
+  is_filterable           INTEGER NOT NULL DEFAULT 0,
+  is_disabled             INTEGER NOT NULL DEFAULT 0,
+  is_multi_select         INTEGER NOT NULL DEFAULT 0,
+  min_value               REAL,
+  max_value               REAL,
+  values                  TEXT NOT NULL DEFAULT '[]',
+  source_raw              TEXT NOT NULL DEFAULT '{}',
+  updated_at              TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (operator_id, attribute_definition_id)
+);
+CREATE INDEX IF NOT EXISTS operator_attribute_definitions_name_idx
+  ON operator_attribute_definitions(operator_id, display_name);
+
+CREATE TABLE IF NOT EXISTS operator_rule_sources (
+  operator_id   TEXT PRIMARY KEY REFERENCES operators(id) ON DELETE CASCADE,
+  source_label  TEXT NOT NULL,
+  source_url    TEXT NOT NULL,
+  alerts_url    TEXT,
+  rules         TEXT NOT NULL DEFAULT '[]',
+  updated_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ─── Dynamic availability — refreshed by `npm run ingest:availability` ────

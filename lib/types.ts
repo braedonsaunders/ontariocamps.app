@@ -62,12 +62,116 @@ export type Site = {
   photos?: SitePhoto[];
   /** Operator's per-site description blurb. */
   description?: string | null;
+  /** Operator-supplied minimum party size when present. */
+  min_party_size?: number | null;
+  /** Operator-supplied maximum stay length when present. */
+  max_stay_nights?: number | null;
+  /** Decoded and normalized operator rule metadata for this site. */
+  rule_summary?: SiteRuleSummary | null;
+  /** Raw CAMIS definedAttributes, persisted for future parsers and audits. */
+  defined_attributes?: DecodedSiteAttribute[];
+  /** Raw CAMIS allowedEquipment, persisted as source metadata. */
+  allowed_equipment?: SourceEquipmentRule[];
 };
 
 export type SitePhoto = {
   url: string | null;
   avifUrl: string | null;
   aspectType: number;
+};
+
+export type SourceEquipmentRule = {
+  equipmentCategoryId: number;
+  subEquipmentCategoryId: number;
+  label?: string | null;
+};
+
+export type DecodedSiteAttribute = {
+  attributeDefinitionId: number;
+  attributeId?: number | null;
+  label: string;
+  value: number | string | null;
+  values: string[];
+  rawValues: number[];
+  isFilterable: boolean;
+  order: number;
+};
+
+export type RuleHighlight = {
+  label: string;
+  tone?: "stone" | "amber" | "emerald" | "red" | "lake";
+  category?: "restriction" | "setup" | "character" | "nearby" | "policy";
+};
+
+export type SiteRuleSummary = {
+  highlights: RuleHighlight[];
+  restrictions: string[];
+  setup: {
+    serviceType?: string | null;
+    electricalService?: string | null;
+    pullThrough?: boolean | null;
+    doubleSite?: boolean | null;
+    barrierFree?: boolean | null;
+    firePitAvailable?: boolean | null;
+    maxTents?: number | null;
+    maxTrailers?: number | null;
+    siteLengthM?: number | null;
+    siteWidthM?: number | null;
+    outletDistanceM?: number | null;
+  };
+  character: {
+    shade?: string | null;
+    privacy?: string | null;
+    quality?: string | null;
+    conditions: string[];
+    groundCover: string[];
+    padSlope?: string | null;
+    obstructions: string[];
+    firePitLocation?: string | null;
+    firePit?: string | null;
+  };
+  nearby: string[];
+  comfort: {
+    showers?: string | null;
+    toilet?: string | null;
+    toiletType?: string | null;
+    toiletDistanceM?: number | null;
+    waterTap?: string | null;
+    waterTapDistanceM?: number | null;
+    showerDistanceM?: number | null;
+    picnicTable?: boolean | null;
+  };
+  policies: {
+    radioFree?: boolean;
+    generatorFree?: boolean;
+    noPets?: boolean;
+    dogsAllowed?: boolean | null;
+    tentsOnly?: boolean;
+    noTents?: boolean;
+    noVehicles?: boolean;
+    walkIn?: boolean;
+    alcoholPermitted?: boolean | null;
+  };
+  source: {
+    vendor: Vendor;
+    collectedAt?: string | null;
+  };
+};
+
+export type RuleItem = {
+  label: string;
+  value: string;
+  note?: string;
+  tone?: "stone" | "amber" | "emerald" | "red" | "lake";
+};
+
+export type OperatorRuleSource = {
+  operator_id: string;
+  source_label: string;
+  source_url: string;
+  alerts_url: string | null;
+  rules: RuleItem[];
+  updated_at?: string | null;
 };
 
 export type EquipmentOption = {
@@ -137,7 +241,9 @@ export type SearchResult = {
     id: string;
     name: string;
     site_type: SiteType;
+    site_type_label?: string | null;
     amenities: string[];
+    rule_highlights?: RuleHighlight[];
   };
   campground: { id: string; name: string };
   park: {

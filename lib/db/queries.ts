@@ -22,7 +22,11 @@ import type {
   ParkReview,
   SiteReviewAggregate,
   ParkReviewAggregate,
+  OperatorRuleSource,
 } from "../types";
+
+type PgJsonValue = Parameters<ReturnType<typeof sqlDirect>["json"]>[0];
+const asPgJson = (value: unknown): PgJsonValue => value as PgJsonValue;
 
 // ─── Row adapters ───────────────────────────────────────────────────────────
 
@@ -83,6 +87,11 @@ type SiteRow = {
   vendor_booking_category_id: number | null;
   photos: unknown;
   description: string | null;
+  min_party_size: number | null;
+  max_stay_nights: number | null;
+  defined_attributes: unknown;
+  allowed_equipment: unknown;
+  rule_summary: unknown;
 };
 function rowToSite(r: SiteRow): Site {
   return {
@@ -97,6 +106,11 @@ function rowToSite(r: SiteRow): Site {
     camp_map_id: r.camp_map_id, map_x: r.map_x, map_y: r.map_y,
     photos: Array.isArray(r.photos) ? (r.photos as Site["photos"]) : [],
     description: r.description,
+    min_party_size: r.min_party_size,
+    max_stay_nights: r.max_stay_nights,
+    defined_attributes: Array.isArray(r.defined_attributes) ? (r.defined_attributes as Site["defined_attributes"]) : [],
+    allowed_equipment: Array.isArray(r.allowed_equipment) ? (r.allowed_equipment as Site["allowed_equipment"]) : [],
+    rule_summary: r.rule_summary && typeof r.rule_summary === "object" ? (r.rule_summary as Site["rule_summary"]) : null,
   };
 }
 
@@ -132,7 +146,9 @@ export async function getAllSites(): Promise<Site[]> {
            has_electric, has_water, has_sewer, is_pull_through,
            is_accessible, is_pet_friendly, is_waterfront, amenities,
            camp_map_id, map_x, map_y,
-           vendor_resource_location_id, vendor_resource_id, vendor_booking_category_id
+           vendor_resource_location_id, vendor_resource_id, vendor_booking_category_id,
+           photos, description, min_party_size, max_stay_nights,
+           defined_attributes, allowed_equipment, rule_summary
     FROM sites
   `;
   return rows.map(rowToSite);
@@ -142,6 +158,22 @@ export async function getAllEquipmentOptions(): Promise<EquipmentOption[]> {
 }
 export async function getOperatorFetchConfigs(): Promise<OperatorFetchConfig[]> {
   return (await sqlDirect()<OperatorFetchConfig[]>`SELECT * FROM operator_fetch_config`).map((r) => r);
+}
+
+export async function getOperatorRuleSource(operatorId: string): Promise<OperatorRuleSource | null> {
+  const rows = await sql()<Array<Omit<OperatorRuleSource, "updated_at"> & { updated_at: Date | string | null }>>`
+    SELECT operator_id, source_label, source_url, alerts_url, rules, updated_at
+      FROM operator_rule_sources
+     WHERE operator_id = ${operatorId}
+     LIMIT 1
+  `;
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    ...row,
+    rules: Array.isArray(row.rules) ? row.rules : [],
+    updated_at: row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at,
+  };
 }
 
 export type SiteNight = {
@@ -242,6 +274,8 @@ export type SiteWrite = Site & {
   vendor_resource_location_id: number;
   vendor_resource_id: number;
   vendor_booking_category_id: number;
+  source_detail?: unknown;
+  source_detail_updated_at?: string;
 };
 
 export async function upsertOperator(o: Operator): Promise<void> {
@@ -300,25 +334,33 @@ export async function upsertCampMap(cm: CampMap): Promise<void> {
 export async function upsertSite(s: SiteWrite): Promise<void> {
   await sqlDirect()`
     INSERT INTO sites (id, campground_id, vendor_site_id, name, site_type, site_type_label, icon_type,
-                       max_party_size, max_equipment_length_ft,
+                       min_party_size, max_party_size, max_stay_nights, max_equipment_length_ft,
                        has_electric, has_water, has_sewer, is_pull_through,
                        is_accessible, is_pet_friendly, is_waterfront,
                        amenities, camp_map_id, map_x, map_y,
                        vendor_resource_location_id, vendor_resource_id, vendor_booking_category_id,
-                       photos, description)
+                       photos, description, defined_attributes, allowed_equipment,
+                       rule_summary, source_detail, source_detail_updated_at)
     VALUES (${s.id}, ${s.campground_id}, ${s.vendor_site_id}, ${s.name}, ${s.site_type},
             ${s.site_type_label ?? null}, ${s.icon_type ?? null},
-            ${s.max_party_size}, ${s.max_equipment_length_ft},
+            ${s.min_party_size ?? null}, ${s.max_party_size}, ${s.max_stay_nights ?? null}, ${s.max_equipment_length_ft},
             ${s.has_electric}, ${s.has_water}, ${s.has_sewer}, ${s.is_pull_through},
             ${s.is_accessible}, ${s.is_pet_friendly}, ${s.is_waterfront},
             ${sqlDirect().json(s.amenities)}, ${s.camp_map_id ?? null}, ${s.map_x ?? null}, ${s.map_y ?? null},
             ${s.vendor_resource_location_id}, ${s.vendor_resource_id}, ${s.vendor_booking_category_id},
-            ${sqlDirect().json(s.photos ?? [])}, ${s.description ?? null})
+            ${sqlDirect().json(s.photos ?? [])}, ${s.description ?? null},
+            ${sqlDirect().json(s.defined_attributes ?? [])},
+            ${sqlDirect().json(s.allowed_equipment ?? [])},
+            ${sqlDirect().json(s.rule_summary ?? null)},
+            ${sqlDirect().json(asPgJson(s.source_detail ?? {}))},
+            ${s.source_detail_updated_at ?? null})
     ON CONFLICT (id) DO UPDATE SET
       campground_id = excluded.campground_id, vendor_site_id = excluded.vendor_site_id,
       name = excluded.name, site_type = excluded.site_type,
       site_type_label = excluded.site_type_label, icon_type = excluded.icon_type,
+      min_party_size = excluded.min_party_size,
       max_party_size = excluded.max_party_size,
+      max_stay_nights = excluded.max_stay_nights,
       max_equipment_length_ft = excluded.max_equipment_length_ft,
       has_electric = excluded.has_electric, has_water = excluded.has_water,
       has_sewer = excluded.has_sewer, is_pull_through = excluded.is_pull_through,
@@ -328,7 +370,12 @@ export async function upsertSite(s: SiteWrite): Promise<void> {
       vendor_resource_location_id = excluded.vendor_resource_location_id,
       vendor_resource_id = excluded.vendor_resource_id,
       vendor_booking_category_id = excluded.vendor_booking_category_id,
-      photos = excluded.photos, description = excluded.description
+      photos = excluded.photos, description = excluded.description,
+      defined_attributes = excluded.defined_attributes,
+      allowed_equipment = excluded.allowed_equipment,
+      rule_summary = excluded.rule_summary,
+      source_detail = excluded.source_detail,
+      source_detail_updated_at = COALESCE(excluded.source_detail_updated_at, now())
   `;
 }
 
@@ -357,6 +404,62 @@ export async function upsertOperatorFetchConfig(c: OperatorFetchConfig): Promise
       campsite_booking_category_id = excluded.campsite_booking_category_id,
       equipment_category_id = excluded.equipment_category_id,
       sub_equipment_category_id = excluded.sub_equipment_category_id
+  `;
+}
+
+export async function upsertOperatorRuleSource(source: OperatorRuleSource): Promise<void> {
+  await sqlDirect()`
+    INSERT INTO operator_rule_sources (operator_id, source_label, source_url, alerts_url, rules, updated_at)
+    VALUES (${source.operator_id}, ${source.source_label}, ${source.source_url},
+            ${source.alerts_url}, ${sqlDirect().json(source.rules)}, now())
+    ON CONFLICT (operator_id) DO UPDATE SET
+      source_label = excluded.source_label,
+      source_url = excluded.source_url,
+      alerts_url = excluded.alerts_url,
+      rules = excluded.rules,
+      updated_at = now()
+  `;
+}
+
+export async function upsertOperatorAttributeDefinition(args: {
+  operator_id: string;
+  attribute_definition_id: number;
+  display_name: string;
+  order_index: number;
+  attribute_type: number;
+  is_filterable: boolean;
+  is_disabled: boolean;
+  is_multi_select: boolean;
+  min_value?: number | null;
+  max_value?: number | null;
+  values: unknown;
+  source_raw: unknown;
+}): Promise<void> {
+  await sqlDirect()`
+    INSERT INTO operator_attribute_definitions (
+      operator_id, attribute_definition_id, display_name, order_index,
+      attribute_type, is_filterable, is_disabled, is_multi_select,
+      min_value, max_value, values, source_raw, updated_at
+    )
+    VALUES (
+      ${args.operator_id}, ${args.attribute_definition_id}, ${args.display_name},
+      ${args.order_index}, ${args.attribute_type}, ${args.is_filterable},
+      ${args.is_disabled}, ${args.is_multi_select}, ${args.min_value ?? null},
+      ${args.max_value ?? null}, ${sqlDirect().json(asPgJson(args.values))},
+      ${sqlDirect().json(asPgJson(args.source_raw))}, now()
+    )
+    ON CONFLICT (operator_id, attribute_definition_id) DO UPDATE SET
+      display_name = excluded.display_name,
+      order_index = excluded.order_index,
+      attribute_type = excluded.attribute_type,
+      is_filterable = excluded.is_filterable,
+      is_disabled = excluded.is_disabled,
+      is_multi_select = excluded.is_multi_select,
+      min_value = excluded.min_value,
+      max_value = excluded.max_value,
+      values = excluded.values,
+      source_raw = excluded.source_raw,
+      updated_at = now()
   `;
 }
 
@@ -416,8 +519,65 @@ export async function pruneStaleAvailability(cutoff_date: string): Promise<numbe
   return rows.count;
 }
 
-/** Refresh denormalized columns + materialized views. Called at the tail of
- *  every availability ingest run. */
+/** Refresh only hot-path denormalized columns. This is intentionally separate
+ *  from analytics materialized views so frequent availability runs stay cheap. */
+export async function refreshRollups(): Promise<void> {
+  await sqlDirect()`
+    WITH park_stats AS (
+      SELECT p.id AS park_id,
+             count(DISTINCT c.id)::int AS cgs,
+             count(DISTINCT s.id)::int AS total_sites,
+             count(DISTINCT s.id) FILTER (WHERE sa.status = 'available')::int AS avail_sites,
+             max(sa.last_checked_at) AS last_check
+        FROM parks p
+        LEFT JOIN campgrounds c ON c.park_id = p.id
+        LEFT JOIN sites s ON s.campground_id = c.id
+        LEFT JOIN site_availability sa
+               ON sa.site_id = s.id
+              AND sa.night_date = CURRENT_DATE
+       GROUP BY p.id
+    )
+    UPDATE parks
+       SET total_campgrounds = park_stats.cgs,
+           total_sites = park_stats.total_sites,
+           available_sites = park_stats.avail_sites,
+           availability_pct = CASE WHEN park_stats.total_sites = 0 THEN 0
+                                   ELSE (100.0 * park_stats.avail_sites / park_stats.total_sites)::int END,
+           last_availability_at = park_stats.last_check
+      FROM park_stats
+     WHERE park_stats.park_id = parks.id
+  `;
+
+  await sqlDirect()`
+    WITH operator_stats AS (
+      SELECT o.id AS op_id,
+             count(DISTINCT p.id)::int AS parks_n,
+             count(DISTINCT c.id)::int AS cgs_n,
+             count(DISTINCT s.id)::int AS sites_n,
+             count(DISTINCT s.id) FILTER (WHERE sa.status = 'available')::int AS avail_n,
+             max(sa.last_checked_at) AS last_check
+        FROM operators o
+        LEFT JOIN parks p ON p.operator_id = o.id
+        LEFT JOIN campgrounds c ON c.park_id = p.id
+        LEFT JOIN sites s ON s.campground_id = c.id
+        LEFT JOIN site_availability sa
+               ON sa.site_id = s.id
+              AND sa.night_date = CURRENT_DATE
+       GROUP BY o.id
+    )
+    UPDATE operators
+       SET total_parks = operator_stats.parks_n,
+           total_campgrounds = operator_stats.cgs_n,
+           total_sites = operator_stats.sites_n,
+           available_sites = operator_stats.avail_n,
+           last_availability_at = operator_stats.last_check
+      FROM operator_stats
+     WHERE operator_stats.op_id = operators.id
+  `;
+}
+
+/** Refresh denormalized columns + materialized views. Use on slower analytics
+ *  cadence, not for every frequent availability ingest. */
 export async function refreshAggregates(): Promise<void> {
   await sqlDirect()`SELECT refresh_aggregates()`;
 }

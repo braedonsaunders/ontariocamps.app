@@ -21,6 +21,7 @@ import {
   type CamisMapResource,
   localizedName,
 } from "./camis-client";
+import { decodeResourceRules, decodeSiteAttributes, equipmentRules, operatorRuleProfile } from "../rules";
 import { resolveCoordinates } from "./coordinates";
 import {
   upsertOperator,
@@ -31,6 +32,8 @@ import {
   upsertSiteTypeLabel,
   upsertEquipmentOption,
   upsertOperatorFetchConfig,
+  upsertOperatorRuleSource,
+  upsertOperatorAttributeDefinition,
   startRefreshLog,
   finishRefreshLog,
   setRefreshMeta,
@@ -115,6 +118,11 @@ function operatorEquipmentList(
     }
   }
   return out.sort((a, b) => a.order_index - b.order_index);
+}
+
+function pickEnglishDisplay(values?: Array<{ cultureName: string; displayName?: string; name?: string }>): string | null {
+  const en = values?.find((v) => v.cultureName === "en-CA") ?? values?.[0];
+  return (en?.displayName ?? en?.name ?? "").trim() || null;
 }
 
 function extractParkCandidates(rootMaps: CamisMap[]) {
@@ -240,8 +248,41 @@ export async function refreshOperatorMetadata(
     await finishRefreshLog({
       id: runId, status: "failed", duration_ms: Date.now() - started, errors,
     });
-    return { status: "failed", parks_seen, sites_seen, errors };
+      return { status: "failed", parks_seen, sites_seen, errors };
   }
+
+  const collectedAt = new Date().toISOString();
+  let attributeDefs: Awaited<ReturnType<CamisClient["getAttributeDefinitions"]>> = {};
+  try {
+    attributeDefs = await client.getAttributeDefinitions();
+    for (const def of Object.values(attributeDefs)) {
+      const displayName = pickEnglishDisplay(def.localizedValues) ?? `Attribute ${def.attributeDefinitionId}`;
+      const values = (def.values ?? []).map((v) => ({
+        enumValue: v.enumValue,
+        order: v.order,
+        isActive: v.isActive,
+        label: pickEnglishDisplay(v.localizedValues) ?? String(v.enumValue),
+      }));
+      await upsertOperatorAttributeDefinition({
+        operator_id: operator.id,
+        attribute_definition_id: def.attributeDefinitionId,
+        display_name: displayName,
+        order_index: def.order ?? 9999,
+        attribute_type: def.attributeType ?? 0,
+        is_filterable: Boolean(def.isFilterable),
+        is_disabled: Boolean(def.isDisabled),
+        is_multi_select: Boolean(def.isMultiSelect),
+        min_value: def.minValue ?? null,
+        max_value: def.maxValue ?? null,
+        values,
+        source_raw: def,
+      });
+    }
+  } catch (err) {
+    errors.push(`attributeDefinitions: ${(err as Error).message}`);
+  }
+
+  await upsertOperatorRuleSource(operatorRuleProfile(operator));
 
   const bookingCategoryRecord = pickCampsiteBookingCategory(bookingCats);
   const bookingCategoryId = bookingCategoryRecord?.bookingCategoryId ?? 0;
@@ -350,6 +391,14 @@ export async function refreshOperatorMetadata(
           .filter((ph) => ph.url || ph.avifUrl);
         const description = (en?.description ?? "").trim() || null;
         const siteName = (en?.name ?? "").trim() || String(Math.abs(r.resourceId) % 10000);
+        const decodedAttributes = decodeSiteAttributes(detail?.definedAttributes, attributeDefs);
+        const allowedEquipment = equipmentRules(detail?.allowedEquipment, equipmentCats);
+        const ruleSummary = decodeResourceRules({
+          vendor: operator.vendor,
+          detail,
+          definitions: attributeDefs,
+          collectedAt,
+        });
 
         const site: SiteWrite = {
           id: siteId,
@@ -359,7 +408,9 @@ export async function refreshOperatorMetadata(
           site_type: siteTypeFromLabel(label),
           site_type_label: label,
           icon_type: r.iconType,
+          min_party_size: detail?.minCapacity ?? null,
           max_party_size: detail?.maxCapacity ?? 6,
+          max_stay_nights: detail?.maxStay ?? null,
           max_equipment_length_ft: null,
           has_electric: hasElectricFromLabel(label),
           has_water: false,
@@ -377,6 +428,11 @@ export async function refreshOperatorMetadata(
           vendor_booking_category_id: bookingCategoryId,
           photos,
           description,
+          defined_attributes: decodedAttributes,
+          allowed_equipment: allowedEquipment,
+          rule_summary: ruleSummary,
+          source_detail: detail ?? {},
+          source_detail_updated_at: collectedAt,
         };
         await upsertSite(site);
         sites_seen += 1;
