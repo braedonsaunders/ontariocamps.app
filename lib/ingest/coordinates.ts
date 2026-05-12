@@ -1,3 +1,5 @@
+import coordinateOverrides from "./park-coordinate-overrides.json";
+
 /**
  * Hand-curated park coordinates.
  *
@@ -23,6 +25,13 @@ export type ParkCoord = {
   description?: string;
   heroImageUrl?: string;
 };
+
+export type ParkCoordContext = {
+  operatorId: string;
+  resourceLocationId: number;
+};
+
+type ParkCoordOverride = Pick<ParkCoord, "lat" | "lng"> & Partial<Omit<ParkCoord, "match" | "lat" | "lng">>;
 
 /**
  * IMPORTANT: ordering matters. The first match wins, so put more-specific regexes
@@ -245,20 +254,64 @@ export const PARK_COORDS: ParkCoord[] = [
     heroImageUrl: "https://ontarioconservationareas.ca/wp-content/uploads/2022/04/Valens-Lake-scaled.jpg" },
 ];
 
+/**
+ * Exact vendor-location overrides for current bookable parks. These are checked
+ * before name matching so future metadata ingests cannot accidentally match a
+ * short park name inside an unrelated park name.
+ */
+const PARK_COORD_OVERRIDES = coordinateOverrides as Record<string, ParkCoordOverride>;
+
 const NORM_CACHE: Array<{ matcher: ParkCoord; literalLower: string | null }> = PARK_COORDS.map((c) => ({
   matcher: c,
   literalLower: typeof c.match === "string" ? c.match.toLowerCase().replace(/[^a-z0-9]/g, "") : null,
 }));
 
-export function resolveCoordinates(name: string | null | undefined): ParkCoord | null {
+function overrideKey(context: ParkCoordContext): string {
+  return `${context.operatorId}:${context.resourceLocationId}`;
+}
+
+function literalMatches(name: string, literal: string): boolean {
+  const words = literal.toLowerCase().match(/[a-z0-9]+/g) ?? [];
+  if (words.length === 0) return false;
+  const haystack = name.toLowerCase();
+  let cursor = 0;
+  for (const word of words) {
+    const re = new RegExp(`(^|[^a-z0-9])${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^a-z0-9]|$)`, "i");
+    const slice = haystack.slice(cursor);
+    const match = re.exec(slice);
+    if (!match) return false;
+    cursor += match.index + match[0].length - match[2].length;
+  }
+  return true;
+}
+
+export function resolveCoordinates(
+  name: string | null | undefined,
+  context?: ParkCoordContext,
+): ParkCoord | null {
   if (!name) return null;
-  const norm = name.toLowerCase().replace(/[^a-z0-9]/g, "");
+  let matched: ParkCoord | null = null;
   for (const { matcher, literalLower } of NORM_CACHE) {
     if (matcher.match instanceof RegExp) {
-      if (matcher.match.test(name)) return matcher;
-    } else if (literalLower && norm.includes(literalLower)) {
-      return matcher;
+      if (matcher.match.test(name)) {
+        matched = matcher;
+        break;
+      }
+    } else if (literalLower && literalMatches(name, matcher.match)) {
+      matched = matcher;
+      break;
     }
   }
-  return null;
+  if (context) {
+    const override = PARK_COORD_OVERRIDES[overrideKey(context)];
+    if (override) {
+      return {
+        match: name,
+        ...(matched ?? {}),
+        ...override,
+        region: override.region ?? matched?.region ?? "Ontario",
+      };
+    }
+  }
+  return matched;
 }

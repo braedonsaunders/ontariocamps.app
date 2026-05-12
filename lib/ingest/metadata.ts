@@ -320,13 +320,18 @@ export async function refreshOperatorMetadata(
   }
 
   const candidates = extractParkCandidates(rootMaps);
-  const matched = candidates.filter((c) => resolveCoordinates(c.title));
+  const matched = candidates.filter((c) =>
+    resolveCoordinates(c.title, { operatorId: operator.id, resourceLocationId: c.resourceLocationId }),
+  );
   log(`[${operator.id}] ${matched.length}/${candidates.length} parks with curated coords`);
 
   for (let i = 0; i < matched.length; i++) {
     const cand = matched[i];
     parks_seen += 1;
-    const coord = resolveCoordinates(cand.title)!;
+    const coord = resolveCoordinates(cand.title, {
+      operatorId: operator.id,
+      resourceLocationId: cand.resourceLocationId,
+    })!;
     const parkId = `p_${operator.id}_${cand.resourceLocationId}`;
 
     await upsertPark({

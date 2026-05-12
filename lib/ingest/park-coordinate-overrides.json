@@ -1,0 +1,712 @@
+{
+  "gtc_catfish:-2147483648": {
+    "lat": 42.7412009,
+    "lng": -81.0179204,
+    "region": "Southwestern"
+  },
+  "gtc_grca:-2147483641": {
+    "lat": 43.6092069,
+    "lng": -80.1477741,
+    "region": "Southwestern"
+  },
+  "gtc_grca:-2147483642": {
+    "lat": 43.2688105,
+    "lng": -80.3825404,
+    "region": "Southwestern"
+  },
+  "gtc_grca:-2147483643": {
+    "lat": 43.4832472,
+    "lng": -80.575781,
+    "region": "Southwestern"
+  },
+  "gtc_grca:-2147483644": {
+    "lat": 43.6676694,
+    "lng": -80.451545,
+    "region": "Southwestern"
+  },
+  "gtc_grca:-2147483645": {
+    "lat": 43.6050132,
+    "lng": -80.2496942,
+    "region": "Southwestern"
+  },
+  "gtc_grca:-2147483646": {
+    "lat": 43.7078767,
+    "lng": -80.7707069,
+    "region": "Southwestern"
+  },
+  "gtc_grca:-2147483647": {
+    "lat": 42.897598,
+    "lng": -79.6398771,
+    "region": "Southwestern"
+  },
+  "gtc_grca:-2147483648": {
+    "lat": 43.1542005,
+    "lng": -80.3022406,
+    "region": "Southwestern"
+  },
+  "gtc_hca:-2147483643": {
+    "lat": 43.2214795,
+    "lng": -79.6255798,
+    "region": "GTA"
+  },
+  "gtc_hca:-2147483648": {
+    "lat": 43.3794815,
+    "lng": -80.1415753,
+    "region": "GTA"
+  },
+  "gtc_lprca:-2147483643": {
+    "lat": 42.9294938,
+    "lng": -80.3177628,
+    "region": "Southwestern"
+  },
+  "gtc_lprca:-2147483644": {
+    "lat": 42.7478002,
+    "lng": -80.2685344,
+    "region": "Southwestern"
+  },
+  "gtc_lprca:-2147483646": {
+    "lat": 42.8044188,
+    "lng": -79.9956404,
+    "region": "Southwestern"
+  },
+  "gtc_lprca:-2147483647": {
+    "lat": 42.7100189,
+    "lng": -80.5660895,
+    "region": "Southwestern"
+  },
+  "gtc_lprca:-2147483648": {
+    "lat": 42.6512678,
+    "lng": -80.4688803,
+    "region": "Southwestern"
+  },
+  "gtc_maitland:-2147483648": {
+    "lat": 43.7145111,
+    "lng": -81.638522,
+    "region": "Southwestern"
+  },
+  "gtc_npca:-2147483645": {
+    "lat": 43.1049454,
+    "lng": -79.8530848,
+    "region": "Niagara"
+  },
+  "gtc_npca:-2147483647": {
+    "lat": 42.8759954,
+    "lng": -79.4237891,
+    "region": "Niagara"
+  },
+  "gtc_npca:-2147483648": {
+    "lat": 42.992887,
+    "lng": -79.5151668,
+    "region": "Niagara"
+  },
+  "gtc_otonabee:-2147483647": {
+    "lat": 44.4551266,
+    "lng": -78.1285672,
+    "region": "Central"
+  },
+  "gtc_otonabee:-2147483648": {
+    "lat": 44.2932925,
+    "lng": -78.301777,
+    "region": "Central"
+  },
+  "gtc_stclair:-2147483646": {
+    "lat": 42.9963062,
+    "lng": -81.946273,
+    "region": "Southwestern"
+  },
+  "gtc_stclair:-2147483647": {
+    "lat": 42.8757478,
+    "lng": -82.1819528,
+    "region": "Southwestern"
+  },
+  "gtc_stclair:-2147483648": {
+    "lat": 42.825271,
+    "lng": -81.8329623,
+    "region": "Southwestern"
+  },
+  "gtc_trca:-2147483646": {
+    "lat": 43.7363154,
+    "lng": -79.6360919,
+    "region": "GTA"
+  },
+  "gtc_trca:-2147483648": {
+    "lat": 43.9252699,
+    "lng": -79.8287569,
+    "region": "GTA"
+  },
+  "gtc_upperthames:-2147483645": {
+    "lat": 43.2551584,
+    "lng": -81.0627291,
+    "region": "Southwestern"
+  },
+  "gtc_upperthames:-2147483646": {
+    "lat": 43.165352,
+    "lng": -80.7132809,
+    "region": "Southwestern"
+  },
+  "gtc_upperthames:-2147483647": {
+    "lat": 43.0654241,
+    "lng": -81.185625,
+    "region": "Southwestern"
+  },
+  "ontario_parks:-2147483452": {
+    "lat": 48.7910854,
+    "lng": -88.6703283,
+    "region": "Northwestern"
+  },
+  "ontario_parks:-2147483465": {
+    "lat": 44.2995904,
+    "lng": -78.2692904,
+    "region": "Central"
+  },
+  "ontario_parks:-2147483466": {
+    "lat": 45.7906741,
+    "lng": -82.7335406,
+    "region": "Northeastern"
+  },
+  "ontario_parks:-2147483467": {
+    "lat": 45.4033735,
+    "lng": -78.9000268,
+    "region": "Central"
+  },
+  "ontario_parks:-2147483468": {
+    "lat": 42.9493265,
+    "lng": -81.3964523,
+    "region": "Southwestern"
+  },
+  "ontario_parks:-2147483469": {
+    "lat": 46.9408047,
+    "lng": -84.5536806,
+    "region": "Northern"
+  },
+  "ontario_parks:-2147483472": {
+    "lat": 44.0476617,
+    "lng": -80.0782961,
+    "region": "Central"
+  },
+  "ontario_parks:-2147483473": {
+    "lat": 43.8154314,
+    "lng": -80.0127352,
+    "region": "Central"
+  },
+  "ontario_parks:-2147483519": {
+    "lat": 44.4363487,
+    "lng": -79.7646315,
+    "region": "Central"
+  },
+  "ontario_parks:-2147483520": {
+    "lat": 44.6200659,
+    "lng": -78.0466809,
+    "region": "Central"
+  },
+  "ontario_parks:-2147483521": {
+    "lat": 49.6875052,
+    "lng": -86.8976944,
+    "region": "Northern"
+  },
+  "ontario_parks:-2147483523": {
+    "lat": 51.0163937,
+    "lng": -94.829587,
+    "region": "Northwestern"
+  },
+  "ontario_parks:-2147483524": {
+    "lat": 46.6205592,
+    "lng": -81.4501357,
+    "region": "Northeastern"
+  },
+  "ontario_parks:-2147483525": {
+    "lat": 45.5631019,
+    "lng": -78.4426089,
+    "region": "Central"
+  },
+  "ontario_parks:-2147483526": {
+    "lat": 48.6973028,
+    "lng": -85.6688128,
+    "region": "Northern"
+  },
+  "ontario_parks:-2147483527": {
+    "lat": 42.0870217,
+    "lng": -82.4477927,
+    "region": "Southwestern"
+  },
+  "ontario_parks:-2147483528": {
+    "lat": 47.4772258,
+    "lng": -82.8231881,
+    "region": "Northern"
+  },
+  "ontario_parks:-2147483530": {
+    "lat": 45.5610342,
+    "lng": -74.4247605,
+    "region": "Eastern"
+  },
+  "ontario_parks:-2147483531": {
+    "lat": 42.7037389,
+    "lng": -80.3336969,
+    "region": "Southwestern"
+  },
+  "ontario_parks:-2147483533": {
+    "lat": 45.5122108,
+    "lng": -78.7216128,
+    "region": "Central"
+  },
+  "ontario_parks:-2147483535": {
+    "lat": 45.6235853,
+    "lng": -80.4161305,
+    "region": "Central"
+  },
+  "ontario_parks:-2147483538": {
+    "lat": 48.4357153,
+    "lng": -88.7994425,
+    "region": "Northwestern"
+  },
+  "ontario_parks:-2147483539": {
+    "lat": 44.8947532,
+    "lng": -79.7556656,
+    "region": "Central"
+  },
+  "ontario_parks:-2147483540": {
+    "lat": 49.4222743,
+    "lng": -94.0526496,
+    "region": "Northwestern"
+  },
+  "ontario_parks:-2147483541": {
+    "lat": 44.8323786,
+    "lng": -76.5769038,
+    "region": "Southeastern"
+  },
+  "ontario_parks:-2147483542": {
+    "lat": 48.6764293,
+    "lng": -89.6002976,
+    "region": "Northwestern"
+  },
+  "ontario_parks:-2147483543": {
+    "lat": 44.9165304,
+    "lng": -78.0626929,
+    "region": "Central"
+  },
+  "ontario_parks:-2147483544": {
+    "lat": 44.3254724,
+    "lng": -79.3210925,
+    "region": "Central"
+  },
+  "ontario_parks:-2147483545": {
+    "lat": 44.7757194,
+    "lng": -76.7133488,
+    "region": "Southeastern"
+  },
+  "ontario_parks:-2147483546": {
+    "lat": 42.8140551,
+    "lng": -79.9590845,
+    "region": "Southwestern"
+  },
+  "ontario_parks:-2147483547": {
+    "lat": 44.6762705,
+    "lng": -81.2522817,
+    "region": "Southwestern"
+  },
+  "ontario_parks:-2147483548": {
+    "lat": 49.4660775,
+    "lng": -91.5522462,
+    "region": "Northwestern"
+  },
+  "ontario_parks:-2147483549": {
+    "lat": 43.9063053,
+    "lng": -77.2503127,
+    "region": "Southeastern"
+  },
+  "ontario_parks:-2147483551": {
+    "lat": 46.3015536,
+    "lng": -78.8685657,
+    "region": "Northeastern"
+  },
+  "ontario_parks:-2147483552": {
+    "lat": 49.6835659,
+    "lng": -94.2238897,
+    "region": "Northwestern"
+  },
+  "ontario_parks:-2147483553": {
+    "lat": 42.2892058,
+    "lng": -81.8691696,
+    "region": "Southwestern"
+  },
+  "ontario_parks:-2147483554": {
+    "lat": 42.8480903,
+    "lng": -79.5537446,
+    "region": "Southwestern"
+  },
+  "ontario_parks:-2147483555": {
+    "lat": 45.5233653,
+    "lng": -78.4083202,
+    "region": "Central"
+  },
+  "ontario_parks:-2147483556": {
+    "lat": 45.0580882,
+    "lng": -75.6702821,
+    "region": "Eastern"
+  },
+  "ontario_parks:-2147483557": {
+    "lat": 46.0825422,
+    "lng": -79.78635,
+    "region": "Central"
+  },
+  "ontario_parks:-2147483558": {
+    "lat": 49.4610201,
+    "lng": -82.1378673,
+    "region": "Northern"
+  },
+  "ontario_parks:-2147483560": {
+    "lat": 48.8440169,
+    "lng": -87.392122,
+    "region": "Northern"
+  },
+  "ontario_parks:-2147483562": {
+    "lat": 48.3674067,
+    "lng": -91.4666173,
+    "region": "Northwestern"
+  },
+  "ontario_parks:-2147483563": {
+    "lat": 43.990573,
+    "lng": -77.7155277,
+    "region": "Southeastern"
+  },
+  "ontario_parks:-2147483565": {
+    "lat": 42.6447362,
+    "lng": -80.8212167,
+    "region": "Southwestern"
+  },
+  "ontario_parks:-2147483566": {
+    "lat": 43.8047624,
+    "lng": -81.7167312,
+    "region": "Southwestern"
+  },
+  "ontario_parks:-2147483567": {
+    "lat": 45.5710463,
+    "lng": -78.4456856,
+    "region": "Central"
+  },
+  "ontario_parks:-2147483568": {
+    "lat": 43.2592638,
+    "lng": -81.8362868,
+    "region": "Southwestern"
+  },
+  "ontario_parks:-2147483569": {
+    "lat": 46.963685,
+    "lng": -84.6942046,
+    "region": "Northern"
+  },
+  "ontario_parks:-2147483570": {
+    "lat": 50.7408634,
+    "lng": -93.5810415,
+    "region": "Northwestern"
+  },
+  "ontario_parks:-2147483573": {
+    "lat": 49.9893252,
+    "lng": -92.1516163,
+    "region": "Northwestern"
+  },
+  "ontario_parks:-2147483576": {
+    "lat": 45.3127242,
+    "lng": -79.9642531,
+    "region": "Central"
+  },
+  "ontario_parks:-2147483577": {
+    "lat": 43.9577297,
+    "lng": -77.5276225,
+    "region": "Southeastern"
+  },
+  "ontario_parks:-2147483578": {
+    "lat": 48.756062,
+    "lng": -86.5761423,
+    "region": "Northern"
+  },
+  "ontario_parks:-2147483579": {
+    "lat": 49.5728638,
+    "lng": -84.8147272,
+    "region": "Northern"
+  },
+  "ontario_parks:-2147483580": {
+    "lat": 44.7705722,
+    "lng": -76.2316213,
+    "region": "Eastern"
+  },
+  "ontario_parks:-2147483581": {
+    "lat": 46.6022728,
+    "lng": -82.6658044,
+    "region": "Northeastern"
+  },
+  "ontario_parks:-2147483583": {
+    "lat": 48.5183719,
+    "lng": -83.461769,
+    "region": "Northern"
+  },
+  "ontario_parks:-2147483584": {
+    "lat": 45.819992,
+    "lng": -79.5160491,
+    "region": "Central"
+  },
+  "ontario_parks:-2147483585": {
+    "lat": 45.5755477,
+    "lng": -78.5172363,
+    "region": "Central"
+  },
+  "ontario_parks:-2147483586": {
+    "lat": 44.5708954,
+    "lng": -79.3298039,
+    "region": "Central"
+  },
+  "ontario_parks:-2147483587": {
+    "lat": 45.1811534,
+    "lng": -80.0478363,
+    "region": "Central"
+  },
+  "ontario_parks:-2147483588": {
+    "lat": 46.7239031,
+    "lng": -79.8110829,
+    "region": "Northeastern"
+  },
+  "ontario_parks:-2147483589": {
+    "lat": 44.5869641,
+    "lng": -79.3594674,
+    "region": "Central"
+  },
+  "ontario_parks:-2147483592": {
+    "lat": 44.4040475,
+    "lng": -81.4800953,
+    "region": "Southwestern"
+  },
+  "ontario_parks:-2147483593": {
+    "lat": 42.5793406,
+    "lng": -80.3844078,
+    "region": "Southwestern"
+  },
+  "ontario_parks:-2147483595": {
+    "lat": 45.3336705,
+    "lng": -78.0216144,
+    "region": "Central"
+  },
+  "ontario_parks:-2147483596": {
+    "lat": 45.578941,
+    "lng": -78.5031217,
+    "region": "Central"
+  },
+  "ontario_parks:-2147483599": {
+    "lat": 46.0890172,
+    "lng": -78.876262,
+    "region": "Central"
+  },
+  "ontario_parks:-2147483600": {
+    "lat": 45.3535615,
+    "lng": -80.1968354,
+    "region": "Central"
+  },
+  "ontario_parks:-2147483601": {
+    "lat": 46.1020936,
+    "lng": -81.4129267,
+    "region": "Northeastern"
+  },
+  "ontario_parks:-2147483602": {
+    "lat": 48.5705555,
+    "lng": -80.8689769,
+    "region": "Northeastern"
+  },
+  "ontario_parks:-2147483603": {
+    "lat": 44.7075023,
+    "lng": -78.2015194,
+    "region": "Central"
+  },
+  "ontario_parks:-2147483604": {
+    "lat": 47.7961158,
+    "lng": -79.8861272,
+    "region": "Northeastern"
+  },
+  "ontario_parks:-2147483605": {
+    "lat": 48.3926448,
+    "lng": -89.6242316,
+    "region": "Northwestern"
+  },
+  "ontario_parks:-2147483606": {
+    "lat": 48.1613362,
+    "lng": -82.4984496,
+    "region": "Northeastern"
+  },
+  "ontario_parks:-2147483607": {
+    "lat": 44.3018074,
+    "lng": -81.5897724,
+    "region": "Southwestern"
+  },
+  "ontario_parks:-2147483608": {
+    "lat": 46.9047327,
+    "lng": -81.6649171,
+    "region": "Northeastern"
+  },
+  "ontario_parks:-2147483609": {
+    "lat": 45.9412707,
+    "lng": -80.5508387,
+    "region": "Northeastern"
+  },
+  "ontario_parks:-2147483610": {
+    "lat": 49.8112914,
+    "lng": -83.9044383,
+    "region": "Northern"
+  },
+  "ontario_parks:-2147483611": {
+    "lat": 44.5393571,
+    "lng": -76.5153742,
+    "region": "Southeastern"
+  },
+  "ontario_parks:-2147483612": {
+    "lat": 45.9470821,
+    "lng": -80.8812189,
+    "region": "Central"
+  },
+  "ontario_parks:-2147483613": {
+    "lat": 45.4831853,
+    "lng": -76.2210428,
+    "region": "Eastern"
+  },
+  "ontario_parks:-2147483614": {
+    "lat": 47.0550413,
+    "lng": -79.8052309,
+    "region": "Northeastern"
+  },
+  "ontario_parks:-2147483615": {
+    "lat": 44.2907172,
+    "lng": -77.7924293,
+    "region": "Southeastern"
+  },
+  "ontario_parks:-2147483616": {
+    "lat": 46.4735845,
+    "lng": -81.4415768,
+    "region": "Northeastern"
+  },
+  "ontario_parks:-2147483617": {
+    "lat": 48.3197125,
+    "lng": -79.8781488,
+    "region": "Northeastern"
+  },
+  "ontario_parks:-2147483618": {
+    "lat": 44.3374058,
+    "lng": -78.5345355,
+    "region": "Central"
+  },
+  "ontario_parks:-2147483619": {
+    "lat": 44.1595716,
+    "lng": -79.907262,
+    "region": "Central"
+  },
+  "ontario_parks:-2147483620": {
+    "lat": 46.1890151,
+    "lng": -77.8541788,
+    "region": "Eastern"
+  },
+  "ontario_parks:-2147483622": {
+    "lat": 43.8705875,
+    "lng": -78.7856755,
+    "region": "Southeastern"
+  },
+  "ontario_parks:-2147483623": {
+    "lat": 44.5325782,
+    "lng": -80.3495647,
+    "region": "Central"
+  },
+  "ontario_parks:-2147483624": {
+    "lat": 46.2227962,
+    "lng": -82.0706388,
+    "region": "Northeastern"
+  },
+  "ontario_parks:-2147483625": {
+    "lat": 44.512165,
+    "lng": -75.9674268,
+    "region": "Southeastern"
+  },
+  "ontario_parks:-2147483627": {
+    "lat": 45.5627494,
+    "lng": -78.5945231,
+    "region": "Central"
+  },
+  "ontario_parks:-2147483628": {
+    "lat": 49.0616666,
+    "lng": -93.9119419,
+    "region": "Northwestern"
+  },
+  "ontario_parks:-2147483631": {
+    "lat": 46.0304241,
+    "lng": -78.4801921,
+    "region": "Central"
+  },
+  "ontario_parks:-2147483633": {
+    "lat": 45.6606015,
+    "lng": -77.570614,
+    "region": "Eastern"
+  },
+  "ontario_parks:-2147483634": {
+    "lat": 44.9073076,
+    "lng": -77.2771071,
+    "region": "Southeastern"
+  },
+  "ontario_parks:-2147483635": {
+    "lat": 49.9147961,
+    "lng": -93.5075897,
+    "region": "Northwestern"
+  },
+  "ontario_parks:-2147483637": {
+    "lat": 44.6028157,
+    "lng": -79.4828063,
+    "region": "Central"
+  },
+  "ontario_parks:-2147483638": {
+    "lat": 44.6255542,
+    "lng": -78.8654176,
+    "region": "Central"
+  },
+  "ontario_parks:-2147483639": {
+    "lat": 44.837178,
+    "lng": -79.9872124,
+    "region": "Central"
+  },
+  "ontario_parks:-2147483641": {
+    "lat": 45.391594,
+    "lng": -79.2004403,
+    "region": "Central"
+  },
+  "ontario_parks:-2147483642": {
+    "lat": 48.1759471,
+    "lng": -90.2279729,
+    "region": "Northern"
+  },
+  "ontario_parks:-2147483646": {
+    "lat": 47.5640272,
+    "lng": -84.7119164,
+    "region": "Northern"
+  },
+  "ontario_parks:-2147483647": {
+    "lat": 45.8672253,
+    "lng": -77.7566618,
+    "region": "Central"
+  },
+  "parks_canada:-2147483544": {
+    "lat": 44.3709698,
+    "lng": -76.0400202,
+    "region": "Southeastern"
+  },
+  "parks_canada:-2147483555": {
+    "lat": 48.2973805,
+    "lng": -85.9012018,
+    "region": "Northern"
+  },
+  "parks_canada:-2147483561": {
+    "lat": 41.9451919,
+    "lng": -82.513145,
+    "region": "Southwestern"
+  },
+  "parks_canada:-2147483628": {
+    "lat": 45.290532,
+    "lng": -81.677473,
+    "region": "Western"
+  },
+  "parks_canada:-2147483637": {
+    "lat": 45.2440717,
+    "lng": -81.2920766,
+    "region": "Western"
+  }
+}
