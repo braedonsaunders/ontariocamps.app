@@ -477,11 +477,11 @@ function PanZoomViewer({
               }
 
               const color = `rgb(${f.r},${f.g},${f.b})`;
-              const iconSz = (14 / transform.scale) * fGrow;
               const label = legendTypeLabel(f.legendItemType);
               const isFeatureHovered = hovered === `feat-${idx}`;
               const isFeatureSelected = selectedFeature === idx;
               const fGrow = isFeatureHovered || isFeatureSelected ? 1.3 : 1;
+              const iconSz = (14 / transform.scale) * fGrow;
 
               return (
                 <button
