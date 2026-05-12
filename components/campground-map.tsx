@@ -179,9 +179,9 @@ export function CampgroundMap({
   }, [sitesOnMap]);
 
   return (
-    <div className="card overflow-hidden">
+    <div className="card w-full min-w-0 max-w-full overflow-hidden">
       {campMaps.length > 1 && (
-        <div className="flex items-center gap-1 px-3 pt-3 overflow-x-auto">
+        <div className="flex w-full min-w-0 max-w-full items-center gap-1 overflow-x-auto px-3 pt-3 scrollbar-none">
           {campMaps.map((m) => {
             const label = m.name?.trim() || `Section ${m.vendor_map_id.slice(-3)}`;
             return (
@@ -189,7 +189,7 @@ export function CampgroundMap({
                 key={m.id}
                 onClick={() => setActiveMapId(m.id)}
                 title={m.description ?? undefined}
-                className={`px-3 py-1.5 text-xs rounded-md whitespace-nowrap transition-colors ${
+                className={`shrink-0 px-3 py-1.5 text-xs rounded-md whitespace-nowrap transition-colors ${
                   m.id === activeMap.id
                     ? "bg-forest-700 text-white"
                     : "bg-stone-100 text-stone-700 hover:bg-stone-200"
@@ -203,12 +203,12 @@ export function CampgroundMap({
         </div>
       )}
       {(activeMap.name?.trim() || activeMap.description?.trim()) && (
-        <div className="px-4 pt-3 pb-1 flex items-baseline gap-2">
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 px-4 pb-1 pt-3">
           {activeMap.name?.trim() && (
-            <h3 className="text-sm font-semibold text-stone-900">{activeMap.name}</h3>
+            <h3 className="min-w-0 text-sm font-semibold text-stone-900">{activeMap.name}</h3>
           )}
           {activeMap.description?.trim() && (
-            <span className="text-xs text-stone-500">{activeMap.description}</span>
+            <span className="min-w-0 text-xs text-stone-500">{activeMap.description}</span>
           )}
         </div>
       )}
@@ -222,7 +222,7 @@ export function CampgroundMap({
         onOpenSiteDetails={onOpenSiteDetails}
         checkingLive={checkingLive}
       />
-      <div className="flex items-center gap-x-4 gap-y-1.5 px-4 py-2.5 border-t border-stone-100 text-xs text-stone-600 flex-wrap">
+      <div className="flex w-full min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-stone-100 px-4 py-2.5 text-xs text-stone-600">
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-full ring-2 ring-white" style={{ backgroundColor: "#10b981" }} />
           <span className="text-stone-700">{availableCount} {checkingLive ? "last seen open" : "available"}</span>
@@ -273,7 +273,7 @@ export function CampgroundMap({
             )}
           </>
         )}
-        <span className="ml-auto inline-flex items-center gap-1 text-stone-500">
+        <span className="inline-flex basis-full items-center gap-1 text-stone-500 sm:ml-auto sm:basis-auto">
           <Move size={11} /> drag · scroll to zoom · click a site
         </span>
       </div>
@@ -418,10 +418,10 @@ function PanZoomViewer({
   const visibleHit = HIT_PX / transform.scale;
 
   return (
-    <div className="relative bg-stone-100">
+    <div className="relative w-full min-w-0 max-w-full bg-stone-100">
       <div
         ref={containerRef}
-        className="relative w-full overflow-hidden select-none touch-none cursor-grab active:cursor-grabbing"
+        className="relative w-full min-w-0 max-w-full overflow-hidden select-none touch-none cursor-grab active:cursor-grabbing"
         style={{ aspectRatio }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}

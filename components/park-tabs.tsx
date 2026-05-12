@@ -314,12 +314,12 @@ export function ParkTabs(props: Props) {
   ]);
 
   return (
-    <section className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+    <section className="mx-auto w-full min-w-0 max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
       <DateBanner ctx={dateContext} />
 
       {/* Sticky-ish tab strip */}
-      <div className="relative mt-4 border-b border-stone-200">
-        <div className="flex items-end gap-1 overflow-x-auto scrollbar-none sm:pr-48">
+      <div className="relative mt-4 min-w-0 border-b border-stone-200">
+        <div className="flex min-w-0 items-end gap-1 overflow-x-auto scrollbar-none sm:pr-48">
           {TABS.map((t) => {
             const active = activeTab === t.id;
             return (
@@ -357,8 +357,8 @@ export function ParkTabs(props: Props) {
         )}
       </div>
 
-      <div id="park-tab-content" className="mt-6 grid lg:grid-cols-3 gap-6 lg:gap-8">
-        <div className="lg:col-span-2">
+      <div id="park-tab-content" className="mt-6 grid w-full min-w-0 gap-6 lg:grid-cols-3 lg:gap-8">
+        <div className="min-w-0 lg:col-span-2">
           <AnimatePresence mode="wait">
             {activeTab === "overview" && (
               <motion.div
@@ -443,8 +443,9 @@ export function ParkTabs(props: Props) {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -4 }}
                 transition={{ duration: 0.25 }}
+                className="min-w-0"
               >
-                <div className="flex items-center gap-1 p-1 rounded-lg bg-stone-100 ring-1 ring-stone-200 mb-4 w-fit">
+                <div className="mb-4 flex w-fit max-w-full min-w-0 items-center gap-1 overflow-x-auto rounded-lg bg-stone-100 p-1 ring-1 ring-stone-200 scrollbar-none">
                   {SITES_SUBTABS.map((st) => {
                     const active = sitesSubTab === st.id;
                     return (
@@ -585,7 +586,7 @@ export function ParkTabs(props: Props) {
           </AnimatePresence>
         </div>
 
-        <aside className="space-y-4">
+        <aside className="min-w-0 space-y-4">
           <div className="card p-5">
             <div className="text-xs text-stone-500 uppercase tracking-wide">At a glance</div>
             <dl className="mt-3 grid grid-cols-2 gap-y-3 text-sm">
