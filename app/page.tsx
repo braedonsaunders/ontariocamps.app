@@ -44,7 +44,7 @@ export default async function HomePage() {
         SELECT slug, name, description, region, hero_image_url
           FROM parks
          WHERE hero_image_url IS NOT NULL
-         ORDER BY availability_pct DESC, total_sites DESC
+         ORDER BY random()
          LIMIT 6
       `,
     ]);
@@ -90,7 +90,7 @@ export default async function HomePage() {
         <MotionFadeUp whenInView className="flex items-end justify-between mb-6">
           <div>
             <h2 className="text-2xl font-semibold tracking-tight">Popular parks</h2>
-            <p className="text-stone-600 mt-1">Hand-picked starting points across the province.</p>
+            <p className="text-stone-600 mt-1">A fresh mix of starting points across the province.</p>
           </div>
           <Link href="/search" className="text-sm font-medium text-forest-700 hover:text-forest-800">
             See everything →
