@@ -102,16 +102,16 @@ export function ParksDirectory({
   const totalAvail = operators.reduce((s, o) => s + o.available_sites, 0);
 
   return (
-    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
+    <div className="mx-auto w-full min-w-0 max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
       <div className="flex items-end justify-between flex-wrap gap-4">
-        <div>
+        <div className="min-w-0">
           <h1 className="text-3xl font-semibold tracking-tight">Parks</h1>
           <p className="text-stone-600 mt-1 max-w-2xl">
             Every park and network we index — Ontario Parks, Parks Canada, and the Conservation Authorities
             that run camping in the province.
           </p>
         </div>
-        <div className="flex gap-5 text-sm text-stone-600">
+        <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-stone-600">
           <div>
             <span className="text-2xl font-semibold text-stone-900 mr-1">{operators.length}</span>networks
           </div>
@@ -129,11 +129,11 @@ export function ParksDirectory({
 
       {/* Tabs + search row */}
       <div className="mt-6 flex items-center justify-between gap-3 flex-wrap">
-        <div className="border-b border-stone-200 grid grid-cols-2 items-end gap-1 -mb-px w-full sm:w-80">
+        <div className="grid w-full min-w-0 max-w-full shrink-0 basis-full grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-1 rounded-lg bg-stone-100 p-1 ring-1 ring-stone-200 sm:w-[22rem] sm:basis-auto">
           {(
             [
-              { id: "networks" as Tab, label: `Networks (${filteredOperators.length})` },
-              { id: "parks" as Tab, label: `Parks (${filteredParks.length.toLocaleString()})` },
+              { id: "networks" as Tab, label: "Networks", count: filteredOperators.length.toLocaleString() },
+              { id: "parks" as Tab, label: "Parks", count: filteredParks.length.toLocaleString() },
             ]
           ).map((t) => {
             const active = tab === t.id;
@@ -142,24 +142,31 @@ export function ParksDirectory({
                 key={t.id}
                 type="button"
                 onClick={() => setTab(t.id)}
-                className={`relative inline-flex w-full min-w-0 items-center justify-center gap-1.5 px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors ${
+                className={`relative inline-flex h-9 w-full min-w-0 items-center justify-center overflow-hidden rounded-md px-2 text-sm font-medium whitespace-nowrap transition-colors sm:px-3 ${
                   active ? "text-forest-700" : "text-stone-600 hover:text-stone-900"
                 }`}
               >
-                {t.label}
                 {active && (
                   <motion.span
-                    layoutId="parks-tab-underline"
-                    className="absolute left-3 right-3 -bottom-px h-0.5 rounded-full bg-forest-600"
+                    layoutId="parks-tab-background"
+                    className="absolute inset-0 rounded-md bg-white shadow-sm ring-1 ring-stone-200"
                     transition={{ type: "spring", stiffness: 380, damping: 30 }}
                   />
                 )}
+                <span className="relative z-10 flex min-w-0 items-center justify-center gap-1.5 sm:gap-2">
+                  <span className="w-[4.25rem] text-center sm:w-[4.75rem]">{t.label}</span>
+                  <span className={`w-10 rounded-full py-0.5 text-center text-xs tabular-nums ${
+                    active ? "bg-forest-50 text-forest-700" : "bg-white/70 text-stone-500"
+                  }`}>
+                    {t.count}
+                  </span>
+                </span>
               </button>
             );
           })}
         </div>
 
-        <div className="relative w-full sm:w-72">
+        <div className="relative w-full min-w-0 shrink-0 basis-full sm:w-72 sm:basis-auto">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
           <input
             type="text"
