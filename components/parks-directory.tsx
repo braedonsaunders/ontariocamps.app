@@ -129,7 +129,7 @@ export function ParksDirectory({
 
       {/* Tabs + search row */}
       <div className="mt-6 flex items-center justify-between gap-3 flex-wrap">
-        <div className="border-b border-stone-200 grid grid-cols-2 items-end gap-1 -mb-px w-full sm:w-auto">
+        <div className="border-b border-stone-200 grid grid-cols-2 items-end gap-1 -mb-px w-full sm:w-80">
           {(
             [
               { id: "networks" as Tab, label: `Networks (${filteredOperators.length})` },
@@ -142,7 +142,7 @@ export function ParksDirectory({
                 key={t.id}
                 type="button"
                 onClick={() => setTab(t.id)}
-                className={`relative inline-flex items-center justify-center gap-1.5 px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors sm:min-w-36 ${
+                className={`relative inline-flex w-full min-w-0 items-center justify-center gap-1.5 px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors ${
                   active ? "text-forest-700" : "text-stone-600 hover:text-stone-900"
                 }`}
               >
