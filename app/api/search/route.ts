@@ -22,6 +22,7 @@ export async function GET(req: Request) {
     amenities: parseList("amenities"),
     operators: parseList("operators"),
     equipment_length_ft: q.has("equipment_length_ft") ? Number(q.get("equipment_length_ft")) : undefined,
+    stay_mode: (q.get("stay_mode") as "same_site" | "same_park" | "anywhere" | null) ?? undefined,
     limit: q.has("limit") ? Number(q.get("limit")) : undefined,
     offset: q.has("offset") ? Number(q.get("offset")) : undefined,
     sort: (q.get("sort") as "distance" | "freshness" | "name" | "price" | null) ?? undefined,

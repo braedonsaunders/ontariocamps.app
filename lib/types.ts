@@ -236,30 +236,52 @@ export type AvailabilityRow = {
   last_checked_at: string;
 };
 
-export type SearchResult = {
-  site: {
-    id: string;
-    name: string;
-    site_type: SiteType;
-    site_type_label?: string | null;
-    amenities: string[];
-    rule_highlights?: RuleHighlight[];
-  };
-  campground: { id: string; name: string };
-  park: {
-    slug: string;
-    name: string;
-    operator: string;
-    operator_id: string;
-    location: { lat: number; lng: number };
-    distance_km?: number;
-  };
-  availability: {
-    nights: string[];
-    price_cents: number | null;
-    last_checked_at: string;
-  };
+export type SearchStayMode = "same_site" | "same_park" | "anywhere";
+
+export type SearchResultSite = {
+  id: string;
+  name: string;
+  site_type: SiteType;
+  site_type_label?: string | null;
+  thumbnail_url?: string | null;
+  amenities: string[];
+  rule_highlights?: RuleHighlight[];
+};
+
+export type SearchResultCampground = { id: string; name: string };
+
+export type SearchResultPark = {
+  slug: string;
+  name: string;
+  operator: string;
+  operator_id: string;
+  location: { lat: number; lng: number };
+  distance_km?: number;
+};
+
+export type SearchResultAvailability = {
+  nights: string[];
+  price_cents: number | null;
+  last_checked_at: string;
+};
+
+export type SearchResultSegment = {
+  site: SearchResultSite;
+  campground: SearchResultCampground;
+  park: SearchResultPark;
+  availability: SearchResultAvailability;
   booking_url: string;
+};
+
+export type SearchResult = SearchResultSegment & {
+  stay?: {
+    mode: SearchStayMode;
+    label: string;
+    move_count: number;
+    park_count: number;
+    segment_count: number;
+    segments: SearchResultSegment[];
+  };
 };
 
 export type SearchResponse = {

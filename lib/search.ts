@@ -7,7 +7,19 @@
 import { sql } from "./db/client";
 import { PRESET_LOCATIONS } from "./locations";
 import { buildBookingUrl } from "./booking-url";
-import type { SearchResponse, SearchResult, SiteType, Operator } from "./types";
+import type {
+  SearchResponse,
+  SearchResult,
+  SearchResultAvailability,
+  SearchResultCampground,
+  SearchResultPark,
+  SearchResultSegment,
+  SearchResultSite,
+  SearchStayMode,
+  SitePhoto,
+  SiteType,
+  Operator,
+} from "./types";
 import { eachDate } from "./utils";
 
 export { PRESET_LOCATIONS };
@@ -25,6 +37,7 @@ export type SearchParams = {
   amenities?: string[];
   operators?: string[];
   equipment_length_ft?: number;
+  stay_mode?: SearchStayMode;
   limit?: number;
   offset?: number;
   sort?: "distance" | "freshness" | "name" | "price";
@@ -41,12 +54,14 @@ type SearchRow = {
   operator_id: string;
   operator_name: string;
   vendor_url: string;
+  park_hero_image_url: string | null;
   site_id: string;
   site_name: string;
   site_type: string;
   site_type_label: string | null;
   site_amenities: string[];
   site_rule_summary: unknown;
+  site_photos: unknown;
   campground_id: string;
   campground_name: string;
   matched_nights: (Date | string)[];
@@ -54,13 +69,217 @@ type SearchRow = {
   distance_m: number | null;
 };
 
+type PreparedRow = {
+  raw: SearchRow;
+  matchedNights: string[];
+  lastChecked: string;
+  site: SearchResultSite;
+  campground: SearchResultCampground;
+  park: SearchResultPark;
+  availabilityCount: number;
+};
+
+function firstPhotoUrl(raw: unknown): string | null {
+  const photos = Array.isArray(raw) ? (raw as SitePhoto[]) : [];
+  for (const photo of photos) {
+    const url = photo.url ?? photo.avifUrl;
+    if (url) return url;
+  }
+  return null;
+}
+
+function normalizeNights(nights: (Date | string)[]): string[] {
+  return nights
+    .map((d) => (d instanceof Date ? d.toISOString().slice(0, 10) : String(d).slice(0, 10)))
+    .sort();
+}
+
+function checkoutDate(lastNight: string | undefined, fallback?: string): string | undefined {
+  if (!lastNight) return fallback;
+  const d = new Date(`${lastNight}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+function distinctCount<T>(values: T[]): number {
+  return new Set(values).size;
+}
+
+function stayLabel(mode: SearchStayMode, moveCount: number, parkCount: number): string {
+  if (mode === "same_site") return "Same site";
+  if (mode === "same_park") return moveCount > 0 ? `Move sites ${moveCount}x` : "Same park, one site";
+  if (parkCount > 1) return `${parkCount} parks · ${moveCount} moves`;
+  return moveCount > 0 ? `Move sites ${moveCount}x` : "One-site route";
+}
+
+function prepareRow(r: SearchRow, params: SearchParams): PreparedRow {
+  const amenities = Array.isArray(r.site_amenities) ? r.site_amenities : [];
+  const ruleSummary =
+    r.site_rule_summary && typeof r.site_rule_summary === "object"
+      ? (r.site_rule_summary as { highlights?: SearchResult["site"]["rule_highlights"] })
+      : null;
+  const lastChecked = r.last_checked_at instanceof Date ? r.last_checked_at.toISOString() : String(r.last_checked_at);
+  const distance_km = r.distance_m != null ? r.distance_m / 1000 : undefined;
+  const thumbnail = firstPhotoUrl(r.site_photos) ?? r.park_hero_image_url ?? null;
+
+  return {
+    raw: r,
+    matchedNights: normalizeNights(r.matched_nights),
+    lastChecked,
+    availabilityCount: Array.isArray(r.matched_nights) ? r.matched_nights.length : 0,
+    site: {
+      id: r.site_id,
+      name: r.site_name,
+      site_type: r.site_type as SiteType,
+      site_type_label: r.site_type_label,
+      thumbnail_url: thumbnail,
+      amenities,
+      rule_highlights: Array.isArray(ruleSummary?.highlights) ? ruleSummary.highlights.slice(0, 4) : [],
+    },
+    campground: { id: r.campground_id, name: r.campground_name },
+    park: {
+      slug: r.park_slug,
+      name: r.park_name,
+      operator: r.operator_name,
+      operator_id: r.operator_id,
+      location: { lat: r.park_lat, lng: r.park_lng },
+      distance_km,
+    },
+  };
+}
+
+function buildSegment(row: PreparedRow, nights: string[], params: SearchParams): SearchResultSegment {
+  const availability: SearchResultAvailability = {
+    nights,
+    price_cents: null,
+    last_checked_at: row.lastChecked,
+  };
+
+  return {
+    site: row.site,
+    campground: row.campground,
+    park: row.park,
+    availability,
+    booking_url: buildBookingUrl(row.raw.vendor_url, {
+      startDate: nights[0] ?? params.start_date,
+      endDate: checkoutDate(nights[nights.length - 1], params.end_date),
+    }),
+  };
+}
+
+function buildSingleResult(row: PreparedRow, nights: string[], params: SearchParams): SearchResult {
+  const segment = buildSegment(row, nights, params);
+  return {
+    ...segment,
+    stay: {
+      mode: "same_site",
+      label: "Same site",
+      move_count: 0,
+      park_count: 1,
+      segment_count: 1,
+      segments: [segment],
+    },
+  };
+}
+
+function coversDates(rows: PreparedRow[], dates: string[]): boolean {
+  const covered = new Set<string>();
+  for (const row of rows) {
+    for (const night of row.matchedNights) covered.add(night);
+  }
+  return dates.every((date) => covered.has(date));
+}
+
+function chooseDates(rows: PreparedRow[], requestedDates: string[], flexible: boolean, nightsNeeded: number): string[] | null {
+  if (!flexible) return coversDates(rows, requestedDates) ? requestedDates : null;
+  const availableDates = requestedDates.filter((date) => rows.some((row) => row.matchedNights.includes(date)));
+  return availableDates.length >= nightsNeeded ? availableDates.slice(0, nightsNeeded) : null;
+}
+
+function sortCandidates(a: PreparedRow, b: PreparedRow, previous?: PreparedRow | null) {
+  if (previous) {
+    if (a.site.id === previous.site.id && b.site.id !== previous.site.id) return -1;
+    if (b.site.id === previous.site.id && a.site.id !== previous.site.id) return 1;
+    if (a.park.slug === previous.park.slug && b.park.slug !== previous.park.slug) return -1;
+    if (b.park.slug === previous.park.slug && a.park.slug !== previous.park.slug) return 1;
+  }
+  if (a.availabilityCount !== b.availabilityCount) return b.availabilityCount - a.availabilityCount;
+  if (a.park.distance_km != null && b.park.distance_km != null && a.park.distance_km !== b.park.distance_km) {
+    return a.park.distance_km - b.park.distance_km;
+  }
+  return `${a.park.name} ${a.site.name}`.localeCompare(`${b.park.name} ${b.site.name}`);
+}
+
+function buildItinerary(rows: PreparedRow[], dates: string[], params: SearchParams, mode: SearchStayMode, seed?: PreparedRow) {
+  const chosen: Array<{ row: PreparedRow; night: string }> = [];
+  let previous: PreparedRow | null = seed ?? null;
+
+  for (const night of dates) {
+    const candidates = rows
+      .filter((row) => row.matchedNights.includes(night))
+      .sort((a, b) => {
+        if (seed && night === dates[0]) {
+          if (a.site.id === seed.site.id && b.site.id !== seed.site.id) return -1;
+          if (b.site.id === seed.site.id && a.site.id !== seed.site.id) return 1;
+        }
+        return sortCandidates(a, b, previous);
+      });
+    const next = candidates[0];
+    if (!next) return null;
+    chosen.push({ row: next, night });
+    previous = next;
+  }
+
+  const segments: SearchResultSegment[] = [];
+  for (const item of chosen) {
+    const current = segments[segments.length - 1];
+    if (current && current.site.id === item.row.site.id && current.park.slug === item.row.park.slug) {
+      current.availability.nights.push(item.night);
+      continue;
+    }
+    segments.push(buildSegment(item.row, [item.night], params));
+  }
+
+  const first = segments[0];
+  if (!first) return null;
+  const parkCount = distinctCount(segments.map((segment) => segment.park.slug));
+  const moveCount = Math.max(0, segments.length - 1);
+  return {
+    ...first,
+    availability: {
+      ...first.availability,
+      nights: dates,
+      last_checked_at: chosen
+        .map((item) => item.row.lastChecked)
+        .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] ?? first.availability.last_checked_at,
+    },
+    stay: {
+      mode,
+      label: stayLabel(mode, moveCount, parkCount),
+      move_count: moveCount,
+      park_count: parkCount,
+      segment_count: segments.length,
+      segments,
+    },
+  } satisfies SearchResult;
+}
+
+function itinerarySignature(result: SearchResult): string {
+  return (result.stay?.segments ?? [result])
+    .map((segment) => `${segment.park.slug}:${segment.site.id}:${segment.availability.nights.join("|")}`)
+    .join(">");
+}
+
 export async function runSearch(params: SearchParams): Promise<SearchResponse> {
   const client = sql();
   const wantDates = params.start_date && params.end_date
     ? eachDate(params.start_date, params.end_date)
     : null;
-  const minNights = params.min_nights ?? (wantDates ? wantDates.length : 1);
+  const stayMode = params.stay_mode ?? "same_site";
+  const allowMoves = stayMode !== "same_site";
+  const minNights = Math.max(1, params.min_nights ?? (wantDates ? wantDates.length : 1));
   const flexible = params.flexible === true;
+  const requiredMatches = allowMoves ? 1 : minNights;
   const radiusM = (params.radius_km ?? Infinity) * 1000;
   const lat = params.lat;
   const lng = params.lng;
@@ -79,6 +298,7 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
         s.site_type_label,
         s.amenities AS site_amenities,
         s.rule_summary AS site_rule_summary,
+        s.photos AS site_photos,
         s.campground_id,
         array_agg(sa.night_date ORDER BY sa.night_date) AS matched_nights,
         max(sa.last_checked_at) AS last_checked_at
@@ -92,7 +312,7 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
           ? client`AND (s.max_equipment_length_ft IS NULL OR s.max_equipment_length_ft >= ${params.equipment_length_ft})`
           : client``}
       GROUP BY s.id
-      HAVING count(sa.night_date) >= ${flexible ? 1 : minNights}
+      HAVING count(sa.night_date) >= ${requiredMatches}
     )
     SELECT
       p.id   AS park_id,
@@ -103,12 +323,14 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
       p.operator_id,
       o.name AS operator_name,
       p.vendor_url,
+      p.hero_image_url AS park_hero_image_url,
       m.site_id,
       m.site_name,
       m.site_type,
       m.site_type_label,
       m.site_amenities,
       m.site_rule_summary,
+      m.site_photos,
       c.id AS campground_id,
       c.name AS campground_name,
       m.matched_nights,
@@ -126,81 +348,83 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
       ${params.operators && params.operators.length > 0 ? client`AND p.operator_id = ANY(${params.operators})` : client``}
   `;
 
-  const results: SearchResult[] = [];
   const freshnessSamples: number[] = [];
-
-  for (const r of rows) {
-    const amenities = Array.isArray(r.site_amenities) ? r.site_amenities : [];
-    const ruleSummary = r.site_rule_summary && typeof r.site_rule_summary === "object"
-      ? r.site_rule_summary as { highlights?: SearchResult["site"]["rule_highlights"] }
-      : null;
+  const preparedRows: PreparedRow[] = [];
+  for (const row of rows) {
+    const prepared = prepareRow(row, params);
     if (params.amenities && params.amenities.length > 0) {
       let ok = true;
       for (const code of params.amenities) {
-        if (!amenities.includes(code)) { ok = false; break; }
+        if (!prepared.site.amenities.includes(code)) {
+          ok = false;
+          break;
+        }
       }
       if (!ok) continue;
     }
+    freshnessSamples.push((Date.now() - new Date(prepared.lastChecked).getTime()) / 60000);
+    preparedRows.push(prepared);
+  }
 
-    const matchedNights = r.matched_nights.map((d) =>
-      d instanceof Date ? d.toISOString().slice(0, 10) : String(d).slice(0, 10),
-    ).sort();
-
-    if (wantDates && !flexible) {
-      const set = new Set(matchedNights);
-      let allPresent = true;
-      for (const d of wantDates) {
-        if (!set.has(d)) { allPresent = false; break; }
-      }
-      if (!allPresent) continue;
+  let results: SearchResult[] = [];
+  if (!wantDates || stayMode === "same_site") {
+    for (const row of preparedRows) {
+      const nights = wantDates
+        ? flexible
+          ? row.matchedNights.slice(0, minNights)
+          : wantDates
+        : row.matchedNights.slice(0, 7);
+      if (wantDates && flexible && nights.length < minNights) continue;
+      if (wantDates && !flexible && !nights.every((night) => row.matchedNights.includes(night))) continue;
+      results.push(buildSingleResult(row, nights, params));
     }
-
-    const lastChecked = r.last_checked_at instanceof Date ? r.last_checked_at.toISOString() : String(r.last_checked_at);
-    freshnessSamples.push((Date.now() - new Date(lastChecked).getTime()) / 60000);
-
-    const distance_km = r.distance_m != null ? r.distance_m / 1000 : undefined;
-
-    results.push({
-      site: {
-        id: r.site_id,
-        name: r.site_name,
-        site_type: r.site_type as SiteType,
-        site_type_label: r.site_type_label,
-        amenities,
-        rule_highlights: Array.isArray(ruleSummary?.highlights) ? ruleSummary.highlights.slice(0, 4) : [],
-      },
-      campground: { id: r.campground_id, name: r.campground_name },
-      park: {
-        slug: r.park_slug,
-        name: r.park_name,
-        operator: r.operator_name,
-        operator_id: r.operator_id,
-        location: { lat: r.park_lat, lng: r.park_lng },
-        distance_km,
-      },
-      availability: {
-        nights: wantDates && !flexible ? wantDates : matchedNights.slice(0, 7),
-        price_cents: null,
-        last_checked_at: lastChecked,
-      },
-      booking_url: buildBookingUrl(r.vendor_url, {
-        startDate: params.start_date,
-        endDate: params.end_date,
-      }),
-    });
+  } else if (stayMode === "same_park") {
+    const byPark = new Map<string, PreparedRow[]>();
+    for (const row of preparedRows) {
+      byPark.set(row.park.slug, [...(byPark.get(row.park.slug) ?? []), row]);
+    }
+    for (const parkRows of byPark.values()) {
+      const dates = chooseDates(parkRows, wantDates, flexible, minNights);
+      if (!dates) continue;
+      const itinerary = buildItinerary(parkRows, dates, params, "same_park");
+      if (itinerary) results.push(itinerary);
+    }
+  } else {
+    const dates = chooseDates(preparedRows, wantDates, flexible, minNights);
+    if (dates) {
+      const firstNightRows = preparedRows
+        .filter((row) => row.matchedNights.includes(dates[0]))
+        .sort((a, b) => sortCandidates(a, b))
+        .slice(0, 40);
+      const seen = new Set<string>();
+      for (const seed of firstNightRows) {
+        const itinerary = buildItinerary(preparedRows, dates, params, "anywhere", seed);
+        if (!itinerary) continue;
+        const signature = itinerarySignature(itinerary);
+        if (seen.has(signature)) continue;
+        seen.add(signature);
+        results.push(itinerary);
+      }
+    }
   }
 
   const sortKey = params.sort ?? (hasAnchor ? "distance" : "freshness");
   results.sort((a, b) => {
+    const aMoves = a.stay?.move_count ?? 0;
+    const bMoves = b.stay?.move_count ?? 0;
+    const aParks = a.stay?.park_count ?? 1;
+    const bParks = b.stay?.park_count ?? 1;
     if (sortKey === "distance" && a.park.distance_km != null && b.park.distance_km != null) {
-      return a.park.distance_km - b.park.distance_km;
+      return a.park.distance_km - b.park.distance_km || aParks - bParks || aMoves - bMoves;
     }
     if (sortKey === "freshness") {
-      return new Date(b.availability.last_checked_at).getTime() - new Date(a.availability.last_checked_at).getTime();
+      return new Date(b.availability.last_checked_at).getTime() - new Date(a.availability.last_checked_at).getTime()
+        || aParks - bParks
+        || aMoves - bMoves;
     }
     if (sortKey === "name") return a.park.name.localeCompare(b.park.name);
     if (sortKey === "price") return (a.availability.price_cents ?? 0) - (b.availability.price_cents ?? 0);
-    return 0;
+    return aParks - bParks || aMoves - bMoves;
   });
 
   freshnessSamples.sort((a, b) => a - b);
