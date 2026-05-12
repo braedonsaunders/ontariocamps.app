@@ -519,7 +519,7 @@ export function OntarioMap({ parks }: { parks: Park[] }) {
                 />
                 <Icon
                   size={13}
-                  fill={category === "provincial" ? "currentColor" : "none"}
+                  fill="none"
                 />
                 <span>{meta.shortLabel}</span>
                 <span className={enabled ? "text-stone-500" : "text-stone-400"}>
