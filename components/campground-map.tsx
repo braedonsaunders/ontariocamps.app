@@ -477,8 +477,7 @@ function PanZoomViewer({
               }
 
               const color = `rgb(${f.r},${f.g},${f.b})`;
-              const outer = 12 / transform.scale;
-              const inner = 8 / transform.scale;
+              const iconSz = (14 / transform.scale) * fGrow;
               const label = legendTypeLabel(f.legendItemType);
               const isFeatureHovered = hovered === `feat-${idx}`;
               const isFeatureSelected = selectedFeature === idx;
@@ -489,13 +488,12 @@ function PanZoomViewer({
                   key={`feat-${idx}`}
                   type="button"
                   data-feature-pin
-                  className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full grid place-items-center bg-transparent border-0 p-0 focus:outline-none"
+                  className="absolute -translate-x-1/2 -translate-y-1/2 grid place-items-center bg-transparent border-0 p-0 focus:outline-none"
                   style={{
                     left: `${left}%`,
                     top: `${top}%`,
-                    width: `${outer * fGrow * 1.5}px`,
-                    height: `${outer * fGrow * 1.5}px`,
                     zIndex: isFeatureHovered || isFeatureSelected ? 15 : 5,
+                    filter: isFeatureHovered || isFeatureSelected ? `drop-shadow(0 1px 2px rgba(0,0,0,0.25))` : `drop-shadow(0 0 1px white) drop-shadow(0 0 2px white)`,
                   }}
                   onMouseEnter={() => setHovered(`feat-${idx}`)}
                   onMouseLeave={() => setHovered((h) => (h === `feat-${idx}` ? null : h))}
@@ -506,18 +504,7 @@ function PanZoomViewer({
                   }}
                   aria-label={label}
                 >
-                  <span
-                    className="rounded-full grid place-items-center"
-                    style={{
-                      width: `${outer * fGrow}px`,
-                      height: `${outer * fGrow}px`,
-                      backgroundColor: "white",
-                      border: `${1.5 / transform.scale}px solid ${color}`,
-                      boxShadow: `0 0 0 ${1 / transform.scale}px white, 0 ${1 / transform.scale}px ${2 / transform.scale}px rgba(0,0,0,0.15)`,
-                    }}
-                  >
-                    {(() => { const I = featureIcon(f.legendItemType); return <I size={(inner * fGrow) * 0.7} style={{ color }} strokeWidth={2.5} />; })()}
-                  </span>
+                  {(() => { const I = featureIcon(f.legendItemType); return <I size={iconSz} style={{ color }} strokeWidth={2.5} />; })()}
                 </button>
               );
             })}
@@ -636,17 +623,7 @@ function PanZoomViewer({
           const label = legendTypeLabel(f.legendItemType);
           return (
             <div className="absolute left-3 bottom-3 card p-3 shadow-xl ring-stone-300/70 z-40 flex items-center gap-2.5">
-              <span
-                className="shrink-0 rounded-full grid place-items-center"
-                style={{
-                  width: 28,
-                  height: 28,
-                  backgroundColor: "white",
-                  border: "2px solid rgb(" + f.r + "," + f.g + "," + f.b + ")",
-                }}
-              >
-                {(() => { const I = featureIcon(f.legendItemType); return <I size={14} style={{ color: `rgb(${f.r},${f.g},${f.b})` }} strokeWidth={2.5} />; })()}
-              </span>
+              {(() => { const I = featureIcon(f.legendItemType); return <I size={20} style={{ color: `rgb(${f.r},${f.g},${f.b})` }} strokeWidth={2.5} />; })()}
               <div>
                 <div className="font-semibold text-stone-900 text-sm">{label}</div>
                 <div className="text-xs text-stone-500">Type {f.legendItemType}</div>
