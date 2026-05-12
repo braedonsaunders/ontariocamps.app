@@ -442,21 +442,41 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
 export async function operatorHealth(): Promise<
   Array<{ operator: Operator; sites_indexed: number; available_sites: number; median_freshness_minutes: number }>
 > {
-  // Single SELECT off the denormalized operators row. Columns are kept fresh
-  // by `refresh_aggregates()` which the availability ingest calls at its tail.
   const rows = await sql()<Array<{
     id: string; name: string; vendor: string; base_url: string; booking_url: string;
     active: boolean; total_sites: number; available_sites: number;
-    last_availability_at: Date | string | null;
+    median_freshness_minutes: number | null;
   }>>`
+    WITH site_freshness AS (
+      SELECT p.operator_id,
+             s.id AS site_id,
+             max(sa.last_checked_at) AS last_checked_at
+        FROM sites s
+        JOIN campgrounds c ON c.id = s.campground_id
+        JOIN parks p ON p.id = c.park_id
+        LEFT JOIN site_availability sa
+               ON sa.site_id = s.id
+              AND sa.night_date = CURRENT_DATE
+       GROUP BY p.operator_id, s.id
+    ),
+    operator_freshness AS (
+      SELECT operator_id,
+             round((
+               percentile_cont(0.5) WITHIN GROUP (
+                 ORDER BY extract(epoch FROM (now() - last_checked_at)) / 60
+               ) FILTER (WHERE last_checked_at IS NOT NULL)
+             )::numeric)::int AS median_freshness_minutes
+        FROM site_freshness
+       GROUP BY operator_id
+    )
     SELECT id, name, vendor, base_url, booking_url, active,
-           total_sites, available_sites, last_availability_at
-      FROM operators ORDER BY name
+           total_sites, available_sites,
+           COALESCE(ofr.median_freshness_minutes, 0) AS median_freshness_minutes
+      FROM operators o
+      LEFT JOIN operator_freshness ofr ON ofr.operator_id = o.id
+     ORDER BY name
   `;
   return rows.map((r) => {
-    const last = r.last_availability_at;
-    const lastMs = last ? (last instanceof Date ? last.getTime() : new Date(String(last)).getTime()) : 0;
-    const minutes = lastMs ? Math.max(0, Math.floor((Date.now() - lastMs) / 60000)) : 0;
     return {
       operator: {
         id: r.id, name: r.name, vendor: r.vendor as Operator["vendor"],
@@ -464,7 +484,7 @@ export async function operatorHealth(): Promise<
       },
       sites_indexed: r.total_sites,
       available_sites: r.available_sites,
-      median_freshness_minutes: minutes,
+      median_freshness_minutes: r.median_freshness_minutes ?? 0,
     };
   });
 }
