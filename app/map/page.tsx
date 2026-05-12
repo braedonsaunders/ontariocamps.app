@@ -26,7 +26,7 @@ type ParkRow = {
 
 export default async function MapPage() {
   const parks = await sql()<ParkRow[]>`
-    SELECT p.slug, p.name, p.description,
+    SELECT p.slug, p.name, COALESCE(p.ai_description, p.description) AS description,
            COALESCE(p.hero_image_url, o.hero_image_url) AS hero_image_url,
            p.operator_id, o.name AS operator,
            p.region, p.lat, p.lng,
