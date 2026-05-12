@@ -8,6 +8,7 @@
     "start": "next start -p 4000",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
+    "qa:search": "tsx scripts/search-qa.ts",
     "ingest": "tsx scripts/ingest.ts",
     "ingest:metadata": "tsx scripts/ingest-metadata.ts",
     "ingest:availability": "tsx scripts/ingest-availability.ts"

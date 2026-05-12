@@ -48,6 +48,14 @@ export type SearchParams = {
 
 const DEFAULT_LIMIT = 30;
 
+function emptySearchResponse(): SearchResponse {
+  return {
+    results: [],
+    total: 0,
+    freshness_p50_minutes: 0,
+  };
+}
+
 type SearchRow = {
   park_id: string;
   park_slug: string;
@@ -235,37 +243,80 @@ function buildItinerary(
   params: SearchParams,
   mode: SearchStayMode,
   seed?: PreparedRow,
-  options: { forceMove?: boolean; forceParkMove?: boolean } = {},
+  options: {
+    forceMove?: boolean;
+    forceParkMove?: boolean;
+    forceMoveEveryNight?: boolean;
+    forceParkMoveEveryNight?: boolean;
+    requireUniqueSites?: boolean;
+    requireUniqueParks?: boolean;
+  } = {},
 ) {
-  const chosen: Array<{ row: PreparedRow; night: string }> = [];
-  let previous: PreparedRow | null = seed ?? null;
-  let moved = false;
-  let changedPark = false;
-
-  for (const night of dates) {
+  const candidateCap = options.forceParkMoveEveryNight ? 100 : 160;
+  const candidatesByNight = dates.map((night, index) => {
     const candidates = rows
       .filter((row) => row.matchedNights.includes(night))
       .sort((a, b) => {
-        if (seed && night === dates[0]) {
+        if (seed && index === 0) {
           if (a.site.id === seed.site.id && b.site.id !== seed.site.id) return -1;
           if (b.site.id === seed.site.id && a.site.id !== seed.site.id) return 1;
         }
-        return sortCandidates(a, b, previous);
+        return sortCandidates(a, b, index > 0 ? undefined : seed);
       });
-    let next = candidates[0];
-    if (chosen.length > 0 && previous && options.forceMove && !moved) {
-      const forcedParkMove = options.forceParkMove
-        ? candidates.find((row) => row.park.slug !== previous!.park.slug)
-        : undefined;
-      const forcedSiteMove = candidates.find((row) => row.site.id !== previous!.site.id);
-      next = forcedParkMove ?? forcedSiteMove ?? candidates[0];
+    return seed && index === 0
+      ? candidates.filter((row) => row.site.id === seed.site.id).slice(0, 1)
+      : candidates.slice(0, candidateCap);
+  });
+
+  const chosen: Array<{ row: PreparedRow; night: string }> = [];
+  const usedSites = new Set<string>();
+  const usedParks = new Set<string>();
+
+  function canFinishFrom(startIndex: number) {
+    for (let i = startIndex; i < dates.length; i += 1) {
+      if (
+        !candidatesByNight[i].some((row) => {
+          const previous = chosen[chosen.length - 1]?.row;
+          if (previous && options.forceMoveEveryNight && row.site.id === previous.site.id) return false;
+          if (previous && options.forceParkMoveEveryNight && row.park.slug === previous.park.slug) return false;
+          if (options.requireUniqueSites && usedSites.has(row.site.id)) return false;
+          if (options.requireUniqueParks && usedParks.has(row.park.slug)) return false;
+          return true;
+        })
+      ) {
+        return false;
+      }
     }
-    if (!next) return null;
-    if (previous && next.site.id !== previous.site.id) moved = true;
-    if (previous && next.park.slug !== previous.park.slug) changedPark = true;
-    chosen.push({ row: next, night });
-    previous = next;
+    return true;
   }
+
+  function choose(index: number): boolean {
+    if (index >= dates.length) return true;
+    const previous = chosen[chosen.length - 1]?.row;
+    const candidates = candidatesByNight[index]
+      .filter((row) => {
+        if (previous && options.forceMoveEveryNight && row.site.id === previous.site.id) return false;
+        if (previous && options.forceParkMoveEveryNight && row.park.slug === previous.park.slug) return false;
+        if (options.requireUniqueSites && usedSites.has(row.site.id)) return false;
+        if (options.requireUniqueParks && usedParks.has(row.park.slug)) return false;
+        return true;
+      })
+      .sort((a, b) => sortCandidates(a, b, previous));
+
+    for (const row of candidates) {
+      chosen.push({ row, night: dates[index] });
+      usedSites.add(row.site.id);
+      usedParks.add(row.park.slug);
+      if (canFinishFrom(index + 1) && choose(index + 1)) return true;
+      chosen.pop();
+      usedSites.delete(row.site.id);
+      usedParks.delete(row.park.slug);
+    }
+
+    return false;
+  }
+
+  if (!choose(0)) return null;
 
   const segments: SearchResultSegment[] = [];
   for (const item of chosen) {
@@ -281,8 +332,18 @@ function buildItinerary(
   if (!first) return null;
   const parkCount = distinctCount(segments.map((segment) => segment.park.slug));
   const moveCount = Math.max(0, segments.length - 1);
+  const changedPark = parkCount > 1;
   if (options.forceMove && moveCount === 0) return null;
+  if (options.forceMoveEveryNight && segments.length !== dates.length) return null;
   if (options.forceParkMove && !changedPark) return null;
+  if (
+    options.forceParkMoveEveryNight &&
+    segments.some((segment, index) => index > 0 && segment.park.slug === segments[index - 1].park.slug)
+  ) {
+    return null;
+  }
+  if (options.requireUniqueSites && distinctCount(segments.map((segment) => segment.site.id)) !== dates.length) return null;
+  if (options.requireUniqueParks && parkCount !== dates.length) return null;
 
   const routeHopKm = segments.reduce((sum, segment, index) => {
     const previousSegment = segments[index - 1];
@@ -329,8 +390,17 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
     ? eachDate(params.start_date, params.end_date)
     : null;
   const stayMode = params.stay_mode ?? "same_site";
+  if (params.start_date && params.end_date && (!wantDates || wantDates.length === 0)) {
+    return emptySearchResponse();
+  }
+  if (!wantDates && stayMode !== "same_site") {
+    return emptySearchResponse();
+  }
   const allowMoves = stayMode !== "same_site";
-  const minNights = Math.max(1, params.min_nights ?? (wantDates ? wantDates.length : 1));
+  const minNights = Math.max(allowMoves ? 2 : 1, params.min_nights ?? (wantDates ? wantDates.length : 1));
+  if (allowMoves && wantDates && wantDates.length < 2) {
+    return emptySearchResponse();
+  }
   const flexible = params.flexible === true;
   const requiredMatches = allowMoves ? 1 : minNights;
   const radiusM = (params.radius_km ?? Infinity) * 1000;
@@ -439,7 +509,11 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
     for (const parkRows of byPark.values()) {
       const dates = chooseDates(parkRows, wantDates, flexible, minNights);
       if (!dates) continue;
-      const itinerary = buildItinerary(parkRows, dates, params, "same_park", undefined, { forceMove: true });
+      const itinerary = buildItinerary(parkRows, dates, params, "same_park", undefined, {
+        forceMove: true,
+        forceMoveEveryNight: true,
+        requireUniqueSites: true,
+      });
       if (itinerary) results.push(itinerary);
     }
   } else {
@@ -454,6 +528,9 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
         const itinerary = buildItinerary(preparedRows, dates, params, "anywhere", seed, {
           forceMove: true,
           forceParkMove: true,
+          forceMoveEveryNight: true,
+          forceParkMoveEveryNight: true,
+          requireUniqueSites: true,
         });
         if (!itinerary) continue;
         const signature = itinerarySignature(itinerary);

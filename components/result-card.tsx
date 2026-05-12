@@ -28,15 +28,29 @@ function ruleToneClass(tone?: string) {
 
 export function ResultCard({
   result,
+  onOpenResult,
   onOpenSiteDetails,
   loadingSiteId,
 }: {
   result: SearchResult;
+  onOpenResult?: (result: SearchResult) => void;
   onOpenSiteDetails?: (siteId: string, bookingUrl?: string) => void;
   loadingSiteId?: string | null;
 }) {
   const segments = result.stay?.segments ?? [result];
+  const isRoute = segments.length > 1;
   const thumbnail = result.site.thumbnail_url;
+  const canOpen = Boolean(onOpenResult || onOpenSiteDetails);
+  const openLabel = isRoute
+    ? `Open all sites for ${result.stay?.label ?? "this route"} starting at ${result.park.name} site ${result.site.name}`
+    : `Open details for ${result.park.name} site ${result.site.name}`;
+  const openResult = () => {
+    if (isRoute && onOpenResult) {
+      onOpenResult(result);
+      return;
+    }
+    onOpenSiteDetails?.(result.site.id, result.booking_url);
+  };
   const operatorClass =
     result.park.operator_id === "ontario_parks"
       ? "bg-forest-100 text-forest-800 ring-forest-200"
@@ -46,8 +60,20 @@ export function ResultCard({
 
   return (
     <motion.div
-      className={`card overflow-hidden hover:ring-stone-300 transition-shadow ${onOpenSiteDetails ? "cursor-pointer" : ""}`}
-      onClick={() => onOpenSiteDetails?.(result.site.id, result.booking_url)}
+      className={`card overflow-hidden transition-shadow hover:ring-stone-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-forest-600 ${
+        canOpen ? "cursor-pointer" : ""
+      }`}
+      onClick={openResult}
+      onKeyDown={(event) => {
+        if (!canOpen) return;
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          openResult();
+        }
+      }}
+      role={canOpen ? "button" : undefined}
+      tabIndex={canOpen ? 0 : undefined}
+      aria-label={canOpen ? openLabel : undefined}
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
@@ -175,12 +201,12 @@ export function ResultCard({
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onOpenSiteDetails(result.site.id, result.booking_url);
+                  openResult();
                 }}
                 className="inline-flex shrink-0 items-center gap-1 font-medium text-stone-600 hover:text-stone-950"
               >
                 {loadingSiteId === result.site.id ? <Loader2 size={13} className="animate-spin" /> : null}
-                Details
+                {isRoute ? "View sites" : "Details"}
               </button>
             )}
           </div>

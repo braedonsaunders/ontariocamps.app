@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import { SEARCH_EQUIPMENT_OPTIONS, searchEquipmentById } from "@/lib/search-equipment";
 import { SiteDetailFlyout, type SiteFlyoutDetails } from "@/components/site-detail-flyout";
+import { ItineraryFlyout } from "@/components/itinerary-flyout";
 
 const SITE_TYPES = ["tent", "rv", "cabin", "yurt"] as const;
 const STAY_MODES = ["same_site", "same_park", "anywhere"] as const;
@@ -226,6 +227,7 @@ export function SearchPage() {
   const [resolvingNear, setResolvingNear] = useState(false);
   const [locationMessage, setLocationMessage] = useState<string | null>(null);
   const [selectedSiteDetails, setSelectedSiteDetails] = useState<SiteFlyoutDetails | null>(null);
+  const [selectedItinerary, setSelectedItinerary] = useState<SearchResult | null>(null);
   const [loadingSiteId, setLoadingSiteId] = useState<string | null>(null);
   const [allParks, setAllParks] = useState<ParkSummary[]>([]);
   // `searchKey` bumps every time the user explicitly hits Search.
@@ -391,6 +393,12 @@ export function SearchPage() {
   // at request time so the user can prep filters then hit Search.
   useEffect(() => {
     if (searchKey === 0) return;
+    const searchNights = rangeNights(state.start_date, state.end_date);
+    if (state.stay_mode !== "same_site" && (!searchNights || searchNights < 2)) {
+      setData({ results: [], total: 0, freshness_p50_minutes: 0 });
+      setLoading(false);
+      return;
+    }
     const sp = new URLSearchParams();
     if (effectiveAnchor) {
       sp.set("lat", String(effectiveAnchor.lat));
@@ -443,7 +451,8 @@ export function SearchPage() {
 
   function setFlexibleDates(next: boolean) {
     const windowNights = rangeNights(state.start_date, state.end_date);
-    const defaultNights = Math.max(1, Math.min(windowNights ?? 2, 2));
+    const minRouteNights = state.stay_mode === "same_site" ? 1 : 2;
+    const defaultNights = Math.max(minRouteNights, Math.min(windowNights ?? 2, 2));
     setState({
       flexible: next,
       min_nights: next ? (state.min_nights ?? defaultNights) : null,
@@ -451,6 +460,7 @@ export function SearchPage() {
   }
 
   async function openSiteDetails(siteId: string, bookingUrl?: string) {
+    setSelectedItinerary(null);
     setLoadingSiteId(siteId);
     setLocationMessage(null);
     try {
@@ -467,6 +477,16 @@ export function SearchPage() {
     } finally {
       setLoadingSiteId(null);
     }
+  }
+
+  function openResult(result: SearchResult) {
+    const segments = result.stay?.segments ?? [result];
+    if (segments.length > 1) {
+      setSelectedSiteDetails(null);
+      setSelectedItinerary(result);
+      return;
+    }
+    openSiteDetails(result.site.id, result.booking_url);
   }
 
   // Slugs of parks that have at least one site in the current search results.
@@ -494,6 +514,8 @@ export function SearchPage() {
     [data, state.group_by],
   );
   const hasRouteEndpoint = state.stay_mode === "anywhere" && state.end_lat != null && state.end_lng != null;
+  const routeNeedsDates = state.stay_mode !== "same_site" && (!dateWindowNights || dateWindowNights < 2);
+  const minRouteNights = state.stay_mode === "same_site" ? 1 : 2;
 
   return (
     <div className="flex h-[calc(100dvh-3.5rem)] min-h-[42rem] flex-col bg-stone-50">
@@ -682,11 +704,11 @@ export function SearchPage() {
                   <span>Nights</span>
                   <input
                     type="number"
-                    min={1}
+                    min={minRouteNights}
                     max={dateWindowNights ?? 21}
                     className="w-11 bg-transparent text-right outline-none"
-                    value={state.min_nights ?? dateWindowNights ?? 1}
-                    onChange={(e) => setState({ min_nights: Number(e.target.value), flexible: true })}
+                    value={Math.max(minRouteNights, state.min_nights ?? dateWindowNights ?? minRouteNights)}
+                    onChange={(e) => setState({ min_nights: Math.max(minRouteNights, Number(e.target.value)), flexible: true })}
                   />
                 </label>
                 <label className="inline-flex h-8 items-center gap-1.5 rounded-md bg-white px-2 text-xs font-semibold text-stone-700 ring-1 ring-stone-200">
@@ -834,12 +856,17 @@ export function SearchPage() {
             </header>
 
             <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
-              {data?.results.length === 0 && !loading && (
+              {routeNeedsDates && !loading && (
+                <div className="rounded-lg border border-dashed border-stone-300 bg-stone-50 p-8 text-center text-sm text-stone-600">
+                  Choose at least two nights to build routes that change campsites every night.
+                </div>
+              )}
+              {data?.results.length === 0 && !loading && !routeNeedsDates && (
                 <div className="rounded-lg border border-dashed border-stone-300 bg-stone-50 p-8 text-center text-sm text-stone-600">
                   No availability matches your filters. Try expanding the radius, allowing moves, or easing site filters.
                 </div>
               )}
-              {!data && !loading && (
+              {!data && !loading && !routeNeedsDates && (
                 <div className="rounded-lg border border-dashed border-stone-300 bg-stone-50 p-8 text-center text-sm text-stone-500">
                   Type a location, choose dates and equipment, then search. Results land here with map context beside them.
                 </div>
@@ -864,6 +891,7 @@ export function SearchPage() {
                       <ResultCard
                         key={`${r.site.id}-${r.availability.nights.join("-")}-${r.stay?.mode ?? "single"}-${index}`}
                         result={r}
+                        onOpenResult={openResult}
                         onOpenSiteDetails={openSiteDetails}
                         loadingSiteId={loadingSiteId}
                       />
@@ -892,6 +920,11 @@ export function SearchPage() {
       <SiteDetailFlyout
         details={selectedSiteDetails}
         onClose={() => setSelectedSiteDetails(null)}
+      />
+      <ItineraryFlyout
+        result={selectedItinerary}
+        onClose={() => setSelectedItinerary(null)}
+        onOpenSiteDetails={openSiteDetails}
       />
     </div>
   );
