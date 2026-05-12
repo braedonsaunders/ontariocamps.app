@@ -745,7 +745,7 @@ export function AnalyticsView({ snapshot }: { snapshot: AnalyticsSnapshot }) {
 
       <p className="mt-10 text-xs text-stone-500 leading-relaxed">
         Sources: Ontario Parks (Camis5), Parks Canada (PCRSv3), and the GoingToCamp-backed Conservation Authorities,
-        polled live for this snapshot. <Link href="/freshness" className="text-forest-700 hover:underline">See data freshness</Link>{" "}
+        polled live for this snapshot. <Link href="/data" className="text-forest-700 hover:underline">See data freshness</Link>{" "}
         for per-operator update times.
       </p>
     </div>

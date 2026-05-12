@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
 import { operatorHealth } from "@/lib/search";
-import { getDataSourceInfo, fetchParks, fetchOperators, fetchSites } from "@/lib/data-source";
-import type { Park, Operator, Site } from "@/lib/types";
+import { getDataSourceInfo } from "@/lib/data-source";
 import { sql } from "@/lib/db/client";
-import { Activity, Clock, Database, Download } from "lucide-react";
+import { Activity, Clock, Database } from "lucide-react";
 import { DataTabs } from "@/components/data-tabs";
 
 export const metadata: Metadata = {
@@ -13,13 +12,10 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function DataPage() {
-  const [ops, totals, info, parks, operators, allSites] = await Promise.all([
+  const [ops, totals, info] = await Promise.all([
     operatorHealth(),
     sql()<Array<{ parks: number; sites: number }>>`SELECT parks, sites FROM analytics_totals`,
     getDataSourceInfo(),
-    fetchParks(),
-    fetchOperators(),
-    fetchSites(),
   ]);
   const dataSource = info.hasReal ? "real" : "mock";
   const dataSourceGeneratedAt = info.availabilityLastRefreshedAt ?? info.metadataLastRefreshedAt;
@@ -34,58 +30,26 @@ export default async function DataPage() {
     {
       id: "parks",
       label: "Parks",
-      description: `${parks.length} parks across ${operators.length} operators — names, regions, coordinates, operator, and vendor IDs.`,
+      description: `${totalParks.toLocaleString()} parks across ${ops.length.toLocaleString()} operators — names, regions, coordinates, operator, and vendor IDs.`,
       filename: "ontariocamps-parks.csv",
-      rowCount: parks.length,
-      data: parks.map((p: Park) => ({
-        id: p.id,
-        name: p.name,
-        slug: p.slug,
-        region: p.region,
-        operator_id: p.operator_id,
-        lat: p.location.lat,
-        lng: p.location.lng,
-        address: p.address,
-        vendor_url: p.vendor_url,
-      })),
+      rowCount: totalParks,
+      dataUrl: "/api/data/parks",
     },
     {
       id: "operators",
       label: "Operators",
-      description: `${operators.length} campground operators — vendor platform, base URL, and booking URL.`,
+      description: `${ops.length.toLocaleString()} campground operators — vendor platform, base URL, and booking URL.`,
       filename: "ontariocamps-operators.csv",
-      rowCount: operators.length,
-      data: operators.map((o: Operator) => ({
-        id: o.id,
-        name: o.name,
-        vendor: o.vendor,
-        base_url: o.base_url,
-        booking_url: o.booking_url,
-        active: o.active,
-      })),
+      rowCount: ops.length,
+      dataUrl: "/api/data/operators",
     },
     {
       id: "sites",
       label: "Sites",
-      description: `${allSites.length} individual campsites — type, amenities, max party/equipment size, and campground reference.`,
+      description: `${totalSites.toLocaleString()} individual campsites — type, amenities, max party/equipment size, and campground reference.`,
       filename: "ontariocamps-sites.csv",
-      rowCount: allSites.length,
-      data: allSites.map((s: Site) => ({
-        id: s.id,
-        name: s.name,
-        campground_id: s.campground_id,
-        site_type: s.site_type,
-        site_type_label: s.site_type_label ?? "",
-        max_party_size: s.max_party_size,
-        max_equipment_length_ft: s.max_equipment_length_ft ?? "",
-        has_electric: s.has_electric,
-        has_water: s.has_water,
-        has_sewer: s.has_sewer,
-        is_pull_through: s.is_pull_through,
-        is_accessible: s.is_accessible,
-        is_pet_friendly: s.is_pet_friendly,
-        is_waterfront: s.is_waterfront,
-      })),
+      rowCount: totalSites,
+      dataUrl: "/api/data/sites",
     },
   ];
 
