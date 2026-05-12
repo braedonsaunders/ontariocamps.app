@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "motion/react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { ArrowUpRight, Calendar, ChevronLeft, ChevronUp, Loader2, MapPin, Tent, X } from "lucide-react";
+import { ArrowUpRight, Calendar, ChevronLeft, Loader2, MapPin, Tent, X } from "lucide-react";
 
 const MAP_STYLE = "https://tiles.openfreemap.org/styles/positron";
 const BARRIE_CENTER: [number, number] = [-79.6903, 44.3894];
@@ -65,10 +65,19 @@ function escapeHtml(s: string): string {
 export function OntarioMap({ parks }: { parks: Park[] }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
-  const [selected, setSelected] = useState<Park | null>(null);
   const [flyoutPark, setFlyoutPark] = useState<Park | null>(null);
   const [parkDetail, setParkDetail] = useState<ParkDetail | null>(null);
   const [parkDetailLoading, setParkDetailLoading] = useState(false);
+
+  const clearSelectedMarker = useCallback(() => {
+    const sel = mapRef.current?.getSource("selected-park") as maplibregl.GeoJSONSource | undefined;
+    sel?.setData({ type: "FeatureCollection", features: [] });
+  }, []);
+
+  const closeFlyout = useCallback(() => {
+    setFlyoutPark(null);
+    clearSelectedMarker();
+  }, [clearSelectedMarker]);
 
   useEffect(() => {
     if (!flyoutPark) {
@@ -279,7 +288,7 @@ export function OntarioMap({ parks }: { parks: Park[] }) {
         });
       });
 
-      // Tap a park → show details card and outline the pin.
+      // Tap a park → open the flyout and outline the pin.
       map.on("click", "park-points-hit", (e) => {
         const f = e.features?.[0];
         if (!f) return;
@@ -297,7 +306,7 @@ export function OntarioMap({ parks }: { parks: Park[] }) {
           lat,
           lng,
         };
-        setSelected(park);
+        setFlyoutPark(park);
         const sel = map.getSource("selected-park") as maplibregl.GeoJSONSource | undefined;
         sel?.setData({
           type: "FeatureCollection",
@@ -386,70 +395,11 @@ export function OntarioMap({ parks }: { parks: Park[] }) {
         ref={containerRef}
         style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0 }}
       />
-      {selected && (
-        <div className="absolute bottom-4 left-4 right-4 sm:right-auto sm:w-96 card shadow-xl p-4 z-10">
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <Link
-                href={`/park/${selected.slug}`}
-                className="text-base font-semibold hover:text-forest-700 transition-colors line-clamp-1"
-              >
-                {selected.name}
-              </Link>
-              <div className="text-xs text-stone-500 mt-0.5">
-                <Link href={`/operator/${selected.operator_id}`} className="hover:text-stone-900">
-                  {selected.operator}
-                </Link>
-                {" · "}
-                {selected.region}
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setSelected(null);
-                const sel = mapRef.current?.getSource("selected-park") as maplibregl.GeoJSONSource | undefined;
-                sel?.setData({ type: "FeatureCollection", features: [] });
-              }}
-              className="text-stone-400 hover:text-stone-700 transition-colors shrink-0"
-              aria-label="Close"
-            >
-              <ChevronUp size={16} />
-            </button>
-          </div>
-          <div className="mt-3 grid grid-cols-3 gap-3 text-xs">
-            <div>
-              <div className="text-stone-500 flex items-center gap-1"><Tent size={10} /> Sites</div>
-              <div className="font-semibold tabular-nums">{selected.total_sites.toLocaleString()}</div>
-            </div>
-            <div>
-              <div className="text-stone-500">Open</div>
-              <div
-                className="font-semibold tabular-nums"
-                style={{ color: colorForAvailability(selected.availability_pct) }}
-              >
-                {selected.available_sites.toLocaleString()} · {selected.availability_pct}%
-              </div>
-            </div>
-            <div>
-              <div className="text-stone-500 flex items-center gap-1"><MapPin size={10} /> Coords</div>
-              <div className="font-semibold tabular-nums">{selected.lat.toFixed(2)}, {selected.lng.toFixed(2)}</div>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => setFlyoutPark(selected)}
-            className="btn-primary mt-4 w-full justify-center text-xs"
-          >
-            View park
-          </button>
-        </div>
-      )}
       <MapParkFlyout
         park={flyoutPark}
         detail={parkDetail}
         loading={parkDetailLoading}
-        onClose={() => setFlyoutPark(null)}
+        onClose={closeFlyout}
       />
     </>
   );
