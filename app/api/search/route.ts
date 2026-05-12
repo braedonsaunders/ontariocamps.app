@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { runSearch } from "@/lib/search";
+import { normalizeSearchRadiusKm } from "@/lib/search-radius";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,7 @@ export async function GET(req: Request) {
     lng: q.has("lng") ? Number(q.get("lng")) : undefined,
     end_lat: q.has("end_lat") ? Number(q.get("end_lat")) : undefined,
     end_lng: q.has("end_lng") ? Number(q.get("end_lng")) : undefined,
-    radius_km: q.has("radius_km") ? Number(q.get("radius_km")) : undefined,
+    radius_km: q.has("radius_km") ? normalizeSearchRadiusKm(q.get("radius_km")) : undefined,
     start_date: q.get("start_date") ?? undefined,
     end_date: q.get("end_date") ?? undefined,
     min_nights: q.has("min_nights") ? Number(q.get("min_nights")) : undefined,

@@ -34,6 +34,12 @@ import {
   X,
 } from "lucide-react";
 import { SEARCH_EQUIPMENT_OPTIONS, searchEquipmentById } from "@/lib/search-equipment";
+import {
+  DEFAULT_SEARCH_RADIUS_KM,
+  MAX_SEARCH_RADIUS_KM,
+  MIN_SEARCH_RADIUS_KM,
+  normalizeSearchRadiusKm,
+} from "@/lib/search-radius";
 import { SiteDetailFlyout, type SiteFlyoutDetails } from "@/components/site-detail-flyout";
 import { ItineraryFlyout } from "@/components/itinerary-flyout";
 
@@ -200,7 +206,7 @@ export function SearchPage() {
     end_loc: parseAsString.withDefault(""),
     end_lat: parseAsFloat,
     end_lng: parseAsFloat,
-    radius_km: parseAsInteger.withDefault(150),
+    radius_km: parseAsInteger.withDefault(DEFAULT_SEARCH_RADIUS_KM),
     start_date: parseAsString.withDefault(""),
     end_date: parseAsString.withDefault(""),
     flexible: parseAsBoolean.withDefault(false),
@@ -287,7 +293,7 @@ export function SearchPage() {
   async function runSearch() {
     // Commit typed place strings into state only when the user runs a search.
     const query = nearInput.trim();
-    const nextState: Partial<typeof state> = { page: 1 };
+    const nextState: Partial<typeof state> = { page: 1, radius_km: normalizeSearchRadiusKm(state.radius_km) };
     setLocationMessage(null);
 
     if (query.toLowerCase() === "current location" && state.lat != null && state.lng != null) {
@@ -421,7 +427,7 @@ export function SearchPage() {
       sp.set("end_lat", String(state.end_lat));
       sp.set("end_lng", String(state.end_lng));
     }
-    sp.set("radius_km", String(state.radius_km));
+    sp.set("radius_km", String(normalizeSearchRadiusKm(state.radius_km)));
     if (state.start_date) sp.set("start_date", state.start_date);
     if (state.end_date) sp.set("end_date", state.end_date);
     if (state.flexible) sp.set("flexible", "true");
@@ -623,7 +629,7 @@ export function SearchPage() {
   const planningOptionCount =
     (state.group_by !== "park" ? 1 : 0) +
     (state.sort !== "distance" ? 1 : 0) +
-    (state.radius_km !== 150 ? 1 : 0) +
+    (normalizeSearchRadiusKm(state.radius_km) !== DEFAULT_SEARCH_RADIUS_KM ? 1 : 0) +
     (state.flexible ? 1 : 0) +
     (state.party_size !== 2 ? 1 : 0);
 
@@ -850,7 +856,7 @@ export function SearchPage() {
                   <span className="inline-flex min-w-0 items-center gap-2">
                     <Sliders size={13} className="text-stone-500" />
                     <span>Planning</span>
-                    <span className="truncate text-stone-500">{GROUP_LABELS[state.group_by]} · {SORT_LABELS[state.sort]}</span>
+                    <span className="truncate text-stone-500">{GROUP_LABELS[state.group_by]} · {SORT_LABELS[state.sort]} · {normalizeSearchRadiusKm(state.radius_km)} km</span>
                   </span>
                   <span className="inline-flex shrink-0 items-center gap-2">
                     {planningOptionCount > 0 && <span className="rounded-full bg-white px-1.5 py-0.5 text-[10px] text-stone-500 ring-1 ring-stone-200">{planningOptionCount}</span>}
@@ -884,15 +890,26 @@ export function SearchPage() {
                 </label>
                 <label className="inline-flex h-8 items-center gap-1.5 rounded-md bg-white px-2 text-xs font-semibold text-stone-700 ring-1 ring-stone-200">
                   <span>Radius</span>
-                  <input
-                    type="number"
-                    className="w-14 bg-transparent text-right outline-none"
-                    min={10}
-                    max={500}
-                    step={10}
-                    value={state.radius_km}
-                    onChange={(e) => setState({ radius_km: Number(e.target.value), page: 1 })}
-                  />
+                  <span className="inline-flex items-center gap-1">
+                    <input
+                      type="number"
+                      aria-label="Search radius in kilometers"
+                      className="w-16 bg-transparent text-right tabular-nums outline-none"
+                      min={MIN_SEARCH_RADIUS_KM}
+                      max={MAX_SEARCH_RADIUS_KM}
+                      step={10}
+                      value={state.radius_km}
+                      onChange={(e) => setState({ radius_km: Number(e.target.value), page: 1 })}
+                      onBlur={(e) => setState({ radius_km: normalizeSearchRadiusKm(e.currentTarget.value), page: 1 })}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          void setState({ radius_km: normalizeSearchRadiusKm(e.currentTarget.value), page: 1 }).then(() => runSearch());
+                        }
+                      }}
+                    />
+                    <span className="text-stone-500">km</span>
+                  </span>
                 </label>
                 <button
                   type="button"

@@ -22,6 +22,12 @@ import {
   searchEquipmentById,
   type SearchEquipmentId,
 } from "@/lib/search-equipment";
+import {
+  DEFAULT_SEARCH_RADIUS_KM,
+  MAX_SEARCH_RADIUS_KM,
+  MIN_SEARCH_RADIUS_KM,
+  normalizeSearchRadiusKm,
+} from "@/lib/search-radius";
 
 type PlaceSuggestion = {
   id: string;
@@ -71,7 +77,7 @@ export function HomeSearch() {
   const [equipment, setEquipment] = useState<SearchEquipmentId>("tent");
   const [start, setStart] = useState(todayPlus(30));
   const [end, setEnd] = useState(todayPlus(33));
-  const [radius, setRadius] = useState(150);
+  const [radius, setRadius] = useState(DEFAULT_SEARCH_RADIUS_KM);
 
   const selectedEquipment = useMemo(() => searchEquipmentById(equipment), [equipment]);
   const EquipmentIcon = EQUIPMENT_ICONS[selectedEquipment.id];
@@ -186,7 +192,7 @@ export function HomeSearch() {
       sp.set("loc", place.label);
     }
 
-    sp.set("radius_km", String(radius));
+    sp.set("radius_km", String(normalizeSearchRadiusKm(radius)));
     sp.set("start_date", start);
     sp.set("end_date", end);
     sp.set("equipment", selectedEquipment.id);
@@ -348,12 +354,14 @@ export function HomeSearch() {
           <span className="flex items-center gap-2">
             <input
               type="number"
-              min={10}
-              max={500}
+              min={MIN_SEARCH_RADIUS_KM}
+              max={MAX_SEARCH_RADIUS_KM}
               step={10}
+              aria-label="Search radius in kilometers"
               className="w-full min-w-0 bg-transparent text-sm font-semibold text-stone-950 outline-none"
               value={radius}
               onChange={(e) => setRadius(Number(e.target.value))}
+              onBlur={(e) => setRadius(normalizeSearchRadiusKm(e.currentTarget.value))}
             />
             <span className="text-xs font-semibold text-stone-500">km</span>
           </span>

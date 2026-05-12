@@ -471,8 +471,25 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
   // Instead we use parameterized SQL with optional CASE-like conditions.
 
   const rows = await client<SearchRow[]>`
-    WITH matching AS (
+    WITH filtered_availability AS MATERIALIZED (
+      SELECT site_id, night_date, last_checked_at
+      FROM site_availability
+      WHERE status = 'available'
+        ${wantDates
+          ? client`AND night_date = ANY(${wantDates}::date[])`
+          : client`AND night_date = (now() AT TIME ZONE 'America/Toronto')::date`}
+    ),
+    matching AS (
       SELECT
+        p.id   AS park_id,
+        p.slug AS park_slug,
+        p.name AS park_name,
+        p.lat  AS park_lat,
+        p.lng  AS park_lng,
+        p.operator_id,
+        o.name AS operator_name,
+        p.vendor_url,
+        p.hero_image_url AS park_hero_image_url,
         s.id  AS site_id,
         s.name AS site_name,
         s.site_type,
@@ -481,55 +498,50 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
         s.rule_summary AS site_rule_summary,
         s.photos AS site_photos,
         s.campground_id,
-        array_agg(sa.night_date ORDER BY sa.night_date) AS matched_nights,
-        max(sa.last_checked_at) AS last_checked_at
-      FROM sites s
-      JOIN site_availability sa ON sa.site_id = s.id
-      WHERE sa.status = 'available'
-        ${wantDates ? client`AND sa.night_date = ANY(${wantDates}::date[])` : client``}
+        c.name AS campground_name,
+        array_agg(fa.night_date ORDER BY fa.night_date) AS matched_nights,
+        max(fa.last_checked_at) AS last_checked_at,
+        ${hasAnchor
+          ? client`min(ST_Distance(p.location, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography))`
+          : client`NULL::float`}                                              AS distance_m
+      FROM filtered_availability fa
+      JOIN sites s       ON s.id = fa.site_id
+      JOIN campgrounds c ON c.id = s.campground_id
+      JOIN parks p       ON p.id = c.park_id
+      JOIN operators o   ON o.id = p.operator_id
+      WHERE 1=1
+        ${hasAnchor && radiusM !== Infinity && parkSlugs.length === 0
+          ? client`AND ST_DWithin(p.location, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography, ${radiusM})`
+          : client``}
+        ${parkSlugs.length > 0 ? client`AND p.slug = ANY(${parkSlugs})` : client``}
+        ${params.operators && params.operators.length > 0 ? client`AND p.operator_id = ANY(${params.operators})` : client``}
         ${params.party_size && params.party_size > 0 ? client`AND s.max_party_size >= ${params.party_size}` : client``}
         ${params.site_types && params.site_types.length > 0 ? client`AND s.site_type = ANY(${params.site_types})` : client``}
         ${params.equipment_length_ft && params.equipment_length_ft > 0
           ? client`AND (s.max_equipment_length_ft IS NULL OR s.max_equipment_length_ft >= ${params.equipment_length_ft})`
           : client``}
-      GROUP BY s.id
-      HAVING count(sa.night_date) >= ${requiredMatches}
+      GROUP BY
+        p.id,
+        p.slug,
+        p.name,
+        p.lat,
+        p.lng,
+        p.operator_id,
+        o.name,
+        p.vendor_url,
+        p.hero_image_url,
+        s.id,
+        s.name,
+        s.site_type,
+        s.site_type_label,
+        s.amenities,
+        s.rule_summary,
+        s.photos,
+        s.campground_id,
+        c.name
+      HAVING count(fa.night_date) >= ${requiredMatches}
     )
-    SELECT
-      p.id   AS park_id,
-      p.slug AS park_slug,
-      p.name AS park_name,
-      p.lat  AS park_lat,
-      p.lng  AS park_lng,
-      p.operator_id,
-      o.name AS operator_name,
-      p.vendor_url,
-      p.hero_image_url AS park_hero_image_url,
-      m.site_id,
-      m.site_name,
-      m.site_type,
-      m.site_type_label,
-      m.site_amenities,
-      m.site_rule_summary,
-      m.site_photos,
-      c.id AS campground_id,
-      c.name AS campground_name,
-      m.matched_nights,
-      m.last_checked_at,
-      ${hasAnchor
-        ? client`ST_Distance(p.location, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography)`
-        : client`NULL::float`}                                              AS distance_m
-    FROM matching m
-    JOIN sites s     ON s.id = m.site_id
-    JOIN campgrounds c ON c.id = s.campground_id
-    JOIN parks p     ON p.id = c.park_id
-    JOIN operators o ON o.id = p.operator_id
-    WHERE 1=1
-      ${hasAnchor && radiusM !== Infinity && parkSlugs.length === 0
-        ? client`AND ST_DWithin(p.location, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography, ${radiusM})`
-        : client``}
-      ${parkSlugs.length > 0 ? client`AND p.slug = ANY(${parkSlugs})` : client``}
-      ${params.operators && params.operators.length > 0 ? client`AND p.operator_id = ANY(${params.operators})` : client``}
+    SELECT * FROM matching
   `;
 
   const freshnessSamples: number[] = [];

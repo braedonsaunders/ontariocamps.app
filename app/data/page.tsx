@@ -28,6 +28,19 @@ function formatDuration(ms: number | null): string {
   return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }
 
+function formatEasternDateTime(value: string | null): string | null {
+  if (!value) return null;
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Toronto",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  }).format(new Date(value));
+}
+
 function percentage(part: number, total: number): number {
   if (total <= 0) return 0;
   return Math.round((part / total) * 100);
@@ -45,6 +58,7 @@ export default async function DataPage() {
   ]);
   const dataSource = info.hasReal ? "real" : "mock";
   const dataSourceGeneratedAt = info.availabilityLastRefreshedAt ?? info.metadataLastRefreshedAt;
+  const dataSourceGeneratedLabel = formatEasternDateTime(dataSourceGeneratedAt);
   const totalSites = totals[0]?.sites ?? 0;
   const totalParks = totals[0]?.parks ?? 0;
   const ops = health.operators;
@@ -97,8 +111,8 @@ export default async function DataPage() {
         />
         <div className="text-sm">
           <span className="font-semibold">Data source: {dataSource === "real" ? "live operator APIs" : "seeded mock"}</span>
-          {dataSourceGeneratedAt && (
-            <span className="text-stone-600 ml-2">snapshot {new Date(dataSourceGeneratedAt).toLocaleString()}</span>
+          {dataSourceGeneratedLabel && (
+            <span className="text-stone-600 ml-2">snapshot {dataSourceGeneratedLabel}</span>
           )}
         </div>
       </div>
