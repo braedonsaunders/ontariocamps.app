@@ -82,9 +82,16 @@ export function HomeHeroBackground({
   const [transitionKey, setTransitionKey] = useState(0);
   const activeScene =
     homeHeroBackgroundScenes.find((scene) => scene.id === activeId) ?? homeHeroBackgroundScenes[0];
+  const visibleSceneIds = renderedIds.includes(activeId) ? renderedIds : [activeId];
 
   function transitionToScene(nextId: HomeHeroBackgroundId) {
     if (nextId === activeId) return;
+
+    if (document.hidden) {
+      setActiveId(nextId);
+      setRenderedIds([nextId]);
+      return;
+    }
 
     setRenderedIds([activeId, nextId]);
     window.requestAnimationFrame(() => {
@@ -104,6 +111,11 @@ export function HomeHeroBackground({
   }, [requestedScene?.id]);
 
   useEffect(() => {
+    if (!renderedIds.includes(activeId)) {
+      setRenderedIds([activeId]);
+      return;
+    }
+
     if (renderedIds.length < 2) return;
 
     const timer = window.setTimeout(() => {
@@ -111,7 +123,7 @@ export function HomeHeroBackground({
     }, 1500);
 
     return () => window.clearTimeout(timer);
-  }, [activeId, renderedIds.length]);
+  }, [activeId, renderedIds]);
 
   useEffect(() => {
     if (!rotate || homeHeroBackgroundScenes.length < 2) return;
@@ -180,7 +192,7 @@ export function HomeHeroBackground({
         data-active-scene={activeId}
       >
         {homeHeroBackgroundScenes
-          .filter(({ id }) => renderedIds.includes(id))
+          .filter(({ id }) => visibleSceneIds.includes(id))
           .map(({ id, Scene }) => (
             <div
               key={id}
@@ -188,7 +200,7 @@ export function HomeHeroBackground({
                 "oc-scene-frame absolute inset-0",
                 id === activeId
                   ? "translate-y-0 scale-100 opacity-100 blur-0"
-                  : id === renderedIds[1]
+                  : id === visibleSceneIds[1]
                     ? "translate-y-full scale-[1.02] opacity-95 blur-sm"
                     : "-translate-y-full scale-[1.035] opacity-0 blur-md",
               )}
