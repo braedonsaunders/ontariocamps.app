@@ -43,7 +43,8 @@ export default async function ParksPage() {
     sql()<OperatorRow[]>`
       SELECT o.id, o.name, o.vendor, o.base_url, o.website_url, o.logo_url, o.accent_color, o.tagline,
              o.total_parks, o.total_sites, o.available_sites, o.last_availability_at,
-             hero.hero_image_url, hero.featured_park
+             COALESCE(o.hero_image_url, hero.hero_image_url) AS hero_image_url,
+             hero.featured_park
         FROM operators o
         LEFT JOIN LATERAL (
           SELECT p.hero_image_url, p.name AS featured_park

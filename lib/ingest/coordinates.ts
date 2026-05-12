@@ -155,11 +155,11 @@ export const PARK_COORDS: ParkCoord[] = [
   // Conservation Authority parks — kept first so the more-specific CA names
   // win over loose substring matches like "Springwater" (the OP park is in
   // the Central region, the CA park is south-west).
-  { match: "Fanshawe", lat: 43.040, lng: -81.184, region: "Southwestern" },
-  { match: "Wildwood", lat: 43.221, lng: -80.973, region: "Southwestern" },
-  { match: "Pittock", lat: 43.135, lng: -80.728, region: "Southwestern" },
-  { match: "Falls Reserve", lat: 43.726, lng: -81.557, region: "Southwestern" },
-  { match: /Springwater Conservation/i, lat: 42.681, lng: -80.964, region: "Southwestern" },
+  { match: "Fanshawe", lat: 43.0355194, lng: -81.1883926, region: "Southwestern" },
+  { match: "Wildwood", lat: 43.2699718, lng: -81.0673535, region: "Southwestern" },
+  { match: "Pittock", lat: 43.1563516, lng: -80.756085, region: "Southwestern" },
+  { match: "Falls Reserve", lat: 43.713779, lng: -81.639042, region: "Southwestern" },
+  { match: /Springwater Conservation/i, lat: 42.7443153, lng: -81.0341296, region: "Southwestern" },
   { match: "Springwater", lat: 44.435, lng: -79.776, region: "Central" },
   { match: "Sturgeon Bay", lat: 45.077, lng: -80.013, region: "Central" },
   { match: "Temagami", lat: 47.013, lng: -80.043, region: "Northeastern" },
@@ -192,47 +192,57 @@ export const PARK_COORDS: ParkCoord[] = [
   { match: /Rideau Canal/i, lat: 44.985, lng: -76.111, region: "Eastern" },
 
   // ─── Conservation Authorities — Long Point Region ─────────────────────────
-  { match: /Backus Heritage|Backus Conservation/i, lat: 42.74, lng: -80.519, region: "Southwestern" },
-  { match: /Deer Creek/i, lat: 42.866, lng: -80.456, region: "Southwestern" },
+  { match: /Backus Heritage|Backus Conservation/i, lat: 42.6458328, lng: -80.4684591, region: "Southwestern" },
+  { match: /Deer Creek/i, lat: 42.7063026, lng: -80.5615238, region: "Southwestern" },
   { match: /Haldimand( Conservation)?/i, lat: 42.951, lng: -80.005, region: "Southwestern" },
   { match: /^Norfolk( Conservation)?$/i, lat: 42.732, lng: -80.295, region: "Southwestern" },
-  { match: /Waterford North/i, lat: 42.943, lng: -80.302, region: "Southwestern" },
+  { match: /Waterford North/i, lat: 42.9311913, lng: -80.3193696, region: "Southwestern" },
 
   // ─── Conservation Authorities — St. Clair Region ──────────────────────────
-  { match: /A\.?W\.?\s*Campbell/i, lat: 42.94, lng: -82.0, region: "Southwestern" },
-  { match: /Lorne C\.?\s*Henderson/i, lat: 42.918, lng: -82.044, region: "Southwestern" },
-  { match: /^Warwick( Conservation)?$/i, lat: 42.95, lng: -81.85, region: "Southwestern" },
+  { match: /A\.?W\.?\s*Campbell/i, lat: 42.8296217, lng: -81.8353295, region: "Southwestern" },
+  { match: /Lorne C\.?\s*Henderson/i, lat: 42.88335, lng: -82.18725, region: "Southwestern" },
+  { match: /^Warwick( Conservation)?$/i, lat: 42.9987754, lng: -81.9456454, region: "Southwestern" },
 
   // ─── Conservation Authorities — Grand River ───────────────────────────────
-  { match: /Byng Island/i, lat: 42.987, lng: -79.872, region: "Southwestern" },
-  { match: /Brant Park|Brant Conservation/i, lat: 43.073, lng: -80.317, region: "Southwestern" },
-  { match: /Pinehurst Lake/i, lat: 43.323, lng: -80.345, region: "Southwestern" },
-  { match: /^Rockwood/i, lat: 43.616, lng: -80.143, region: "Southwestern" },
+  { match: /Byng Island/i, lat: 42.89427, lng: -79.63751, region: "Southwestern" },
+  { match: /^Brant$|Brant Park|Brant Conservation/i, lat: 43.14364, lng: -80.30916, region: "Southwestern" },
+  { match: /Pinehurst Lake/i, lat: 43.26751, lng: -80.39365, region: "Southwestern" },
+  { match: /^Rockwood/i, lat: 43.61253, lng: -80.1481, region: "Southwestern" },
   { match: /Belwood Lake/i, lat: 43.788, lng: -80.388, region: "Southwestern" },
-  { match: /Conestogo Lake/i, lat: 43.681, lng: -80.708, region: "Southwestern" },
+  { match: /Conestogo Lake/i, lat: 43.68361, lng: -80.71245, region: "Southwestern" },
   { match: /Elora Quarry/i, lat: 43.682, lng: -80.434, region: "Southwestern" },
-  { match: /Elora Gorge/i, lat: 43.687, lng: -80.444, region: "Southwestern" },
-  { match: /Guelph Lake/i, lat: 43.604, lng: -80.211, region: "Southwestern" },
-  { match: /Laurel Creek/i, lat: 43.490, lng: -80.587, region: "Southwestern" },
+  { match: /Elora Gorge/i, lat: 43.67235, lng: -80.44482, region: "Southwestern" },
+  { match: /Guelph Lake/i, lat: 43.60622, lng: -80.2561, region: "Southwestern" },
+  { match: /Laurel Creek/i, lat: 43.49258, lng: -80.56922, region: "Southwestern" },
   { match: /Shade['']s Mills|Shades Mills/i, lat: 43.350, lng: -80.296, region: "Southwestern" },
 
   // ─── Conservation Authorities — Saugeen Valley ────────────────────────────
-  { match: /^Durham/i, lat: 44.176, lng: -80.819, region: "Western" },
+  { match: /^Durham/i, lat: 44.1847254, lng: -80.7955343, region: "Western" },
   { match: /McBeath/i, lat: 44.106, lng: -81.054, region: "Western" },
   { match: /Saugeen Bluffs/i, lat: 44.388, lng: -81.230, region: "Western" },
 
   // ─── Conservation Authorities — TRCA ──────────────────────────────────────
-  { match: /Indian Line/i, lat: 43.737, lng: -79.628, region: "GTA" },
-  { match: /Albion Hills/i, lat: 43.928, lng: -79.84, region: "GTA" },
+  { match: /Indian Line/i, lat: 43.7364321, lng: -79.6367456, region: "GTA" },
+  { match: /Albion Hills/i, lat: 43.9289822, lng: -79.8267986, region: "GTA" },
   { match: /Glen Haffy/i, lat: 43.927, lng: -79.972, region: "GTA" },
 
   // ─── Conservation Authorities — Otonabee Region ───────────────────────────
-  { match: /Warsaw Caves/i, lat: 44.448, lng: -78.078, region: "Central" },
+  { match: /Beavermead/i, lat: 44.2963703, lng: -78.3007352, region: "Central" },
+  { match: /Warsaw Caves/i, lat: 44.4576292, lng: -78.1283283, region: "Central" },
 
   // ─── Conservation Authorities — Niagara Peninsula ─────────────────────────
-  { match: /Ball['']s Falls|Balls Falls/i, lat: 43.131, lng: -79.353, region: "Niagara" },
-  { match: /Binbrook/i, lat: 43.122, lng: -79.831, region: "Niagara" },
-  { match: /Long Beach( Conservation)?/i, lat: 42.875, lng: -79.464, region: "Niagara" },
+  { match: /Ball['']s Falls|Balls Falls/i, lat: 43.1327069, lng: -79.3858431, region: "Niagara" },
+  { match: /Binbrook/i, lat: 43.0967198, lng: -79.8295813, region: "Niagara" },
+  { match: /Chippawa Creek/i, lat: 42.9920204, lng: -79.5153938, region: "Niagara" },
+  { match: /Long Beach( Conservation)?/i, lat: 42.8727207, lng: -79.4232696, region: "Niagara" },
+
+  // ─── Conservation Authorities — Hamilton ──────────────────────────────────
+  { match: /Fifty Point/i, lat: 43.2209, lng: -79.6425, region: "GTA",
+    description: "Lake Ontario campground and marina operated by Hamilton Conservation Authority.",
+    heroImageUrl: "https://ontarioconservationareas.ca/wp-content/uploads/2022/04/Fifty-Point-scaled.jpg" },
+  { match: /Valens Lake/i, lat: 43.3808194, lng: -80.1409306, region: "GTA",
+    description: "Forested campground on Valens Lake operated by Hamilton Conservation Authority.",
+    heroImageUrl: "https://ontarioconservationareas.ca/wp-content/uploads/2022/04/Valens-Lake-scaled.jpg" },
 ];
 
 const NORM_CACHE: Array<{ matcher: ParkCoord; literalLower: string | null }> = PARK_COORDS.map((c) => ({

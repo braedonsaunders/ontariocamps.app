@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { recordRateLimitEvent } from "@/lib/db/queries";
+import { requestFingerprint } from "@/lib/security";
 
 export const dynamic = "force-dynamic";
 
@@ -81,10 +83,20 @@ function toSuggestion(result: NominatimResult): PlaceSuggestion | null {
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const q = url.searchParams.get("q")?.trim();
+  const q = url.searchParams.get("q")?.trim().slice(0, 80);
 
   if (!q || q.length < 2) {
     return NextResponse.json({ suggestions: [] });
+  }
+
+  const rateLimit = await recordRateLimitEvent({
+    action: "geocode",
+    key: requestFingerprint(req, "geocode"),
+    limit: 80,
+    windowSeconds: 60 * 60,
+  });
+  if (!rateLimit.allowed) {
+    return NextResponse.json({ suggestions: [] }, { status: 429 });
   }
 
   const upstream = new URL("https://nominatim.openstreetmap.org/search");

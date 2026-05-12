@@ -47,6 +47,7 @@ const OPERATORS: Operator[] = [
   gtc("upperthames",  "Upper Thames River CA",  "upperthames.goingtocamp.com"),
   gtc("maitland",     "Maitland Valley CA",     "maitlandvalley.goingtocamp.com"),
   gtc("catfish",      "Catfish Creek CA",       "catfishcreek.goingtocamp.com"),
+  gtc("hca",          "Hamilton Conservation Authority", "hcareservations.ca"),
 ];
 
 async function main() {

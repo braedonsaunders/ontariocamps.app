@@ -6,8 +6,9 @@
  *   npm run ingest -- --avail     # availability only (alias for ingest:availability)
  *
  * For day-to-day refresh, prefer the dedicated scripts:
- *   npm run ingest:metadata       (weekly cadence, ~5 min)
- *   npm run ingest:availability   (hourly cadence, ~15 min)
+ *   npm run ingest:metadata                    (weekly/on-demand static data)
+ *   npm run ingest:availability -- --days 30   (frequent moving data)
+ *   npm run ingest:availability                (slower full-horizon sweep)
  */
 
 import { mkdirSync } from "node:fs";
@@ -46,6 +47,10 @@ const OPERATORS: Operator[] = [
   gtc("npca",    "Niagara Peninsula CA",  "niagara.goingtocamp.com"),
   gtc("trca",    "Toronto and Region CA", "camping.trca.ca"),
   gtc("grca",    "Grand River CA",        "www.grcacamping.ca"),
+  gtc("upperthames",  "Upper Thames River CA",  "upperthames.goingtocamp.com"),
+  gtc("maitland",     "Maitland Valley CA",     "maitlandvalley.goingtocamp.com"),
+  gtc("catfish",      "Catfish Creek CA",       "catfishcreek.goingtocamp.com"),
+  gtc("hca",          "Hamilton Conservation Authority", "hcareservations.ca"),
 ];
 
 async function main() {
