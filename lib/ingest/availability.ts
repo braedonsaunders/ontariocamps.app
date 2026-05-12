@@ -5,8 +5,9 @@
  * no map-tree walking required — we go straight from "list of sites" to
  * "per-resource daily availability calls" with bounded concurrency.
  *
- * Target cadence: hourly during the day, every 15 min during high traffic.
- * Target runtime: under 20 min for the full 24k-site index at 8-way concurrency.
+ * Target cadence: short windows frequently, full 180-day horizons on a slower
+ * cadence. Metadata, photos, maps, and resource details are handled by the
+ * metadata ingest, not this hot path.
  *
  * Writes are batched UPSERTs into `site_availability` (PRIMARY KEY (site_id,
  * night_date)) so a partial run preserves prior nightly data and an interrupted
@@ -20,6 +21,7 @@ import {
   finishRefreshLog,
   setRefreshMeta,
   pruneStaleAvailability,
+  refreshRollups,
   refreshAggregates,
   type SiteNight,
 } from "../db/queries";
@@ -66,7 +68,7 @@ type FetchTarget = {
  * Build the work queue: every site we know about, joined with its operator's
  * fetch config. Returns one record per site.
  */
-async function loadFetchTargets(): Promise<FetchTarget[]> {
+async function loadFetchTargets(opts: Pick<AvailabilityRefreshOptions, "missingOnly" | "staleHours"> = {}): Promise<FetchTarget[]> {
   const rows = await sqlDirect()<FetchTarget[]>`
     SELECT s.id              AS site_id,
            s.vendor_resource_location_id,
@@ -83,6 +85,18 @@ async function loadFetchTargets(): Promise<FetchTarget[]> {
       JOIN operator_fetch_config ofc ON ofc.operator_id = o.id
      WHERE s.vendor_resource_location_id IS NOT NULL
        AND s.vendor_resource_id IS NOT NULL
+       ${opts.missingOnly ? sqlDirect()`AND NOT EXISTS (
+         SELECT 1 FROM site_availability sa
+          WHERE sa.site_id = s.id
+            AND sa.night_date = CURRENT_DATE
+       )` : sqlDirect()``}
+       ${opts.staleHours != null ? sqlDirect()`AND NOT EXISTS (
+         SELECT 1 FROM site_availability sa
+          WHERE sa.site_id = s.id
+            AND sa.night_date = CURRENT_DATE
+            AND sa.last_checked_at > now() - (${opts.staleHours} * interval '1 hour')
+       )` : sqlDirect()``}
+     ORDER BY s.id
   `;
   return rows.map((r) => ({ ...r }));
 }
@@ -103,6 +117,16 @@ export type AvailabilityRefreshOptions = {
   maxSites?: number;
   /** Optional filter — only fetch sites for these operator IDs. */
   operatorIds?: string[];
+  /** Only fetch sites that do not have a row for CURRENT_DATE yet. */
+  missingOnly?: boolean;
+  /** Only fetch sites whose CURRENT_DATE row is missing or older than N hours. */
+  staleHours?: number;
+  /** Deterministically fetch one shard of the target list. */
+  shardCount?: number;
+  /** Zero-based shard index to fetch. */
+  shardIndex?: number;
+  /** Also refresh analytics materialized views. Keep off for frequent runs. */
+  refreshAnalytics?: boolean;
   /** Batch size for SQLite UPSERTs. */
   writeBatchSize?: number;
 };
@@ -130,10 +154,18 @@ export async function refreshAvailability(
   const startStr = startDate.toISOString().slice(0, 10);
   const endStr = endDate.toISOString().slice(0, 10);
 
-  let targets = await loadFetchTargets();
+  let targets = await loadFetchTargets({ missingOnly: opts.missingOnly, staleHours: opts.staleHours });
   if (opts.operatorIds && opts.operatorIds.length) {
     const allowed = new Set(opts.operatorIds);
     targets = targets.filter((t) => allowed.has(t.operator_id));
+  }
+  if (opts.shardCount != null) {
+    const shardCount = Math.max(1, Math.floor(opts.shardCount));
+    const shardIndex = Math.max(0, Math.floor(opts.shardIndex ?? 0));
+    if (shardIndex >= shardCount) {
+      throw new Error(`shardIndex must be between 0 and ${shardCount - 1}`);
+    }
+    targets = targets.filter((_, i) => i % shardCount === shardIndex);
   }
   if (opts.maxSites != null) targets = targets.slice(0, opts.maxSites);
 
@@ -236,14 +268,19 @@ export async function refreshAvailability(
   const pruned = await pruneStaleAvailability(today);
   if (pruned > 0) log(`[availability] pruned ${pruned} stale nights before ${today}`);
 
-  // Refresh denormalized columns + materialized views so the app sees the
-  // new data instantly without re-aggregating on every request.
+  // Refresh hot-path denormalized columns so the app sees the new data without
+  // paying for analytics materialized-view refreshes on every frequent run.
   const refreshStart = Date.now();
   try {
-    await refreshAggregates();
-    log(`[availability] refresh_aggregates() done in ${((Date.now() - refreshStart) / 1000).toFixed(1)}s`);
+    await refreshRollups();
+    log(`[availability] refresh_rollups() done in ${((Date.now() - refreshStart) / 1000).toFixed(1)}s`);
+    if (opts.refreshAnalytics) {
+      const analyticsStart = Date.now();
+      await refreshAggregates();
+      log(`[availability] refresh_aggregates() done in ${((Date.now() - analyticsStart) / 1000).toFixed(1)}s`);
+    }
   } catch (e) {
-    errors.push(`refresh_aggregates: ${(e as Error).message}`);
+    errors.push(`post_refresh: ${(e as Error).message}`);
   }
 
   const duration_ms = Date.now() - started;

@@ -96,6 +96,9 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
         ${wantDates ? client`AND sa.night_date = ANY(${wantDates}::date[])` : client``}
         ${params.party_size && params.party_size > 0 ? client`AND s.max_party_size >= ${params.party_size}` : client``}
         ${params.site_types && params.site_types.length > 0 ? client`AND s.site_type = ANY(${params.site_types})` : client``}
+        ${params.equipment_length_ft && params.equipment_length_ft > 0
+          ? client`AND (s.max_equipment_length_ft IS NULL OR s.max_equipment_length_ft >= ${params.equipment_length_ft})`
+          : client``}
       GROUP BY s.id
       HAVING count(sa.night_date) >= ${flexible ? 1 : minNights}
     )

@@ -1,12 +1,17 @@
 node_modules/
 .next/
 out/
-.env*.local
+.env
+.env.*
+!.env.example
+!.env.*.example
 .DS_Store
 *.log
 
 # Local build artifacts
 tsconfig.tsbuildinfo
+.playwright-cli/
+output/
 
 # SQLite database — local, populated by `npm run ingest`
 data/*.db
@@ -15,3 +20,6 @@ data/*.db-wal
 data/*.json
 .vercel
 .secrets/
+
+# Supabase CLI local state
+supabase/.temp/

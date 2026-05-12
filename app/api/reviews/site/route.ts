@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSiteReviews, getSiteReviewAggregate, insertSiteReview } from "@/lib/db/queries";
-import { createHash } from "crypto";
+import { getSiteReviews, getSiteReviewAggregate, insertSiteReview, recordRateLimitEvent } from "@/lib/db/queries";
+import {
+  cleanIdentifier,
+  cleanPastIsoDate,
+  rejectLargeBody,
+  requestFingerprint,
+  requireJsonPost,
+  requireSameOriginPost,
+} from "@/lib/security";
 
 export const dynamic = "force-dynamic";
 
@@ -22,23 +29,35 @@ export async function GET(req: NextRequest) {
 const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
 
 export async function POST(req: NextRequest) {
-  const body = await req.json();
+  const originError = requireSameOriginPost(req);
+  if (originError) return originError;
+  const typeError = requireJsonPost(req);
+  if (typeError) return typeError;
+  const sizeError = rejectLargeBody(req, 8_000);
+  if (sizeError) return sizeError;
 
-  if (!body.site_id || !body.author_handle || !body.overall || !body.body) {
+  const body = await req.json().catch(() => null);
+  if (!body || typeof body !== "object") {
+    return NextResponse.json({ error: "invalid json" }, { status: 400 });
+  }
+
+  const data = body as Record<string, unknown>;
+  const siteId = cleanIdentifier(data.site_id);
+  if (!siteId || !data.author_handle || !data.overall || !data.body) {
     return NextResponse.json({ error: "site_id, author_handle, overall, and body are required" }, { status: 400 });
   }
 
-  const handle = String(body.author_handle).trim().slice(0, 40);
+  const handle = String(data.author_handle).trim().slice(0, 40);
   if (handle.length < 2) {
     return NextResponse.json({ error: "author_handle must be 2-40 characters" }, { status: 400 });
   }
 
-  const overall = Number(body.overall);
+  const overall = Number(data.overall);
   if (!Number.isInteger(overall) || overall < 1 || overall > 5) {
     return NextResponse.json({ error: "overall must be 1-5" }, { status: 400 });
   }
 
-  const b = String(body.body).trim();
+  const b = String(data.body).trim();
   if (b.length < 10 || b.length > 2000) {
     return NextResponse.json({ error: "body must be 10-2000 characters" }, { status: 400 });
   }
@@ -49,28 +68,36 @@ export async function POST(req: NextRequest) {
     return Number.isInteger(n) && n >= 1 && n <= 5 ? n : undefined;
   };
 
-  const ip = req.headers.get("x-forwarded-for") ?? req.headers.get("x-real-ip") ?? "unknown";
-  const submitterHash = createHash("sha256").update(ip).digest("hex").slice(0, 32);
+  const submitterHash = requestFingerprint(req, "site-review");
+  const rateLimit = await recordRateLimitEvent({
+    action: "review:site",
+    key: submitterHash,
+    limit: 3,
+    windowSeconds: RATE_LIMIT_WINDOW_MS / 1000,
+  });
+  if (!rateLimit.allowed) {
+    return NextResponse.json({ error: "too many review submissions" }, { status: 429 });
+  }
 
   try {
     const id = await insertSiteReview({
-      site_id: body.site_id,
+      site_id: siteId,
       author_handle: handle,
       overall,
-      privacy: validateRating(body.privacy),
-      cleanliness: validateRating(body.cleanliness),
-      noise: validateRating(body.noise),
-      site_size: validateRating(body.site_size),
-      shade: validateRating(body.shade),
-      title: body.title ? String(body.title).trim().slice(0, 120) : undefined,
+      privacy: validateRating(data.privacy),
+      cleanliness: validateRating(data.cleanliness),
+      noise: validateRating(data.noise),
+      site_size: validateRating(data.site_size),
+      shade: validateRating(data.shade),
+      title: data.title ? String(data.title).trim().slice(0, 120) : undefined,
       body: b,
-      visited_at: body.visited_at || undefined,
+      visited_at: cleanPastIsoDate(data.visited_at),
       submitter_hash: submitterHash,
     });
 
     return NextResponse.json({ id }, { status: 201 });
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : "insert failed";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    console.error("site review insert failed", err);
+    return NextResponse.json({ error: "review could not be saved" }, { status: 500 });
   }
 }

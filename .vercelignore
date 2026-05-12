@@ -1,8 +1,10 @@
 # Local artifacts that don't need to ship to Vercel
 data/
 .secrets/
-.env.local
-.env*.local
+.env
+.env.*
 *.log
 .DS_Store
+output/
 supabase/
+workers/

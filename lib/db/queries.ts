@@ -514,6 +514,39 @@ export async function setRefreshMeta(refresh_type: "metadata" | "availability"):
   `;
 }
 
+export async function recordRateLimitEvent(input: {
+  action: string;
+  key: string;
+  limit: number;
+  windowSeconds: number;
+}): Promise<{ allowed: boolean; count: number; limit: number }> {
+  const limit = Math.max(1, Math.floor(input.limit));
+  const windowSeconds = Math.max(1, Math.floor(input.windowSeconds));
+  const rows = await sql()<Array<{ allowed: boolean; count: number; limit: number }>>`
+    WITH pruned AS (
+      DELETE FROM app_rate_limit_events
+       WHERE created_at < now() - interval '2 days'
+    ),
+    recent AS (
+      SELECT count(*)::int AS count
+        FROM app_rate_limit_events
+       WHERE action = ${input.action}
+         AND rate_key = ${input.key}
+         AND created_at >= now() - (${windowSeconds} * interval '1 second')
+    ),
+    inserted AS (
+      INSERT INTO app_rate_limit_events (action, rate_key)
+      SELECT ${input.action}, ${input.key}
+       WHERE (SELECT count FROM recent) < ${limit}
+      RETURNING id
+    )
+    SELECT EXISTS(SELECT 1 FROM inserted) AS allowed,
+           (SELECT count FROM recent) AS count,
+           ${limit}::int AS limit
+  `;
+  return rows[0] ?? { allowed: false, count: limit, limit };
+}
+
 export async function pruneStaleAvailability(cutoff_date: string): Promise<number> {
   const rows = await sqlDirect()`DELETE FROM site_availability WHERE night_date < ${cutoff_date}`;
   return rows.count;

@@ -2,6 +2,7 @@
 
 import { useCallback, useState, useMemo } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
 import type { Site, CampMap, EquipmentOption, ParkReview, SiteReviewAggregate, ParkReviewAggregate, OperatorRuleSource } from "@/lib/types";
 import { AvailabilityCalendar, type CalendarRow } from "@/components/availability-calendar";
@@ -137,10 +138,39 @@ export function ParkTabs(props: Props) {
   const [sitesSubTab, setSitesSubTab] = useState<SitesSubTab>("map");
   const [selectedSection, setSelectedSection] = useState<string | undefined>(undefined);
   const [selectedSiteFlyoutId, setSelectedSiteFlyoutId] = useState<string | null>(null);
+  const [refreshingAvailability, setRefreshingAvailability] = useState(false);
+  const router = useRouter();
+
+  const refreshLiveAvailability = useCallback(async (payload: { siteId?: string; park?: boolean }) => {
+    setRefreshingAvailability(true);
+    try {
+      await fetch("/api/availability/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          parkId: payload.park ? parkId : undefined,
+          parkSlug: payload.park ? parkSlug : undefined,
+          siteId: payload.siteId,
+          startDate: dateContext.mode === "range" ? dateContext.from : dateContext.date,
+          days: payload.siteId
+            ? 30
+            : dateContext.mode === "range"
+              ? Math.max(1, Math.min(45, Math.ceil((Date.parse(`${dateContext.to}T00:00:00Z`) - Date.parse(`${dateContext.from}T00:00:00Z`)) / 86_400_000)))
+              : 14,
+        }),
+      });
+      router.refresh();
+    } catch {
+      // Freshening availability is opportunistic; stale cached data is still usable.
+    } finally {
+      setRefreshingAvailability(false);
+    }
+  }, [dateContext, parkId, parkSlug, router]);
 
   const openSiteFlyout = useCallback((siteId: string) => {
     setSelectedSiteFlyoutId(siteId);
-  }, []);
+    void refreshLiveAvailability({ siteId });
+  }, [refreshLiveAvailability]);
 
   const closeSiteFlyout = useCallback(() => {
     setSelectedSiteFlyoutId(null);
@@ -215,6 +245,11 @@ export function ParkTabs(props: Props) {
   return (
     <section className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
       <DateBanner ctx={dateContext} />
+      {refreshingAvailability && (
+        <div className="mt-2 text-xs font-medium text-forest-700" aria-live="polite">
+          Refreshing live availability…
+        </div>
+      )}
 
       {/* Sticky-ish tab strip */}
       <div className="mt-4 border-b border-stone-200 flex items-end gap-1 overflow-x-auto scrollbar-none">
@@ -223,8 +258,11 @@ export function ParkTabs(props: Props) {
           return (
             <button
               key={t.id}
-              onClick={() => setActiveTab(t.id)}
-              className={`relative inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors ${
+                onClick={() => setActiveTab(t.id)}
+                onMouseDown={() => {
+                  if (t.id === "calendar" || t.id === "sites") void refreshLiveAvailability({ park: true });
+                }}
+                className={`relative inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors ${
                 active ? "text-forest-700" : "text-stone-600 hover:text-stone-900"
               }`}
             >

@@ -1,13 +1,17 @@
 /**
  * Per-night availability refresh.
  *
- *   npm run ingest:availability                  # full index
+ *   npm run ingest:availability -- --days 30     # hot path / frequent
+ *   npm run ingest:availability                  # full 180-day horizon
  *   npm run ingest:availability -- --concurrency 10 --delay 200
  *   npm run ingest:availability -- --operator gtc_lprca
+ *   npm run ingest:availability -- --missing-only # only sites without today's row
+ *   npm run ingest:availability -- --stale-hours 6 --shard-count 6 --shard-index 0
+ *   npm run ingest:availability -- --refresh-analytics # slower MV refresh
  *   npm run ingest:availability -- --max-sites 200   # quick smoke
  *
- * Target cadence: hourly (or every 15 min during high traffic).
- * Target runtime: <20 min for 24k sites at default concurrency.
+ * Target cadence: run short windows frequently; run the full horizon on a
+ * slower cadence. This script only fetches moving booking availability.
  *
  * Reads vendor IDs from `sites` (populated by `npm run ingest:metadata`) — so
  * you must run metadata first. UPSERTs the result into `site_availability`.
@@ -27,6 +31,11 @@ function parseArgs(argv: string[]): AvailabilityRefreshOptions {
     else if (a === "--skip")   opts.daysSkip = Number(argv[++i]);
     else if (a === "--max-sites") opts.maxSites = Number(argv[++i]);
     else if (a === "--operator") (opts.operatorIds ??= []).push(argv[++i]);
+    else if (a === "--missing-only") opts.missingOnly = true;
+    else if (a === "--stale-hours") opts.staleHours = Number(argv[++i]);
+    else if (a === "--shard-count") opts.shardCount = Number(argv[++i]);
+    else if (a === "--shard-index") opts.shardIndex = Number(argv[++i]);
+    else if (a === "--refresh-analytics") opts.refreshAnalytics = true;
   }
   return opts;
 }
