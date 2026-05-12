@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { getOperatorWithStats, getParksForOperator } from "@/lib/data-source";
+import { normalizeBookingUrlPath } from "@/lib/booking-url";
 import { ArrowUpRight, MapPin } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -32,7 +33,7 @@ export default async function OperatorPage({ params }: { params: Promise<{ id: s
             </a>
           </p>
         </div>
-        <a href={operator.booking_url} target="_blank" rel="noopener noreferrer" className="btn-primary">
+        <a href={normalizeBookingUrlPath(operator.booking_url)} target="_blank" rel="noopener noreferrer" className="btn-primary">
           Visit operator <ArrowUpRight size={14} />
         </a>
       </div>

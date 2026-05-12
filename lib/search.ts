@@ -6,6 +6,7 @@
 
 import { sql } from "./db/client";
 import { PRESET_LOCATIONS } from "./locations";
+import { buildBookingUrl } from "./booking-url";
 import type { SearchResponse, SearchResult, SiteType, Operator } from "./types";
 import { eachDate } from "./utils";
 
@@ -52,15 +53,6 @@ type SearchRow = {
   last_checked_at: Date;
   distance_m: number | null;
 };
-
-function buildBookingUrl(parkVendorUrl: string, startDate?: string, endDate?: string): string {
-  const sepCh = parkVendorUrl.includes("?") ? "&" : "?";
-  const params = new URLSearchParams();
-  if (startDate) params.set("startDate", startDate);
-  if (endDate) params.set("endDate", endDate);
-  params.set("isReserving", "true");
-  return `${parkVendorUrl}${sepCh}${params.toString()}`;
-}
 
 export async function runSearch(params: SearchParams): Promise<SearchResponse> {
   const client = sql();
@@ -188,7 +180,10 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
         price_cents: null,
         last_checked_at: lastChecked,
       },
-      booking_url: buildBookingUrl(r.vendor_url, params.start_date, params.end_date),
+      booking_url: buildBookingUrl(r.vendor_url, {
+        startDate: params.start_date,
+        endDate: params.end_date,
+      }),
     });
   }
 

@@ -11,6 +11,16 @@ function setParam(params: URLSearchParams, key: string, value: string | number |
   params.set(key, String(value));
 }
 
+export function normalizeBookingUrlPath(baseUrl: string): string {
+  try {
+    const url = new URL(baseUrl);
+    url.pathname = url.pathname.replace(/\/create-booking\/search-results\/?$/, "/create-booking/results");
+    return url.toString();
+  } catch {
+    return baseUrl.replace(/\/create-booking\/search-results\/?/, "/create-booking/results");
+  }
+}
+
 export function addNights(startDate: string, nights = 1): string {
   const end = new Date(`${startDate}T00:00:00Z`);
   end.setUTCDate(end.getUTCDate() + nights);
@@ -19,7 +29,7 @@ export function addNights(startDate: string, nights = 1): string {
 
 export function buildBookingUrl(baseUrl: string, options: BookingUrlOptions = {}): string {
   try {
-    const url = new URL(baseUrl);
+    const url = new URL(normalizeBookingUrlPath(baseUrl));
     setParam(url.searchParams, "resourceId", options.resourceId);
     setParam(url.searchParams, "mapId", options.mapId);
     setParam(url.searchParams, "startDate", options.startDate);
@@ -33,8 +43,9 @@ export function buildBookingUrl(baseUrl: string, options: BookingUrlOptions = {}
     setParam(params, "startDate", options.startDate);
     setParam(params, "endDate", options.endDate);
     if (options.isReserving !== false) params.set("isReserving", "true");
-    const sep = baseUrl.includes("?") ? "&" : "?";
-    return `${baseUrl}${sep}${params.toString()}`;
+    const normalizedUrl = normalizeBookingUrlPath(baseUrl);
+    const sep = normalizedUrl.includes("?") ? "&" : "?";
+    return `${normalizedUrl}${sep}${params.toString()}`;
   }
 }
 

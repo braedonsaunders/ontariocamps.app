@@ -19,7 +19,7 @@ import { type CalendarRow } from "@/components/availability-calendar";
 import { MotionHero } from "@/components/motion";
 import { ParkTabs, type DateContext } from "@/components/park-tabs";
 import type { SiteStatsEntry } from "@/components/site-field-notes";
-import { buildBookingUrl } from "@/lib/booking-url";
+import { buildBookingUrl, normalizeBookingUrlPath } from "@/lib/booking-url";
 
 export const dynamic = "force-dynamic";
 
@@ -296,7 +296,7 @@ export default async function ParkPage({
         operatorName={operator.name}
         operatorId={operator.id}
         operatorVendor={operator.vendor}
-        vendorUrl={park.vendor_url}
+        vendorUrl={normalizeBookingUrlPath(park.vendor_url)}
         parkLocation={park.location}
         totalSites={totalSites}
         avgAvailability={avgAvailability}

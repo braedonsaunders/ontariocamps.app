@@ -340,7 +340,7 @@ export async function refreshOperatorMetadata(
       location: { lat: coord.lat, lng: coord.lng },
       address: "",
       hero_image_url: coord.heroImageUrl,
-      vendor_url: `${operator.base_url}/create-booking/search-results?resourceLocationId=${cand.resourceLocationId}${cand.childMapId != null ? `&mapId=${cand.childMapId}` : ""}&bookingCategoryId=${bookingCategoryId}`,
+      vendor_url: `${operator.base_url}/create-booking/results?resourceLocationId=${cand.resourceLocationId}${cand.childMapId != null ? `&mapId=${cand.childMapId}` : ""}&bookingCategoryId=${bookingCategoryId}`,
     });
 
     const cgId = `cg_${parkId}`;

@@ -19,20 +19,20 @@ import type { Operator } from "../lib/types";
 const ONTARIO_PARKS: Operator = {
   id: "ontario_parks", name: "Ontario Parks", vendor: "camis5",
   base_url: "https://reservations.ontarioparks.ca",
-  booking_url: "https://reservations.ontarioparks.ca/create-booking/search-results",
+  booking_url: "https://reservations.ontarioparks.ca/create-booking/results",
   active: true,
 };
 const PARKS_CANADA: Operator = {
   id: "parks_canada", name: "Parks Canada", vendor: "pcrs",
   base_url: "https://reservation.pc.gc.ca",
-  booking_url: "https://reservation.pc.gc.ca/create-booking/search-results",
+  booking_url: "https://reservation.pc.gc.ca/create-booking/results",
   active: true,
 };
 function gtc(id: string, name: string, host: string): Operator {
   return {
     id: `gtc_${id}`, name, vendor: "goingtocamp",
     base_url: `https://${host}`,
-    booking_url: `https://${host}/create-booking/search-results`,
+    booking_url: `https://${host}/create-booking/results`,
     active: true,
   };
 }
