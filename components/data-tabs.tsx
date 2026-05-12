@@ -1,12 +1,30 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronLeft, ChevronRight, Download, Clock, Database } from "lucide-react";
+import { Activity, ChevronLeft, ChevronRight, Download, Clock, Database } from "lucide-react";
 
 type OperatorHealth = {
   operator: { id: string; name: string; vendor: string };
-  sites_indexed: number;
-  median_freshness_minutes: number;
+  sitesIndexed: number;
+  availableToday: number;
+  checkedLastTwoHours: number;
+  checkedLastSixHours: number;
+  currentP50Minutes: number | null;
+  currentP90Minutes: number | null;
+  availableP50Minutes: number | null;
+  hotP50Minutes: number | null;
+  hotDueSites: number;
+  latestCheckedMinutesAgo: number | null;
+  status: "active" | "warming" | "queued" | "steady";
+};
+
+type ScopeSummary = {
+  scope: string;
+  runs: number;
+  sitesUpdated: number;
+  nightsUpdated: number;
+  latestStartedAt: string | null;
+  averageDurationMs: number | null;
 };
 
 type Dataset = {
@@ -21,6 +39,7 @@ type Dataset = {
 type Props = {
   ops: OperatorHealth[];
   datasets: Dataset[];
+  scopes: ScopeSummary[];
 };
 
 const OPERATOR_PAGE_SIZE = 8;
@@ -36,6 +55,58 @@ function clampPage(page: number, pages: number) {
 function paginate<T>(items: T[], page: number, pageSize: number) {
   const start = (page - 1) * pageSize;
   return items.slice(start, start + pageSize);
+}
+
+function formatMinutes(minutes: number | null): string {
+  if (minutes == null) return "-";
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  if (hours < 24) return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+  const days = Math.floor(hours / 24);
+  const remHours = hours % 24;
+  return remHours > 0 ? `${days}d ${remHours}h` : `${days}d`;
+}
+
+function formatDuration(ms: number | null): string {
+  if (ms == null) return "-";
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+}
+
+function percentage(part: number, total: number): number {
+  if (total <= 0) return 0;
+  return Math.round((part / total) * 100);
+}
+
+function statusMeta(status: OperatorHealth["status"]) {
+  if (status === "active") {
+    return {
+      label: "active",
+      className: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+      dot: "bg-emerald-500",
+    };
+  }
+  if (status === "warming") {
+    return {
+      label: "warming",
+      className: "bg-sky-50 text-sky-700 ring-sky-200",
+      dot: "bg-sky-500",
+    };
+  }
+  if (status === "queued") {
+    return {
+      label: "queued",
+      className: "bg-amber-50 text-amber-700 ring-amber-200",
+      dot: "bg-amber-500",
+    };
+  }
+  return {
+    label: "steady",
+    className: "bg-stone-50 text-stone-700 ring-stone-200",
+    dot: "bg-stone-400",
+  };
 }
 
 type PaginationControlsProps = {
@@ -85,12 +156,18 @@ function PaginationControls({ label, page, pageSize, total, onPageChange }: Pagi
   );
 }
 
-export function DataTabs({ ops, datasets }: Props) {
+export function DataTabs({ ops, datasets, scopes }: Props) {
   const [operatorPage, setOperatorPage] = useState(1);
 
-  const operatorPages = totalPages(ops.length, OPERATOR_PAGE_SIZE);
+  const statusRank: Record<OperatorHealth["status"], number> = { queued: 0, warming: 1, active: 2, steady: 3 };
+  const sortedOps = [...ops].sort((a, b) => {
+    const rankDelta = statusRank[a.status] - statusRank[b.status];
+    if (rankDelta !== 0) return rankDelta;
+    return b.hotDueSites - a.hotDueSites || a.operator.name.localeCompare(b.operator.name);
+  });
+  const operatorPages = totalPages(sortedOps.length, OPERATOR_PAGE_SIZE);
   const currentOperatorPage = clampPage(operatorPage, operatorPages);
-  const paginatedOps = paginate(ops, currentOperatorPage, OPERATOR_PAGE_SIZE);
+  const paginatedOps = paginate(sortedOps, currentOperatorPage, OPERATOR_PAGE_SIZE);
 
   return (
     <div className="mt-10 space-y-12">
@@ -114,35 +191,71 @@ export function DataTabs({ ops, datasets }: Props) {
 
       <section id="refresh-status" className="space-y-10 scroll-mt-24">
         <div>
+          <h2 className="text-xl font-semibold tracking-tight">Worker cadence</h2>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {scopes.map((scope) => (
+              <div key={scope.scope} className="rounded-lg border border-stone-200 bg-white p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="font-semibold capitalize text-stone-900">{scope.scope}</div>
+                  <Activity size={15} className="text-forest-700" />
+                </div>
+                <div className="mt-3 text-2xl font-semibold tabular-nums">{scope.sitesUpdated.toLocaleString()}</div>
+                <div className="mt-1 text-xs text-stone-500">
+                  {scope.runs} runs · {scope.nightsUpdated.toLocaleString()} nights · avg {formatDuration(scope.averageDurationMs)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div>
           <h2 className="text-xl font-semibold tracking-tight">Per-operator status</h2>
           <div className="mt-3 card overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="min-w-[720px] w-full text-sm">
+              <table className="min-w-[1040px] w-full text-sm">
                 <thead className="bg-stone-50 text-stone-500 text-xs uppercase tracking-wide">
                   <tr>
                     <th className="text-left p-3 font-medium">Operator</th>
                     <th className="text-left p-3 font-medium">Vendor</th>
                     <th className="text-right p-3 font-medium">Sites</th>
-                    <th className="text-right p-3 font-medium">Freshness (p50)</th>
+                    <th className="text-right p-3 font-medium">Open today</th>
+                    <th className="text-right p-3 font-medium">Available p50</th>
+                    <th className="text-right p-3 font-medium">Current p50</th>
+                    <th className="text-right p-3 font-medium">Checked &lt;2h</th>
+                    <th className="text-right p-3 font-medium">Hot due</th>
                     <th className="text-left p-3 font-medium">Status</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {paginatedOps.map((o) => (
-                    <tr key={o.operator.id} className="border-t border-stone-100">
-                      <td className="p-3 font-medium">{o.operator.name}</td>
-                      <td className="p-3 text-stone-600">
-                        <span className="font-mono text-xs">{o.operator.vendor}</span>
-                      </td>
-                      <td className="p-3 text-right tabular-nums">{o.sites_indexed.toLocaleString()}</td>
-                      <td className="p-3 text-right tabular-nums whitespace-nowrap">{o.median_freshness_minutes}m</td>
-                      <td className="p-3">
-                        <span className="chip bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">
-                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> active
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
+                  {paginatedOps.map((o) => {
+                    const status = statusMeta(o.status);
+                    const checkedPct = percentage(o.checkedLastTwoHours, o.sitesIndexed);
+                    return (
+                      <tr key={o.operator.id} className="border-t border-stone-100">
+                        <td className="p-3 font-medium">{o.operator.name}</td>
+                        <td className="p-3 text-stone-600">
+                          <span className="font-mono text-xs">{o.operator.vendor}</span>
+                        </td>
+                        <td className="p-3 text-right tabular-nums">{o.sitesIndexed.toLocaleString()}</td>
+                        <td className="p-3 text-right tabular-nums">{o.availableToday.toLocaleString()}</td>
+                        <td className="p-3 text-right tabular-nums whitespace-nowrap">{formatMinutes(o.availableP50Minutes)}</td>
+                        <td className="p-3 text-right tabular-nums whitespace-nowrap">
+                          {formatMinutes(o.currentP50Minutes)}
+                          <span className="ml-1 text-stone-400">p90 {formatMinutes(o.currentP90Minutes)}</span>
+                        </td>
+                        <td className="p-3 text-right tabular-nums whitespace-nowrap">
+                          {o.checkedLastTwoHours.toLocaleString()}
+                          <span className="ml-1 text-stone-400">{checkedPct}%</span>
+                        </td>
+                        <td className="p-3 text-right tabular-nums">{o.hotDueSites.toLocaleString()}</td>
+                        <td className="p-3">
+                          <span className={`chip ring-1 ${status.className}`}>
+                            <span className={`h-1.5 w-1.5 rounded-full ${status.dot}`} /> {status.label}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -150,7 +263,7 @@ export function DataTabs({ ops, datasets }: Props) {
               label="operators"
               page={currentOperatorPage}
               pageSize={OPERATOR_PAGE_SIZE}
-              total={ops.length}
+              total={sortedOps.length}
               onPageChange={setOperatorPage}
             />
           </div>
@@ -159,9 +272,10 @@ export function DataTabs({ ops, datasets }: Props) {
         <div className="prose prose-stone max-w-none">
           <h2>How we refresh</h2>
           <ul>
-            <li><strong>Metadata</strong> — park layouts, amenities, equipment compatibility. Refreshed only when operator structure changes.</li>
-            <li><strong>Availability</strong> — per-site, per-night status. Background batches run every 5 minutes with priority for today, tomorrow, and bookable inventory; individual sites refresh on demand when someone opens live availability.</li>
-            <li><strong>Reservation-opening days (Feb–Apr at 7am ET)</strong> — ingest is suspended so we don&apos;t add load during the operators&apos; peak window.</li>
+            <li><strong>Metadata</strong> - park layouts, amenities, equipment compatibility. Refreshed only when operator structure changes.</li>
+            <li><strong>Availability</strong> - per-site, per-night status. Background batches run every 5 minutes with priority for today, tomorrow, and bookable inventory; individual sites refresh on demand when someone opens live availability.</li>
+            <li><strong>Freshness metrics</strong> - available-site freshness is the primary user-facing number. All-site p50 includes reserved and closed sites that intentionally refresh more slowly.</li>
+            <li><strong>Reservation-opening days (Feb-Apr at 7am ET)</strong> - ingest is suspended so we don&apos;t add load during the operators&apos; peak window.</li>
           </ul>
           <h2>What we don&apos;t do</h2>
           <ul>

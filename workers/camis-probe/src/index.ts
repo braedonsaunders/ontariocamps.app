@@ -79,7 +79,7 @@ const WINDOW_CONFIG: Record<RefreshWindow, {
   hot: {
     startOffset: 0,
     days: 2,
-    maxSites: 120,
+    maxSites: 180,
     concurrency: 3,
     delayMs: 450,
     dueField: "hot_due_at",
@@ -513,7 +513,14 @@ export default {
     const mode: RefreshMode = minute === 0
       ? (hour % 2 === 0 ? "planning" : "deep")
       : (minute === 15 || minute === 45 ? "near" : "hot");
-    const run = refreshAvailability(env, { mode, skipRollups: true });
+    const run = (async () => {
+      const primary = await refreshAvailability(env, { mode, skipRollups: true });
+      if (mode !== "hot" && primary.sitesSeen === 0) {
+        const fallback = await refreshAvailability(env, { mode: "hot", skipRollups: true });
+        return { primary, fallback };
+      }
+      return { primary };
+    })();
     ctx.waitUntil(run.then((result) => console.log(JSON.stringify(result))).catch((err) => console.error(err)));
   },
 };

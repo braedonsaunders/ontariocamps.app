@@ -353,3 +353,386 @@ export async function getDataSourceInfo(): Promise<DataSourceInfo> {
     };
   }
 }
+
+export type AvailabilityWorkerSummary = {
+  latestRunId: number | null;
+  latestScope: string | null;
+  latestStatus: string | null;
+  latestStartedAt: string | null;
+  latestFinishedAt: string | null;
+  latestStartedMinutesAgo: number | null;
+  latestSitesUpdated: number;
+  latestNightsUpdated: number;
+  latestDurationMs: number | null;
+  runsLastHour: number;
+  successesLastHour: number;
+  partialsLastHour: number;
+  failuresLastHour: number;
+  sitesUpdatedLastHour: number;
+  nightsUpdatedLastHour: number;
+  averageDurationMsLastHour: number | null;
+};
+
+export type AvailabilityFreshnessSummary = {
+  totalSites: number;
+  checkedToday: number;
+  availableToday: number;
+  checkedLastHour: number;
+  checkedLastTwoHours: number;
+  checkedLastSixHours: number;
+  checkedLastTwelveHours: number;
+  currentP50Minutes: number | null;
+  currentP90Minutes: number | null;
+  availableP50Minutes: number | null;
+  availableP90Minutes: number | null;
+  hotP50Minutes: number | null;
+  hotP90Minutes: number | null;
+  hotDueSites: number;
+  nearDueSites: number;
+  planningDueSites: number;
+  deepDueSites: number;
+};
+
+export type AvailabilityScopeSummary = {
+  scope: string;
+  runs: number;
+  sitesUpdated: number;
+  nightsUpdated: number;
+  latestStartedAt: string | null;
+  averageDurationMs: number | null;
+};
+
+export type AvailabilityOperatorHealth = {
+  operator: Pick<Operator, "id" | "name" | "vendor">;
+  sitesIndexed: number;
+  availableToday: number;
+  checkedLastTwoHours: number;
+  checkedLastSixHours: number;
+  currentP50Minutes: number | null;
+  currentP90Minutes: number | null;
+  availableP50Minutes: number | null;
+  hotP50Minutes: number | null;
+  hotDueSites: number;
+  latestCheckedAt: string | null;
+  latestCheckedMinutesAgo: number | null;
+  status: "active" | "warming" | "queued" | "steady";
+};
+
+export type AvailabilityHealth = {
+  worker: AvailabilityWorkerSummary;
+  freshness: AvailabilityFreshnessSummary;
+  scopes: AvailabilityScopeSummary[];
+  operators: AvailabilityOperatorHealth[];
+};
+
+type MaybeDate = Date | string | null;
+
+function toIso(value: MaybeDate): string | null {
+  if (!value) return null;
+  return value instanceof Date ? value.toISOString() : String(value);
+}
+
+function toNullableNumber(value: unknown): number | null {
+  if (value == null) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function toNumber(value: unknown): number {
+  return toNullableNumber(value) ?? 0;
+}
+
+function operatorStatus(row: {
+  checked_last_two_hours: number;
+  checked_last_six_hours: number;
+  hot_due_sites: number;
+  latest_checked_minutes_ago: number | null;
+}): AvailabilityOperatorHealth["status"] {
+  if (row.checked_last_two_hours > 0 || (row.latest_checked_minutes_ago ?? Infinity) <= 120) return "active";
+  if (row.checked_last_six_hours > 0 || (row.latest_checked_minutes_ago ?? Infinity) <= 360) return "warming";
+  if (row.hot_due_sites > 0) return "queued";
+  return "steady";
+}
+
+export async function getAvailabilityHealth(): Promise<AvailabilityHealth> {
+  const [freshnessRows, latestRows, recentRows, scopeRows, operatorRows] = await Promise.all([
+    sql()<Array<{
+      total_sites: number;
+      checked_today: number;
+      available_today: number;
+      checked_last_hour: number;
+      checked_last_two_hours: number;
+      checked_last_six_hours: number;
+      checked_last_twelve_hours: number;
+      current_p50_minutes: number | null;
+      current_p90_minutes: number | null;
+      available_p50_minutes: number | null;
+      available_p90_minutes: number | null;
+      hot_p50_minutes: number | null;
+      hot_p90_minutes: number | null;
+      hot_due_sites: number;
+      near_due_sites: number;
+      planning_due_sites: number;
+      deep_due_sites: number;
+    }>>`
+      WITH per_site AS (
+        SELECT s.id,
+               today.status AS today_status,
+               today.last_checked_at AS today_last_checked_at,
+               ars.hot_last_checked_at,
+               ars.hot_due_at,
+               ars.near_due_at,
+               ars.planning_due_at,
+               ars.deep_due_at
+          FROM sites s
+          LEFT JOIN site_availability today
+                 ON today.site_id = s.id
+                AND today.night_date = CURRENT_DATE
+          LEFT JOIN availability_refresh_state ars ON ars.site_id = s.id
+      )
+      SELECT count(*)::int AS total_sites,
+             count(today_last_checked_at)::int AS checked_today,
+             count(*) FILTER (WHERE today_status = 'available')::int AS available_today,
+             count(*) FILTER (WHERE today_last_checked_at > now() - interval '1 hour')::int AS checked_last_hour,
+             count(*) FILTER (WHERE today_last_checked_at > now() - interval '2 hours')::int AS checked_last_two_hours,
+             count(*) FILTER (WHERE today_last_checked_at > now() - interval '6 hours')::int AS checked_last_six_hours,
+             count(*) FILTER (WHERE today_last_checked_at > now() - interval '12 hours')::int AS checked_last_twelve_hours,
+             round((
+               percentile_cont(0.5) WITHIN GROUP (
+                 ORDER BY extract(epoch FROM (now() - today_last_checked_at)) / 60
+               ) FILTER (WHERE today_last_checked_at IS NOT NULL)
+             )::numeric)::int AS current_p50_minutes,
+             round((
+               percentile_cont(0.9) WITHIN GROUP (
+                 ORDER BY extract(epoch FROM (now() - today_last_checked_at)) / 60
+               ) FILTER (WHERE today_last_checked_at IS NOT NULL)
+             )::numeric)::int AS current_p90_minutes,
+             round((
+               percentile_cont(0.5) WITHIN GROUP (
+                 ORDER BY extract(epoch FROM (now() - today_last_checked_at)) / 60
+               ) FILTER (WHERE today_status = 'available' AND today_last_checked_at IS NOT NULL)
+             )::numeric)::int AS available_p50_minutes,
+             round((
+               percentile_cont(0.9) WITHIN GROUP (
+                 ORDER BY extract(epoch FROM (now() - today_last_checked_at)) / 60
+               ) FILTER (WHERE today_status = 'available' AND today_last_checked_at IS NOT NULL)
+             )::numeric)::int AS available_p90_minutes,
+             round((
+               percentile_cont(0.5) WITHIN GROUP (
+                 ORDER BY extract(epoch FROM (now() - hot_last_checked_at)) / 60
+               ) FILTER (WHERE hot_last_checked_at IS NOT NULL)
+             )::numeric)::int AS hot_p50_minutes,
+             round((
+               percentile_cont(0.9) WITHIN GROUP (
+                 ORDER BY extract(epoch FROM (now() - hot_last_checked_at)) / 60
+               ) FILTER (WHERE hot_last_checked_at IS NOT NULL)
+             )::numeric)::int AS hot_p90_minutes,
+             count(*) FILTER (WHERE hot_due_at IS NULL OR hot_due_at <= now())::int AS hot_due_sites,
+             count(*) FILTER (WHERE near_due_at IS NULL OR near_due_at <= now())::int AS near_due_sites,
+             count(*) FILTER (WHERE planning_due_at IS NULL OR planning_due_at <= now())::int AS planning_due_sites,
+             count(*) FILTER (WHERE deep_due_at IS NULL OR deep_due_at <= now())::int AS deep_due_sites
+        FROM per_site
+    `,
+    sql()<Array<{
+      id: number;
+      scope: string | null;
+      status: string;
+      started_at: MaybeDate;
+      finished_at: MaybeDate;
+      sites_updated: number;
+      nights_updated: number;
+      duration_ms: number | null;
+      started_minutes_ago: number | null;
+    }>>`
+      SELECT id, scope, status, started_at, finished_at,
+             sites_updated, nights_updated, duration_ms,
+             round(extract(epoch FROM (now() - started_at)) / 60)::int AS started_minutes_ago
+        FROM refresh_log
+       WHERE refresh_type = 'availability'
+       ORDER BY id DESC
+       LIMIT 1
+    `,
+    sql()<Array<{
+      runs: number;
+      successes: number;
+      partials: number;
+      failures: number;
+      sites_updated: number;
+      nights_updated: number;
+      average_duration_ms: number | null;
+    }>>`
+      SELECT count(*)::int AS runs,
+             count(*) FILTER (WHERE status = 'success')::int AS successes,
+             count(*) FILTER (WHERE status = 'partial')::int AS partials,
+             count(*) FILTER (WHERE status = 'failed')::int AS failures,
+             COALESCE(sum(sites_updated), 0)::int AS sites_updated,
+             COALESCE(sum(nights_updated), 0)::int AS nights_updated,
+             round(avg(duration_ms))::int AS average_duration_ms
+        FROM refresh_log
+       WHERE refresh_type = 'availability'
+         AND started_at > now() - interval '1 hour'
+    `,
+    sql()<Array<{
+      scope: string | null;
+      runs: number;
+      sites_updated: number;
+      nights_updated: number;
+      latest_started_at: MaybeDate;
+      average_duration_ms: number | null;
+    }>>`
+      SELECT COALESCE(scope, 'all') AS scope,
+             count(*)::int AS runs,
+             COALESCE(sum(sites_updated), 0)::int AS sites_updated,
+             COALESCE(sum(nights_updated), 0)::int AS nights_updated,
+             max(started_at) AS latest_started_at,
+             round(avg(duration_ms))::int AS average_duration_ms
+        FROM refresh_log
+       WHERE refresh_type = 'availability'
+         AND started_at > now() - interval '6 hours'
+       GROUP BY COALESCE(scope, 'all')
+       ORDER BY COALESCE(scope, 'all')
+    `,
+    sql()<Array<{
+      operator_id: string;
+      operator_name: string;
+      operator_vendor: string;
+      sites_indexed: number;
+      available_today: number;
+      checked_last_two_hours: number;
+      checked_last_six_hours: number;
+      current_p50_minutes: number | null;
+      current_p90_minutes: number | null;
+      available_p50_minutes: number | null;
+      hot_p50_minutes: number | null;
+      hot_due_sites: number;
+      latest_checked_at: MaybeDate;
+      latest_checked_minutes_ago: number | null;
+    }>>`
+      WITH per_site AS (
+        SELECT o.id AS operator_id,
+               o.name AS operator_name,
+               o.vendor AS operator_vendor,
+               s.id AS site_id,
+               today.status AS today_status,
+               today.last_checked_at AS today_last_checked_at,
+               ars.hot_last_checked_at,
+               ars.hot_due_at
+          FROM sites s
+          JOIN campgrounds c ON c.id = s.campground_id
+          JOIN parks p ON p.id = c.park_id
+          JOIN operators o ON o.id = p.operator_id
+          LEFT JOIN site_availability today
+                 ON today.site_id = s.id
+                AND today.night_date = CURRENT_DATE
+          LEFT JOIN availability_refresh_state ars ON ars.site_id = s.id
+      )
+      SELECT operator_id,
+             operator_name,
+             operator_vendor,
+             count(*)::int AS sites_indexed,
+             count(*) FILTER (WHERE today_status = 'available')::int AS available_today,
+             count(*) FILTER (WHERE today_last_checked_at > now() - interval '2 hours')::int AS checked_last_two_hours,
+             count(*) FILTER (WHERE today_last_checked_at > now() - interval '6 hours')::int AS checked_last_six_hours,
+             round((
+               percentile_cont(0.5) WITHIN GROUP (
+                 ORDER BY extract(epoch FROM (now() - today_last_checked_at)) / 60
+               ) FILTER (WHERE today_last_checked_at IS NOT NULL)
+             )::numeric)::int AS current_p50_minutes,
+             round((
+               percentile_cont(0.9) WITHIN GROUP (
+                 ORDER BY extract(epoch FROM (now() - today_last_checked_at)) / 60
+               ) FILTER (WHERE today_last_checked_at IS NOT NULL)
+             )::numeric)::int AS current_p90_minutes,
+             round((
+               percentile_cont(0.5) WITHIN GROUP (
+                 ORDER BY extract(epoch FROM (now() - today_last_checked_at)) / 60
+               ) FILTER (WHERE today_status = 'available' AND today_last_checked_at IS NOT NULL)
+             )::numeric)::int AS available_p50_minutes,
+             round((
+               percentile_cont(0.5) WITHIN GROUP (
+                 ORDER BY extract(epoch FROM (now() - hot_last_checked_at)) / 60
+               ) FILTER (WHERE hot_last_checked_at IS NOT NULL)
+             )::numeric)::int AS hot_p50_minutes,
+             count(*) FILTER (WHERE hot_due_at IS NULL OR hot_due_at <= now())::int AS hot_due_sites,
+             max(today_last_checked_at) AS latest_checked_at,
+             round(min(extract(epoch FROM (now() - today_last_checked_at)) / 60))::int AS latest_checked_minutes_ago
+        FROM per_site
+       GROUP BY operator_id, operator_name, operator_vendor
+       ORDER BY
+         count(*) FILTER (WHERE today_last_checked_at > now() - interval '2 hours') ASC,
+         count(*) FILTER (WHERE hot_due_at IS NULL OR hot_due_at <= now()) DESC,
+         operator_name ASC
+    `,
+  ]);
+
+  const freshnessRow = freshnessRows[0];
+  const latest = latestRows[0];
+  const recent = recentRows[0];
+
+  return {
+    worker: {
+      latestRunId: latest ? toNumber(latest.id) : null,
+      latestScope: latest?.scope ?? null,
+      latestStatus: latest?.status ?? null,
+      latestStartedAt: toIso(latest?.started_at ?? null),
+      latestFinishedAt: toIso(latest?.finished_at ?? null),
+      latestStartedMinutesAgo: toNullableNumber(latest?.started_minutes_ago),
+      latestSitesUpdated: toNumber(latest?.sites_updated),
+      latestNightsUpdated: toNumber(latest?.nights_updated),
+      latestDurationMs: toNullableNumber(latest?.duration_ms),
+      runsLastHour: toNumber(recent?.runs),
+      successesLastHour: toNumber(recent?.successes),
+      partialsLastHour: toNumber(recent?.partials),
+      failuresLastHour: toNumber(recent?.failures),
+      sitesUpdatedLastHour: toNumber(recent?.sites_updated),
+      nightsUpdatedLastHour: toNumber(recent?.nights_updated),
+      averageDurationMsLastHour: toNullableNumber(recent?.average_duration_ms),
+    },
+    freshness: {
+      totalSites: toNumber(freshnessRow?.total_sites),
+      checkedToday: toNumber(freshnessRow?.checked_today),
+      availableToday: toNumber(freshnessRow?.available_today),
+      checkedLastHour: toNumber(freshnessRow?.checked_last_hour),
+      checkedLastTwoHours: toNumber(freshnessRow?.checked_last_two_hours),
+      checkedLastSixHours: toNumber(freshnessRow?.checked_last_six_hours),
+      checkedLastTwelveHours: toNumber(freshnessRow?.checked_last_twelve_hours),
+      currentP50Minutes: toNullableNumber(freshnessRow?.current_p50_minutes),
+      currentP90Minutes: toNullableNumber(freshnessRow?.current_p90_minutes),
+      availableP50Minutes: toNullableNumber(freshnessRow?.available_p50_minutes),
+      availableP90Minutes: toNullableNumber(freshnessRow?.available_p90_minutes),
+      hotP50Minutes: toNullableNumber(freshnessRow?.hot_p50_minutes),
+      hotP90Minutes: toNullableNumber(freshnessRow?.hot_p90_minutes),
+      hotDueSites: toNumber(freshnessRow?.hot_due_sites),
+      nearDueSites: toNumber(freshnessRow?.near_due_sites),
+      planningDueSites: toNumber(freshnessRow?.planning_due_sites),
+      deepDueSites: toNumber(freshnessRow?.deep_due_sites),
+    },
+    scopes: scopeRows.map((row) => ({
+      scope: row.scope ?? "all",
+      runs: toNumber(row.runs),
+      sitesUpdated: toNumber(row.sites_updated),
+      nightsUpdated: toNumber(row.nights_updated),
+      latestStartedAt: toIso(row.latest_started_at),
+      averageDurationMs: toNullableNumber(row.average_duration_ms),
+    })),
+    operators: operatorRows.map((row) => ({
+      operator: {
+        id: row.operator_id,
+        name: row.operator_name,
+        vendor: row.operator_vendor as Operator["vendor"],
+      },
+      sitesIndexed: toNumber(row.sites_indexed),
+      availableToday: toNumber(row.available_today),
+      checkedLastTwoHours: toNumber(row.checked_last_two_hours),
+      checkedLastSixHours: toNumber(row.checked_last_six_hours),
+      currentP50Minutes: toNullableNumber(row.current_p50_minutes),
+      currentP90Minutes: toNullableNumber(row.current_p90_minutes),
+      availableP50Minutes: toNullableNumber(row.available_p50_minutes),
+      hotP50Minutes: toNullableNumber(row.hot_p50_minutes),
+      hotDueSites: toNumber(row.hot_due_sites),
+      latestCheckedAt: toIso(row.latest_checked_at),
+      latestCheckedMinutesAgo: toNullableNumber(row.latest_checked_minutes_ago),
+      status: operatorStatus(row),
+    })),
+  };
+}
