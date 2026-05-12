@@ -16,6 +16,7 @@ import { ParkMap, type ParkSummary } from "@/components/park-map";
 import type { LucideIcon } from "lucide-react";
 import {
   Calendar,
+  ChevronDown,
   ChevronRight,
   Home,
   List,
@@ -30,6 +31,7 @@ import {
   Sliders,
   Tent,
   Truck,
+  X,
 } from "lucide-react";
 import { SEARCH_EQUIPMENT_OPTIONS, searchEquipmentById } from "@/lib/search-equipment";
 import { SiteDetailFlyout, type SiteFlyoutDetails } from "@/components/site-detail-flyout";
@@ -207,6 +209,7 @@ export function SearchPage() {
     site_types: parseAsArrayOf(parseAsString).withDefault([]),
     amenities: parseAsArrayOf(parseAsString).withDefault([]),
     operators: parseAsArrayOf(parseAsString).withDefault([]),
+    park_slugs: parseAsArrayOf(parseAsString).withDefault([]),
     stay_mode: parseAsStringLiteral(STAY_MODES).withDefault("same_site"),
     view: parseAsStringLiteral(VIEW_MODES).withDefault("list"),
     group_by: parseAsStringLiteral(GROUP_OPTIONS).withDefault("park"),
@@ -224,6 +227,7 @@ export function SearchPage() {
     return "";
   });
   const [endInput, setEndInput] = useState<string>(() => state.end_loc);
+  const [parkInput, setParkInput] = useState("");
 
   const [data, setData] = useState<SearchResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -250,7 +254,8 @@ export function SearchPage() {
       sp.has("end_lat") ||
       sp.has("end_loc") ||
       sp.has("equipment") ||
-      sp.has("stay_mode")
+      sp.has("stay_mode") ||
+      sp.has("park_slugs")
     ) {
       setSearchKey(1);
     }
@@ -362,8 +367,11 @@ export function SearchPage() {
     if (state.stay_mode === "anywhere" && (nextState.end_lat != null || state.end_lat != null) && state.sort === "distance") {
       nextState.sort = "route";
     }
-    await setState(nextState);
-    setSearchKey((k) => k + 1);
+    try {
+      setState(nextState);
+    } finally {
+      setSearchKey((k) => k + 1);
+    }
   }
 
   function useDeviceLocation() {
@@ -422,6 +430,7 @@ export function SearchPage() {
     if (state.site_types.length) sp.set("site_types", state.site_types.join(","));
     if (state.amenities.length) sp.set("amenities", state.amenities.join(","));
     if (state.operators.length) sp.set("operators", state.operators.join(","));
+    if (state.park_slugs.length) sp.set("park_slugs", state.park_slugs.join(","));
     sp.set("stay_mode", state.stay_mode);
     sp.set("sort", state.sort);
     if (state.group_by === "none") {
@@ -460,6 +469,16 @@ export function SearchPage() {
       site_types: option.siteTypes,
       page: 1,
     });
+  }
+
+  function addParkFilter(park: ParkSummary) {
+    if (state.park_slugs.includes(park.slug)) return;
+    setState({ park_slugs: [...state.park_slugs, park.slug], page: 1 });
+    setParkInput("");
+  }
+
+  function removeParkFilter(slug: string) {
+    setState({ park_slugs: state.park_slugs.filter((item) => item !== slug), page: 1 });
   }
 
   async function updateGroupBy(groupBy: typeof state.group_by) {
@@ -535,11 +554,38 @@ export function SearchPage() {
   const EquipmentIcon = EQUIPMENT_ICONS[selectedEquipment.id] ?? Navigation;
   const selectedStayMode = stayModeCopy(state.stay_mode);
   const dateWindowNights = rangeNights(state.start_date, state.end_date);
-  const activeFilterCount =
-    state.site_types.length +
-    state.amenities.length +
-    state.operators.length +
-    (state.flexible ? 1 : 0);
+  const selectedParkSet = useMemo(() => new Set(state.park_slugs), [state.park_slugs]);
+  const selectedParks = useMemo(
+    () =>
+      state.park_slugs.map((slug) => {
+        const park = allParks.find((item) => item.slug === slug);
+        return park ?? {
+          slug,
+          name: slug.replace(/-\d+$/, "").replaceAll("-", " "),
+          operator: "Selected park",
+          operator_id: "",
+          region: "",
+          lat: 0,
+          lng: 0,
+          total_sites: 0,
+          available_sites: 0,
+          availability_pct: 0,
+        };
+      }),
+    [allParks, state.park_slugs],
+  );
+  const parkSuggestions = useMemo(() => {
+    const query = parkInput.trim().toLowerCase();
+    if (!query) return [];
+    return allParks
+      .filter((park) => {
+        if (selectedParkSet.has(park.slug)) return false;
+        return `${park.name} ${park.operator} ${park.region}`.toLowerCase().includes(query);
+      })
+      .sort((a, b) => b.available_sites - a.available_sites || a.name.localeCompare(b.name))
+      .slice(0, 8);
+  }, [allParks, parkInput, selectedParkSet]);
+  const advancedFilterCount = state.site_types.length + state.amenities.length + state.operators.length;
   const resultWord = state.stay_mode === "same_site" ? "sites" : "routes";
   const groupedMode = state.group_by !== "none";
   const groupedResults = useMemo(
@@ -567,13 +613,20 @@ export function SearchPage() {
   const hasRouteEndpoint = state.stay_mode === "anywhere" && state.end_lat != null && state.end_lng != null;
   const routeNeedsDates = state.stay_mode !== "same_site" && (!dateWindowNights || dateWindowNights < 2);
   const minRouteNights = state.stay_mode === "same_site" ? 1 : 2;
+  const tripOptionCount = (state.stay_mode !== "same_site" ? 1 : 0) + (hasRouteEndpoint ? 1 : 0);
+  const planningOptionCount =
+    (state.group_by !== "park" ? 1 : 0) +
+    (state.sort !== "distance" ? 1 : 0) +
+    (state.radius_km !== 150 ? 1 : 0) +
+    (state.flexible ? 1 : 0) +
+    (state.party_size !== 2 ? 1 : 0);
 
   return (
     <div className="flex h-[calc(100dvh-3.5rem)] min-h-[42rem] flex-col bg-stone-50">
       <div className="sticky top-14 z-40 border-b border-stone-200 bg-white/95 shadow-sm backdrop-blur">
         <div className="mx-auto w-full max-w-[1600px] px-4 py-2 sm:px-6 lg:px-8">
           <div className="rounded-lg bg-white p-1.5 ring-1 ring-stone-200">
-            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-[minmax(17rem,1.45fr)_minmax(8.5rem,0.7fr)_minmax(8.5rem,0.7fr)_minmax(12rem,0.95fr)_minmax(7rem,0.55fr)_minmax(8rem,0.65fr)_auto]">
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-[minmax(15rem,1.05fr)_minmax(17rem,1.25fr)_minmax(8.5rem,0.65fr)_minmax(8.5rem,0.65fr)_minmax(11rem,0.75fr)_auto]">
               <div className="relative col-span-2 rounded-md bg-stone-50 px-3 py-2 ring-1 ring-stone-200 transition focus-within:bg-white focus-within:ring-forest-600 sm:col-span-3 lg:col-span-1 lg:min-w-0">
                 <div className="mb-0.5 flex items-center justify-between gap-3">
                   <label className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-stone-500">
@@ -602,6 +655,50 @@ export function SearchPage() {
                     }
                   }}
                 />
+              </div>
+
+              <div className="relative col-span-2 rounded-md bg-stone-50 px-3 py-2 ring-1 ring-stone-200 transition focus-within:bg-white focus-within:ring-forest-600 sm:col-span-3 lg:col-span-1 lg:min-w-0">
+                <label className="mb-0.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-stone-500">
+                  <Search size={12} /> Park filter
+                </label>
+                <input
+                  type="text"
+                  className="w-full min-w-0 bg-transparent text-sm font-semibold text-stone-950 outline-none placeholder:text-stone-400"
+                  placeholder={selectedParks.length ? "Add another park" : "Search any park"}
+                  value={parkInput}
+                  autoComplete="off"
+                  onChange={(e) => setParkInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      const first = parkSuggestions[0];
+                      if (first) addParkFilter(first);
+                      else runSearch();
+                    }
+                  }}
+                />
+                {parkInput.trim() && (
+                  <div className="absolute left-0 right-0 top-full z-[70] mt-1 max-h-72 overflow-y-auto rounded-md bg-white py-1 shadow-xl ring-1 ring-stone-200">
+                    {parkSuggestions.length > 0 ? parkSuggestions.map((park) => (
+                      <button
+                        key={park.slug}
+                        type="button"
+                        onClick={() => addParkFilter(park)}
+                        className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left transition hover:bg-forest-50"
+                      >
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-semibold text-stone-950">{park.name}</span>
+                          <span className="block truncate text-xs text-stone-500">{park.operator} · {park.region}</span>
+                        </span>
+                        <span className="shrink-0 text-xs font-semibold text-forest-700">{park.available_sites.toLocaleString()} open</span>
+                      </button>
+                    )) : (
+                      <div className="px-3 py-2 text-xs text-stone-500">
+                        {allParks.length ? "No park matches that search." : "Loading parks..."}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="col-span-2 rounded-md bg-stone-50 px-3 py-2 ring-1 ring-stone-200 transition focus-within:bg-white focus-within:ring-forest-600 sm:col-span-1">
@@ -643,36 +740,6 @@ export function SearchPage() {
                 </select>
               </div>
 
-              <div className="rounded-md bg-stone-50 px-3 py-2 ring-1 ring-stone-200 transition focus-within:bg-white focus-within:ring-forest-600">
-                <label className="mb-0.5 block text-[11px] font-semibold uppercase tracking-wide text-stone-500">
-                  Radius
-                </label>
-                <input
-                  type="number"
-                  className="w-full min-w-0 bg-transparent text-sm font-semibold text-stone-950 outline-none"
-                  min={10}
-                  max={500}
-                  step={10}
-                  value={state.radius_km}
-                  onChange={(e) => setState({ radius_km: Number(e.target.value), page: 1 })}
-                />
-              </div>
-
-              <div className="rounded-md bg-stone-50 px-3 py-2 ring-1 ring-stone-200 transition focus-within:bg-white focus-within:ring-forest-600">
-                <label className="mb-0.5 block text-[11px] font-semibold uppercase tracking-wide text-stone-500">
-                  Sort
-                </label>
-                <select
-                  className="w-full min-w-0 appearance-none bg-transparent text-sm font-semibold text-stone-950 outline-none"
-                  value={state.sort}
-                  onChange={(e) => setState({ sort: e.target.value as typeof state.sort, page: 1 })}
-                >
-                  {SORT_OPTIONS.map((option) => (
-                    <option key={option} value={option}>{SORT_LABELS[option]}</option>
-                  ))}
-                </select>
-              </div>
-
               <button
                 type="button"
                 className="btn-primary col-span-2 min-h-[3.2rem] px-5 text-sm font-semibold sm:col-span-1 lg:min-w-[7.25rem]"
@@ -691,8 +758,42 @@ export function SearchPage() {
               </button>
             </div>
 
-            <div className="mt-1.5 grid gap-1.5 xl:grid-cols-[minmax(0,1fr)_auto]">
-              <div className="grid grid-cols-3 gap-1.5">
+            {selectedParks.length > 0 && (
+              <div className="mt-1.5 flex flex-wrap gap-1.5 border-t border-stone-100 pt-1.5">
+                {selectedParks.map((park) => (
+                  <span
+                    key={park.slug}
+                    className="inline-flex min-h-7 max-w-full items-center gap-1.5 rounded-full bg-forest-50 px-2.5 py-1 text-xs font-semibold text-forest-800 ring-1 ring-forest-200"
+                  >
+                    <MapPin size={12} className="shrink-0" />
+                    <span className="truncate">{park.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeParkFilter(park.slug)}
+                      className="rounded-full p-0.5 text-forest-700 transition hover:bg-forest-100"
+                      aria-label={`Remove ${park.name}`}
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <div className="mt-1.5 grid gap-1.5 lg:grid-cols-3">
+              <details className="group rounded-md bg-stone-50 ring-1 ring-stone-200">
+                <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-xs font-semibold text-stone-800 transition hover:bg-white">
+                  <span className="inline-flex min-w-0 items-center gap-2">
+                    <Route size={13} className="text-stone-500" />
+                    <span>Trip</span>
+                    <span className="truncate text-stone-500">{selectedStayMode.label}</span>
+                  </span>
+                  <span className="inline-flex shrink-0 items-center gap-2">
+                    {tripOptionCount > 0 && <span className="rounded-full bg-white px-1.5 py-0.5 text-[10px] text-stone-500 ring-1 ring-stone-200">{tripOptionCount}</span>}
+                    <ChevronDown size={14} className="text-stone-400 transition-transform group-open:rotate-180" />
+                  </span>
+                </summary>
+                <div className="grid gap-1.5 border-t border-stone-200 p-1.5 sm:grid-cols-3">
                 {STAY_MODE_OPTIONS.map((option) => {
                   const active = state.stay_mode === option.id;
                   return (
@@ -715,27 +816,42 @@ export function SearchPage() {
                     </button>
                   );
                 })}
-              </div>
-
-              <div className="flex flex-wrap items-center gap-1.5 rounded-md bg-stone-50 p-1.5 ring-1 ring-stone-200">
+                </div>
                 {state.stay_mode === "anywhere" && (
-                  <label className="inline-flex h-8 min-w-[12rem] flex-1 items-center gap-1.5 rounded-md bg-white px-2 text-xs font-semibold text-stone-700 ring-1 ring-stone-200">
-                    <MapPin size={12} className="text-stone-400" />
-                    <input
-                      type="text"
-                      className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-stone-400"
-                      placeholder="End near (optional)"
-                      value={endInput}
-                      onChange={(e) => setEndInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          runSearch();
-                        }
-                      }}
-                    />
-                  </label>
+                  <div className="border-t border-stone-200 p-1.5 pt-0">
+                    <label className="mt-1.5 inline-flex h-8 w-full items-center gap-1.5 rounded-md bg-white px-2 text-xs font-semibold text-stone-700 ring-1 ring-stone-200">
+                      <MapPin size={12} className="shrink-0 text-stone-400" />
+                      <input
+                        type="text"
+                        className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-stone-400"
+                        placeholder="End near (optional)"
+                        value={endInput}
+                        onChange={(e) => setEndInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            runSearch();
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
                 )}
+              </details>
+
+              <details className="group rounded-md bg-stone-50 ring-1 ring-stone-200 lg:col-span-2">
+                <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-xs font-semibold text-stone-800 transition hover:bg-white">
+                  <span className="inline-flex min-w-0 items-center gap-2">
+                    <Sliders size={13} className="text-stone-500" />
+                    <span>Planning</span>
+                    <span className="truncate text-stone-500">{GROUP_LABELS[state.group_by]} · {SORT_LABELS[state.sort]}</span>
+                  </span>
+                  <span className="inline-flex shrink-0 items-center gap-2">
+                    {planningOptionCount > 0 && <span className="rounded-full bg-white px-1.5 py-0.5 text-[10px] text-stone-500 ring-1 ring-stone-200">{planningOptionCount}</span>}
+                    <ChevronDown size={14} className="text-stone-400 transition-transform group-open:rotate-180" />
+                  </span>
+                </summary>
+                <div className="flex flex-wrap items-center gap-1.5 border-t border-stone-200 p-1.5">
                 <label className="inline-flex h-8 items-center gap-1.5 rounded-md bg-white px-2 text-xs font-semibold text-stone-700 ring-1 ring-stone-200">
                   <span>Group</span>
                   <select
@@ -747,6 +863,30 @@ export function SearchPage() {
                       <option key={option} value={option}>{GROUP_LABELS[option]}</option>
                     ))}
                   </select>
+                </label>
+                <label className="inline-flex h-8 items-center gap-1.5 rounded-md bg-white px-2 text-xs font-semibold text-stone-700 ring-1 ring-stone-200">
+                  <span>Sort</span>
+                  <select
+                    className="bg-transparent text-right outline-none"
+                    value={state.sort}
+                    onChange={(e) => setState({ sort: e.target.value as typeof state.sort, page: 1 })}
+                  >
+                    {SORT_OPTIONS.map((option) => (
+                      <option key={option} value={option}>{SORT_LABELS[option]}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="inline-flex h-8 items-center gap-1.5 rounded-md bg-white px-2 text-xs font-semibold text-stone-700 ring-1 ring-stone-200">
+                  <span>Radius</span>
+                  <input
+                    type="number"
+                    className="w-14 bg-transparent text-right outline-none"
+                    min={10}
+                    max={500}
+                    step={10}
+                    value={state.radius_km}
+                    onChange={(e) => setState({ radius_km: Number(e.target.value), page: 1 })}
+                  />
                 </label>
                 <button
                   type="button"
@@ -779,14 +919,26 @@ export function SearchPage() {
                     onChange={(e) => setState({ party_size: Number(e.target.value), page: 1 })}
                   />
                 </label>
-              </div>
+                </div>
+              </details>
             </div>
           </div>
 
-          <div className="mt-2 flex items-center gap-2 overflow-x-auto pb-0.5 scrollbar-none">
-            <span className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-stone-500">
-              <Sliders size={12} /> Filters {activeFilterCount ? `(${activeFilterCount})` : ""}
-            </span>
+          <details className="group mt-2 rounded-md bg-white ring-1 ring-stone-200">
+            <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-xs font-semibold text-stone-800 transition hover:bg-stone-50">
+              <span className="inline-flex min-w-0 items-center gap-2">
+                <Sliders size={13} className="text-stone-500" />
+                <span>Filters</span>
+                <span className="truncate text-stone-500">
+                  {advancedFilterCount ? `${advancedFilterCount} active` : "Types, amenities, operators"}
+                </span>
+              </span>
+              <span className="inline-flex shrink-0 items-center gap-2">
+                {advancedFilterCount > 0 && <span className="rounded-full bg-stone-50 px-1.5 py-0.5 text-[10px] text-stone-500 ring-1 ring-stone-200">{advancedFilterCount}</span>}
+                <ChevronDown size={14} className="text-stone-400 transition-transform group-open:rotate-180" />
+              </span>
+            </summary>
+            <div className="flex items-center gap-2 overflow-x-auto border-t border-stone-200 p-2 scrollbar-none">
             {SITE_TYPES.map((t) => (
               <button
                 key={t}
@@ -836,7 +988,8 @@ export function SearchPage() {
                 {op.label}
               </button>
             ))}
-          </div>
+            </div>
+          </details>
 
           <div className="mt-2 flex items-center justify-between gap-2 lg:hidden">
             <div className="text-xs text-stone-500">

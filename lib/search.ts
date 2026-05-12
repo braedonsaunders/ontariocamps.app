@@ -41,6 +41,7 @@ export type SearchParams = {
   site_types?: string[];
   amenities?: string[];
   operators?: string[];
+  park_slugs?: string[];
   equipment_length_ft?: number;
   stay_mode?: SearchStayMode;
   group_by?: SearchGroupMode;
@@ -463,6 +464,7 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
   const lat = params.lat;
   const lng = params.lng;
   const hasAnchor = lat != null && lng != null;
+  const parkSlugs = params.park_slugs?.filter(Boolean) ?? [];
 
   // Postgres-js tagged template doesn't compose multiple WHERE fragments
   // gracefully — we build them with `client.unsafe` would defeat the purpose.
@@ -523,7 +525,10 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
     JOIN parks p     ON p.id = c.park_id
     JOIN operators o ON o.id = p.operator_id
     WHERE 1=1
-      ${hasAnchor && radiusM !== Infinity ? client`AND ST_DWithin(p.location, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography, ${radiusM})` : client``}
+      ${hasAnchor && radiusM !== Infinity && parkSlugs.length === 0
+        ? client`AND ST_DWithin(p.location, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography, ${radiusM})`
+        : client``}
+      ${parkSlugs.length > 0 ? client`AND p.slug = ANY(${parkSlugs})` : client``}
       ${params.operators && params.operators.length > 0 ? client`AND p.operator_id = ANY(${params.operators})` : client``}
   `;
 

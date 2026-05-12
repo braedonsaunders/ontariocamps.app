@@ -116,6 +116,17 @@ function scenarioList(): Scenario[] {
       params: { ...LOCATIONS.toronto, stay_mode: "same_site", party_size: 2, limit: RESULT_LIMIT },
     },
     {
+      name: "park filter narrows to Darlington",
+      params: {
+        ...LOCATIONS.toronto,
+        start_date: "2026-06-12",
+        end_date: "2026-06-15",
+        stay_mode: "same_site",
+        park_slugs: ["darlington-2147483622"],
+        limit: RESULT_LIMIT,
+      },
+    },
+    {
       name: "same-park route requires dates",
       params: { ...LOCATIONS.toronto, stay_mode: "same_park", party_size: 2, limit: RESULT_LIMIT },
       expectEmpty: true,
@@ -319,8 +330,14 @@ function validateResultShape(scenario: Scenario, result: SearchResult) {
     assert(resultNights.length > 0 && resultNights.length <= 7, `${scenario.name}: no-date result should show up to 7 nights`);
   }
 
-  if (params.lat != null && params.lng != null && result.park.distance_km != null && params.radius_km != null) {
+  if (params.lat != null && params.lng != null && result.park.distance_km != null && params.radius_km != null && !params.park_slugs?.length) {
     assert(result.park.distance_km <= params.radius_km + 0.5, `${scenario.name}: result outside radius`);
+  }
+
+  if (params.park_slugs?.length) {
+    for (const segment of segments) {
+      assert(params.park_slugs.includes(segment.park.slug), `${scenario.name}: park filter leaked ${segment.park.slug}`);
+    }
   }
 
   if (params.stay_mode === "same_site" || !params.stay_mode) {
