@@ -172,7 +172,11 @@ async function finishLog(env: Env, args: {
 }
 
 function buildTargetPath(opts: RefreshOptions & { maxSites: number }): string {
-  const parts = ["availability_fetch_targets?select=*", "order=site_id.asc"];
+  const parts = [
+    "availability_fetch_targets?select=*",
+    "order=today_last_checked_at.asc.nullsfirst",
+    "order=site_id.asc",
+  ];
   if (opts.parkId) parts.push(`park_id=eq.${encodeURIComponent(opts.parkId)}`);
   if (opts.parkSlug) parts.push(`park_slug=eq.${encodeURIComponent(opts.parkSlug)}`);
   if (opts.operatorIds?.length) parts.push(`operator_id=in.(${opts.operatorIds.map(encodeURIComponent).join(",")})`);
