@@ -5,7 +5,6 @@ import {
   AlertTriangle,
   ArrowUpRight,
   BadgeCheck,
-  Bell,
   Dog,
   Flame,
   Info,
@@ -22,7 +21,7 @@ import {
   Zap,
   type LucideIcon,
 } from "lucide-react";
-import type { OperatorRuleSource, RuleHighlight, RuleItem, Site, SiteRuleSummary } from "@/lib/types";
+import type { OperatorRuleSource, RuleItem, Site, SiteRuleSummary } from "@/lib/types";
 
 type Props = {
   parkName: string;
@@ -30,9 +29,7 @@ type Props = {
   operatorRuleSource: OperatorRuleSource | null;
   sites: Site[];
   totalSites: number;
-  vendorUrl: string;
   lastCheckedAt: string | null;
-  onOpenSiteDetails?: (siteId: string) => void;
 };
 
 function toneClass(tone?: string) {
@@ -48,10 +45,6 @@ function ruleSummary(site: Site): SiteRuleSummary | null {
   if (!summary || typeof summary !== "object") return null;
   if (!Array.isArray(summary.highlights) || !summary.setup || !summary.character || !summary.policies) return null;
   return summary;
-}
-
-function siteHighlights(site: Site): RuleHighlight[] {
-  return ruleSummary(site)?.highlights ?? [];
 }
 
 function addCount(map: Map<string, number>, label: string | null | undefined) {
@@ -217,9 +210,7 @@ export function RulesPanel({
   operatorRuleSource,
   sites,
   totalSites,
-  vendorUrl,
   lastCheckedAt,
-  onOpenSiteDetails,
 }: Props) {
   const withRules = sites.filter((site) => ruleSummary(site));
   const restrictions = new Map<string, number>();
@@ -247,33 +238,19 @@ export function RulesPanel({
   const walkIn = yesCount(sites, (s) => s.policies.walkIn || s.policies.noVehicles);
   const pullThrough = yesCount(sites, (s) => s.setup.pullThrough);
   const barrierFree = yesCount(sites, (s) => s.setup.barrierFree);
-  const notableSites = sites
-    .map((site) => ({ site, highlights: siteHighlights(site).filter((h) => h.tone === "red" || h.tone === "amber" || h.category === "restriction") }))
-    .filter((entry) => entry.highlights.length > 0)
-    .slice(0, 8);
 
   return (
     <div className="space-y-6">
-      <div className="rounded-xl bg-stone-950 p-5 text-white">
+      <div className="card p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-medium ring-1 ring-white/15">
+            <div className="inline-flex items-center gap-2 rounded-full bg-stone-100 px-3 py-1 text-xs font-medium text-stone-700 ring-1 ring-stone-200">
               <ShieldCheck size={13} /> Operator supplied and official-source rules
             </div>
-            <h2 className="mt-3 text-2xl font-semibold tracking-tight">Rules for {parkName}</h2>
-            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-white/75">
+            <h2 className="mt-3 text-2xl font-semibold tracking-tight text-stone-950">Rules for {parkName}</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-stone-600">
               A quick read on campsite policies, restrictions, and site-level quirks before you click through to {operatorName}.
             </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <a href={vendorUrl} target="_blank" rel="noopener noreferrer" className="btn-secondary bg-white text-stone-900 hover:bg-stone-100">
-              Book with {operatorName} <ArrowUpRight size={14} />
-            </a>
-            {operatorRuleSource?.alerts_url && (
-              <a href={operatorRuleSource.alerts_url} target="_blank" rel="noopener noreferrer" className="btn-secondary bg-white/10 text-white ring-white/20 hover:bg-white/15">
-                Alerts <Bell size={14} />
-              </a>
-            )}
           </div>
         </div>
       </div>
@@ -349,30 +326,6 @@ export function RulesPanel({
           <CountChips title="Conditions" items={topCounts(conditions, 10)} empty="No caution conditions decoded yet." tone="red" />
         </div>
       </section>
-
-      {notableSites.length > 0 && (
-        <section className="card p-5">
-          <h2 className="text-xl font-semibold tracking-tight">Notable campsite flags</h2>
-          <div className="mt-4 divide-y divide-stone-100">
-            {notableSites.map(({ site, highlights }) => (
-              <div key={site.id} className="flex flex-wrap items-center gap-3 py-3">
-                {onOpenSiteDetails ? (
-                  <button type="button" onClick={() => onOpenSiteDetails(site.id)} className="font-medium text-stone-900 hover:text-forest-700">
-                    Site {site.name}
-                  </button>
-                ) : (
-                  <span className="font-medium text-stone-900">Site {site.name}</span>
-                )}
-                <div className="flex flex-wrap gap-1.5">
-                  {highlights.map((h) => (
-                    <span key={h.label} className={`chip ring-1 ${toneClass(h.tone)}`}>{h.label}</span>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
 
       <section className="grid gap-3 sm:grid-cols-3">
         <div className="rounded-lg bg-white p-4 ring-1 ring-stone-200">

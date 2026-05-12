@@ -516,9 +516,7 @@ export function ParkTabs(props: Props) {
                   operatorRuleSource={operatorRuleSource}
                   sites={sites}
                   totalSites={totalSites}
-                  vendorUrl={vendorUrl}
                   lastCheckedAt={calendarLastChecked}
-                  onOpenSiteDetails={openSiteFlyout}
                 />
               </motion.div>
             )}
