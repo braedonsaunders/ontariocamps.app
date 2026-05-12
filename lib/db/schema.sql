@@ -33,6 +33,9 @@ CREATE TABLE IF NOT EXISTS parks (
   lng            REAL NOT NULL,
   address        TEXT,
   hero_image_url TEXT,
+  ai_description TEXT,
+  ai_long_description TEXT,
+  ai_description_sources TEXT NOT NULL DEFAULT '[]',
   vendor_url     TEXT NOT NULL,
   updated_at     TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE (operator_id, vendor_park_id)

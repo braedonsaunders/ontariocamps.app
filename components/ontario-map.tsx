@@ -4,15 +4,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { Tent, MapPin, ChevronUp } from "lucide-react";
+import { Tent, MapPin, ChevronUp, Circle, Diamond, Square, type LucideIcon } from "lucide-react";
 
 const MAP_STYLE = "https://tiles.openfreemap.org/styles/positron";
 const BARRIE_CENTER: [number, number] = [-79.6903, 44.3894];
 const INITIAL_ZOOM = 6.55;
+const CATEGORY_ORDER = ["provincial", "conservation", "federal"] as const;
 
 export type Park = {
   slug: string;
   name: string;
+  description: string | null;
+  hero_image_url: string | null;
   operator: string;
   operator_id: string;
   region: string;
@@ -21,6 +24,38 @@ export type Park = {
   total_sites: number;
   available_sites: number;
   availability_pct: number;
+};
+
+type ParkCategory = (typeof CATEGORY_ORDER)[number];
+
+type SelectedPark = Park & {
+  category: ParkCategory;
+};
+
+const CATEGORY_META: Record<ParkCategory, {
+  label: string;
+  shortLabel: string;
+  glyph: string;
+  icon: LucideIcon;
+}> = {
+  provincial: {
+    label: "Provincial parks",
+    shortLabel: "Provincial",
+    glyph: "●",
+    icon: Circle,
+  },
+  conservation: {
+    label: "Conservation areas",
+    shortLabel: "Conservation",
+    glyph: "◆",
+    icon: Diamond,
+  },
+  federal: {
+    label: "Federal parks",
+    shortLabel: "Federal",
+    glyph: "■",
+    icon: Square,
+  },
 };
 
 function colorForAvailability(pct: number): string {
@@ -36,30 +71,94 @@ function escapeHtml(s: string): string {
   );
 }
 
+function normalizeText(value: string | null | undefined): string {
+  return (value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function truncateText(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value;
+  const trimmed = value.slice(0, maxLength - 1).trimEnd();
+  return `${trimmed.replace(/[.,;:!?-]+$/, "")}…`;
+}
+
+function safeImageUrl(value: string | null | undefined): string {
+  if (!value) return "";
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" && url.protocol !== "http:") return "";
+    return url.toString();
+  } catch {
+    return "";
+  }
+}
+
+function parkPreviewDescription(park: Pick<Park, "description" | "operator">): string {
+  const description = normalizeText(park.description);
+  if (description) return truncateText(description, 220);
+  return `Browse campsite availability, site details, and booking links from ${park.operator}.`;
+}
+
+function categoryForOperator(operatorId: string): ParkCategory {
+  if (operatorId === "ontario_parks") return "provincial";
+  if (operatorId === "parks_canada") return "federal";
+  return "conservation";
+}
+
 export function OntarioMap({ parks }: { parks: Park[] }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
-  const [selected, setSelected] = useState<Park | null>(null);
+  const selectedRef = useRef<SelectedPark | null>(null);
+  const [selected, setSelected] = useState<SelectedPark | null>(null);
+  const [enabledCategories, setEnabledCategories] = useState<Record<ParkCategory, boolean>>({
+    provincial: true,
+    conservation: true,
+    federal: true,
+  });
+
+  const categoryCounts = useMemo(() => {
+    const counts: Record<ParkCategory, number> = { provincial: 0, conservation: 0, federal: 0 };
+    for (const park of parks) counts[categoryForOperator(park.operator_id)] += 1;
+    return counts;
+  }, [parks]);
+
+  const filteredParks = useMemo(
+    () => parks.filter((park) => enabledCategories[categoryForOperator(park.operator_id)]),
+    [enabledCategories, parks],
+  );
 
   const features = useMemo(
     () =>
-      parks.map((p) => ({
-        type: "Feature" as const,
-        properties: {
-          slug: p.slug,
-          name: p.name,
-          operator: p.operator,
-          operator_id: p.operator_id,
-          region: p.region,
-          total_sites: p.total_sites,
-          available_sites: p.available_sites,
-          availability_pct: p.availability_pct,
-          color: colorForAvailability(p.availability_pct),
-        },
-        geometry: { type: "Point" as const, coordinates: [p.lng, p.lat] },
-      })),
-    [parks],
+      filteredParks.map((p) => {
+        const category = categoryForOperator(p.operator_id);
+        const meta = CATEGORY_META[category];
+        const description = parkPreviewDescription(p);
+        return {
+          type: "Feature" as const,
+          properties: {
+            slug: p.slug,
+            name: p.name,
+            description,
+            hero_image_url: safeImageUrl(p.hero_image_url),
+            operator: p.operator,
+            operator_id: p.operator_id,
+            region: p.region,
+            total_sites: p.total_sites,
+            available_sites: p.available_sites,
+            availability_pct: p.availability_pct,
+            color: colorForAvailability(p.availability_pct),
+            category,
+            category_label: meta.shortLabel,
+            category_glyph: meta.glyph,
+          },
+          geometry: { type: "Point" as const, coordinates: [p.lng, p.lat] },
+        };
+      }),
+    [filteredParks],
   );
+
+  useEffect(() => {
+    selectedRef.current = selected;
+  }, [selected]);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -141,15 +240,20 @@ export function OntarioMap({ parks }: { parks: Park[] }) {
 
       map.addLayer({
         id: "park-points",
-        type: "circle",
+        type: "symbol",
         source: "parks",
         filter: ["!", ["has", "point_count"]],
+        layout: {
+          "text-field": ["get", "category_glyph"],
+          "text-font": ["Noto Sans Bold"],
+          "text-size": ["interpolate", ["linear"], ["zoom"], 5, 13, 10, 18, 14, 24],
+          "text-allow-overlap": true,
+          "text-ignore-placement": true,
+        },
         paint: {
-          "circle-color": ["get", "color"],
-          "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, 4, 10, 8, 14, 12],
-          "circle-stroke-color": "#ffffff",
-          "circle-stroke-width": 1.5,
-          "circle-opacity": 0.95,
+          "text-color": ["get", "color"],
+          "text-halo-color": "#ffffff",
+          "text-halo-width": 2,
         },
       });
       // Park-name labels next to each individual (non-clustered) pin. We
@@ -193,30 +297,38 @@ export function OntarioMap({ parks }: { parks: Park[] }) {
         filter: ["!", ["has", "point_count"]],
         paint: { "circle-radius": 16, "circle-color": "rgba(0,0,0,0)" },
       });
-      // Selected-park highlight: a thick semi-transparent halo plus a larger,
-      // solid disc on top, so the clicked pin reads as obviously distinct.
+      // Selected parks use the same shape-only marker, just larger with a dark
+      // halo. Availability remains the marker colour; there is no circular base.
       map.addLayer({
-        id: "park-points-selected-halo",
-        type: "circle",
+        id: "park-points-selected-category",
+        type: "symbol",
         source: "selected-park",
+        layout: {
+          "text-field": ["get", "category_glyph"],
+          "text-font": ["Noto Sans Bold"],
+          "text-size": ["interpolate", ["linear"], ["zoom"], 5, 11, 10, 16, 14, 21],
+          "text-allow-overlap": true,
+          "text-ignore-placement": true,
+        },
         paint: {
-          "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, 14, 10, 22, 14, 30],
-          "circle-color": ["get", "color"],
-          "circle-opacity": 0.25,
+          "text-color": ["get", "color"],
+          "text-halo-color": "#1c1917",
+          "text-halo-width": 1.2,
         },
       });
-      map.addLayer({
-        id: "park-points-selected",
-        type: "circle",
-        source: "selected-park",
-        paint: {
-          "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, 7, 10, 12, 14, 16],
-          "circle-color": ["get", "color"],
-          "circle-stroke-color": "#1c1917",
-          "circle-stroke-width": 2.5,
-          "circle-opacity": 1,
-        },
+
+      const tooltip = new maplibregl.Popup({
+        closeButton: false,
+        closeOnClick: false,
+        offset: 12,
+        className: "park-hover-popup",
       });
+      const clearSelectedPark = () => {
+        tooltip.remove();
+        setSelected(null);
+        const sel = map.getSource("selected-park") as maplibregl.GeoJSONSource | undefined;
+        sel?.setData({ type: "FeatureCollection", features: [] });
+      };
 
       // Tap a cluster → zoom in
       map.on("click", "park-clusters", (e) => {
@@ -233,11 +345,15 @@ export function OntarioMap({ parks }: { parks: Park[] }) {
       map.on("click", "park-points-hit", (e) => {
         const f = e.features?.[0];
         if (!f) return;
+        tooltip.remove();
         const p = f.properties as Park;
         const [lng, lat] = (f.geometry as unknown as { coordinates: [number, number] }).coordinates;
-        const park: Park = {
+        const category = categoryForOperator(String(p.operator_id));
+        const park: SelectedPark = {
           slug: p.slug,
           name: p.name,
+          description: String(p.description ?? ""),
+          hero_image_url: safeImageUrl(String(p.hero_image_url ?? "")),
           operator: p.operator,
           operator_id: p.operator_id,
           region: p.region,
@@ -246,6 +362,7 @@ export function OntarioMap({ parks }: { parks: Park[] }) {
           availability_pct: Number(p.availability_pct),
           lat,
           lng,
+          category,
         };
         setSelected(park);
         const sel = map.getSource("selected-park") as maplibregl.GeoJSONSource | undefined;
@@ -254,21 +371,28 @@ export function OntarioMap({ parks }: { parks: Park[] }) {
           features: [
             {
               type: "Feature",
-              properties: { color: colorForAvailability(park.availability_pct) },
+              properties: {
+                color: colorForAvailability(park.availability_pct),
+                category_glyph: CATEGORY_META[park.category].glyph,
+              },
               geometry: { type: "Point", coordinates: [lng, lat] },
             },
           ],
         });
       });
 
-      // Hover tooltip on park points — shows name, operator, available/total.
-      const tooltip = new maplibregl.Popup({
-        closeButton: false,
-        closeOnClick: false,
-        offset: 12,
-        className: "park-hover-popup",
+      // Tap empty map space → dismiss the corner park card.
+      map.on("click", (e) => {
+        const clickedMarker = map.queryRenderedFeatures(e.point, {
+          layers: ["park-points-hit", "park-clusters"],
+        });
+        if (clickedMarker.length > 0) return;
+        clearSelectedPark();
       });
+
+      // Hover tooltip on park points — shows photo, description, operator, and availability.
       map.on("mouseenter", "park-points-hit", (e) => {
+        if (selectedRef.current) return;
         map.getCanvas().style.cursor = "pointer";
         const f = e.features?.[0];
         if (!f) return;
@@ -277,17 +401,36 @@ export function OntarioMap({ parks }: { parks: Park[] }) {
         const pct = Number(p.availability_pct);
         const open = Number(p.available_sites);
         const total = Number(p.total_sites);
-        // Build a small HTML body for the popup — kept terse since it appears
-        // on hover and shouldn't shout.
+        const category = categoryForOperator(String(p.operator_id));
+        const meta = CATEGORY_META[category];
+        const imageUrl = safeImageUrl(String(p.hero_image_url ?? ""));
+        const description = parkPreviewDescription({
+          description: String(p.description ?? ""),
+          operator: String(p.operator ?? "this operator"),
+        });
         const html = `
-          <div class="font-semibold text-stone-900 leading-tight text-sm mb-1">${escapeHtml(p.name)}</div>
-          <div class="text-[11px] text-stone-500 leading-tight mb-1.5">${escapeHtml(p.operator)} · ${escapeHtml(p.region || "")}</div>
-          <div class="flex items-center gap-2 text-[11px]">
-            <span class="inline-flex items-center gap-1">
-              <span class="h-2 w-2 rounded-full" style="background:${colorForAvailability(pct)}"></span>
-              <span class="font-semibold text-stone-900">${open.toLocaleString()}</span>
-              <span class="text-stone-500">/${total.toLocaleString()} open · ${pct}%</span>
-            </span>
+          <div class="park-hover-card">
+            ${
+              imageUrl
+                ? `<img class="park-hover-card__image" src="${escapeHtml(imageUrl)}" alt="${escapeHtml(String(p.name))}" loading="lazy" decoding="async" />`
+                : `<div class="park-hover-card__image park-hover-card__image--fallback"></div>`
+            }
+            <div class="park-hover-card__body">
+              <div class="park-hover-card__eyebrow">
+                <span class="park-hover-card__type">${escapeHtml(meta.glyph)} ${escapeHtml(meta.shortLabel)}</span>
+                <span>${escapeHtml(String(p.operator))}</span>
+              </div>
+              <div class="park-hover-card__title">${escapeHtml(String(p.name))}</div>
+              <div class="park-hover-card__region">${escapeHtml(String(p.region || "Ontario"))}</div>
+              <p class="park-hover-card__description">${escapeHtml(description)}</p>
+              <div class="park-hover-card__stats">
+                <span>
+                  <i style="background:${colorForAvailability(pct)}"></i>
+                  <strong>${open.toLocaleString()}</strong>/${total.toLocaleString()} open
+                </span>
+                <span>${pct}% availability</span>
+              </div>
+            </div>
           </div>
         `;
         tooltip.setLngLat([lng, lat]).setHTML(html).addTo(map);
@@ -325,6 +468,17 @@ export function OntarioMap({ parks }: { parks: Park[] }) {
     if (src) src.setData({ type: "FeatureCollection", features });
   }, [features]);
 
+  useEffect(() => {
+    if (!selected || enabledCategories[selected.category]) return;
+    setSelected(null);
+    const sel = mapRef.current?.getSource("selected-park") as maplibregl.GeoJSONSource | undefined;
+    sel?.setData({ type: "FeatureCollection", features: [] });
+  }, [enabledCategories, selected]);
+
+  const visibleCount = filteredParks.length;
+  const selectedImage = selected ? safeImageUrl(selected.hero_image_url) : "";
+  const selectedDescription = selected ? parkPreviewDescription(selected) : "";
+
   return (
     <>
       {/* maplibre adds `.maplibregl-map { position: relative; overflow: hidden }`
@@ -336,62 +490,140 @@ export function OntarioMap({ parks }: { parks: Park[] }) {
         ref={containerRef}
         style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0 }}
       />
+      <div className="absolute left-3 right-3 top-3 z-10 sm:left-4 sm:right-auto">
+        <div className="inline-flex max-w-full flex-wrap items-center gap-1.5 rounded-lg bg-stone-50/95 p-1.5 text-xs shadow-lg shadow-stone-950/10 ring-1 ring-stone-200 backdrop-blur">
+          {CATEGORY_ORDER.map((category) => {
+            const meta = CATEGORY_META[category];
+            const Icon = meta.icon;
+            const enabled = enabledCategories[category];
+            return (
+              <label
+                key={category}
+                className={`inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-md px-2.5 font-medium transition ${
+                  enabled
+                    ? "bg-white text-stone-900 shadow-sm ring-1 ring-stone-300"
+                    : "text-stone-500 hover:bg-white/80 hover:text-stone-900"
+                }`}
+                title={meta.label}
+              >
+                <input
+                  type="checkbox"
+                  className="sr-only"
+                  checked={enabled}
+                  onChange={(event) =>
+                    setEnabledCategories((current) => ({
+                      ...current,
+                      [category]: event.target.checked,
+                    }))
+                  }
+                />
+                <Icon
+                  size={13}
+                  fill="none"
+                />
+                <span>{meta.shortLabel}</span>
+                <span className={enabled ? "text-stone-500" : "text-stone-400"}>
+                  {categoryCounts[category]}
+                </span>
+              </label>
+            );
+          })}
+          <span className="hidden px-2 text-stone-400 sm:inline">
+            {visibleCount} shown
+          </span>
+        </div>
+      </div>
       {selected && (
-        <div className="absolute bottom-4 left-4 right-4 sm:right-auto sm:w-96 card shadow-xl p-4 z-10">
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <Link
-                href={`/park/${selected.slug}`}
-                className="text-base font-semibold hover:text-forest-700 transition-colors line-clamp-1"
-              >
-                {selected.name}
-              </Link>
-              <div className="text-xs text-stone-500 mt-0.5">
-                <Link href={`/operator/${selected.operator_id}`} className="hover:text-stone-900">
-                  {selected.operator}
+        <div className="absolute bottom-4 left-4 right-4 z-10 max-h-[calc(100dvh-10rem)] overflow-y-auto sm:right-auto sm:w-[28rem] card shadow-xl">
+          {selectedImage && (
+            <Link href={`/park/${selected.slug}`} className="relative block h-40 overflow-hidden bg-stone-100">
+              <img
+                src={selectedImage}
+                alt={selected.name}
+                className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 hover:scale-[1.03]"
+                loading="lazy"
+              />
+              <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-stone-950/55 to-transparent" />
+              <div className="absolute bottom-3 left-4 inline-flex items-center gap-1.5 rounded-md bg-white/95 px-2 py-1 text-[11px] font-medium text-stone-800 shadow-sm">
+                <span
+                  className="h-2 w-2 rounded-full"
+                  style={{ backgroundColor: colorForAvailability(selected.availability_pct) }}
+                />
+                {selected.available_sites.toLocaleString()} open
+              </div>
+            </Link>
+          )}
+          <div className="p-4">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="mb-1 inline-flex items-center gap-1.5 text-[11px] font-medium text-stone-500">
+                  {(() => {
+                    const meta = CATEGORY_META[selected.category];
+                    const Icon = meta.icon;
+                    return (
+                      <>
+                        <Icon size={11} />
+                        {meta.shortLabel}
+                      </>
+                    );
+                  })()}
+                </div>
+                <Link
+                  href={`/park/${selected.slug}`}
+                  className="text-base font-semibold hover:text-forest-700 transition-colors line-clamp-1"
+                >
+                  {selected.name}
                 </Link>
-                {" · "}
-                {selected.region}
+                <div className="text-xs text-stone-500 mt-0.5">
+                  <Link href={`/operator/${selected.operator_id}`} className="hover:text-stone-900">
+                    {selected.operator}
+                  </Link>
+                  {" · "}
+                  {selected.region}
+                </div>
               </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setSelected(null);
-                const sel = mapRef.current?.getSource("selected-park") as maplibregl.GeoJSONSource | undefined;
-                sel?.setData({ type: "FeatureCollection", features: [] });
-              }}
-              className="text-stone-400 hover:text-stone-700 transition-colors shrink-0"
-              aria-label="Close"
-            >
-              <ChevronUp size={16} />
-            </button>
-          </div>
-          <div className="mt-3 grid grid-cols-3 gap-3 text-xs">
-            <div>
-              <div className="text-stone-500 flex items-center gap-1"><Tent size={10} /> Sites</div>
-              <div className="font-semibold tabular-nums">{selected.total_sites.toLocaleString()}</div>
-            </div>
-            <div>
-              <div className="text-stone-500">Open</div>
-              <div
-                className="font-semibold tabular-nums"
-                style={{ color: colorForAvailability(selected.availability_pct) }}
+              <button
+                type="button"
+                onClick={() => {
+                  setSelected(null);
+                  const sel = mapRef.current?.getSource("selected-park") as maplibregl.GeoJSONSource | undefined;
+                  sel?.setData({ type: "FeatureCollection", features: [] });
+                }}
+                className="text-stone-400 hover:text-stone-700 transition-colors shrink-0"
+                aria-label="Close"
               >
-                {selected.available_sites.toLocaleString()} · {selected.availability_pct}%
+                <ChevronUp size={16} />
+              </button>
+            </div>
+            <p className="mt-3 text-sm leading-relaxed text-stone-600 line-clamp-3">
+              {selectedDescription}
+            </p>
+            <div className="mt-4 grid grid-cols-3 gap-3 text-xs">
+              <div>
+                <div className="text-stone-500 flex items-center gap-1"><Tent size={10} /> Sites</div>
+                <div className="font-semibold tabular-nums">{selected.total_sites.toLocaleString()}</div>
+              </div>
+              <div>
+                <div className="text-stone-500">Open</div>
+                <div
+                  className="font-semibold tabular-nums"
+                  style={{ color: colorForAvailability(selected.availability_pct) }}
+                >
+                  {selected.available_sites.toLocaleString()} · {selected.availability_pct}%
+                </div>
+              </div>
+              <div>
+                <div className="text-stone-500 flex items-center gap-1"><MapPin size={10} /> Location</div>
+                <div className="font-semibold tabular-nums">{selected.lat.toFixed(4)}, {selected.lng.toFixed(4)}</div>
               </div>
             </div>
-            <div>
-              <div className="text-stone-500 flex items-center gap-1"><MapPin size={10} /> Coords</div>
-              <div className="font-semibold tabular-nums">{selected.lat.toFixed(2)}, {selected.lng.toFixed(2)}</div>
-            </div>
+            <Link
+              href={`/park/${selected.slug}`}
+              className="btn-primary mt-4 w-full justify-center text-xs"
+            >
+              View park
+            </Link>
           </div>
-          <Link
-            href={`/park/${selected.slug}`}
-            className="btn-primary mt-4 w-full justify-center text-xs"
-          >
-            View park
-          </Link>
         </div>
       )}
     </>

@@ -311,7 +311,9 @@ export async function getParkBySlug(slug: string): Promise<Park | null> {
     description: string | null; region: string | null; lat: number; lng: number;
     address: string | null; hero_image_url: string | null; vendor_url: string;
   }>>`
-    SELECT id, operator_id, vendor_park_id, slug, name, description, region,
+    SELECT id, operator_id, vendor_park_id, slug, name,
+           COALESCE(ai_long_description, ai_description, description) AS description,
+           region,
            lat, lng, address, hero_image_url, vendor_url
       FROM parks WHERE slug = ${slug} LIMIT 1
   `;

@@ -12,6 +12,8 @@ export const dynamic = "force-dynamic";
 type ParkRow = {
   slug: string;
   name: string;
+  description: string | null;
+  hero_image_url: string | null;
   operator: string;
   operator_id: string;
   region: string;
@@ -24,7 +26,9 @@ type ParkRow = {
 
 export default async function MapPage() {
   const parks = await sql()<ParkRow[]>`
-    SELECT p.slug, p.name, p.operator_id, o.name AS operator,
+    SELECT p.slug, p.name, COALESCE(p.ai_description, p.description) AS description,
+           COALESCE(p.hero_image_url, o.hero_image_url) AS hero_image_url,
+           p.operator_id, o.name AS operator,
            p.region, p.lat, p.lng,
            p.total_sites, p.available_sites,
            CASE WHEN p.total_sites > 0
@@ -51,7 +55,7 @@ export default async function MapPage() {
           <div>
             <h1 className="text-xl font-semibold tracking-tight">Every park on one map</h1>
             <p className="text-xs text-stone-500 mt-0.5">
-              {parks.length} parks across Ontario · pin colour reflects current availability
+              {parks.length} parks across Ontario · marker colour reflects availability, marker shape reflects park type
             </p>
           </div>
           <div className="flex items-center gap-3 text-xs text-stone-600">
