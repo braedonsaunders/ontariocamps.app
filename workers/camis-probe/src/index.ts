@@ -8,14 +8,18 @@ type ScheduledEvent = { cron?: string; scheduledTime?: number };
 type ExecutionContext = { waitUntil(promise: Promise<unknown>): void };
 
 type AvailabilityCode = "available" | "reserved" | "closed" | "unknown";
+type Vendor = "camis5" | "goingtocamp" | "pcrs" | "campspot" | "letscamp";
 type RefreshMode = "hot" | "near" | "planning" | "deep" | "ondemand";
 type RefreshWindow = Exclude<RefreshMode, "ondemand">;
 
 type FetchTarget = {
   site_id: string;
+  vendor_site_id: string;
   park_id: string;
   park_slug: string;
+  vendor_park_id: string;
   operator_id: string;
+  operator_vendor: Vendor;
   operator_base_url: string;
   vendor_resource_location_id: number;
   vendor_resource_id: number;
@@ -34,6 +38,34 @@ type SiteNight = {
   night_date: string;
   status: AvailabilityCode;
   last_checked_at: string;
+};
+
+type CampspotAvailabilityRow = {
+  id: number;
+  availability?: string;
+  failureReasons?: Array<{ errorType?: string; reason?: string }>;
+};
+
+type LetsCampCamp = {
+  _id: string;
+  siteSearchCriteria?: { allowedUnitTypes?: string[] };
+  settings?: { minNights?: number; collectVehicleDataEnable?: boolean };
+};
+
+type LetsCampSearchResponse = {
+  sites?: Array<{ _id: string }>;
+  metaData?: {
+    availabilityInfo?: {
+      bookedSiteIds?: string[];
+      lockedSiteIds?: string[];
+    };
+  };
+};
+
+type ProviderCaches = {
+  campspotAvailability: Map<string, Promise<CampspotAvailabilityRow[]>>;
+  letsCampCamp: Map<string, Promise<LetsCampCamp>>;
+  letsCampAvailability: Map<string, Promise<LetsCampSearchResponse[]>>;
 };
 
 type RefreshOptions = {
@@ -133,6 +165,27 @@ function decodeAvailability(row: { availability: number; processedAvailability?:
   const code = row.processedAvailability ?? row.availability;
   if (code === 0) return "available";
   if (code === 2 || code === 3) return "closed";
+  return "reserved";
+}
+
+function decodeCampspotAvailability(row?: CampspotAvailabilityRow): AvailabilityCode {
+  if (!row) return "unknown";
+  if (row.availability === "AVAILABLE") return "available";
+  const reason = (row.failureReasons ?? []).map((r) => `${r.errorType ?? ""} ${r.reason ?? ""}`).join(" ").toLowerCase();
+  if (reason.includes("closed") || reason.includes("outside") || reason.includes("not accepting")) return "closed";
+  return "reserved";
+}
+
+function letsCampStatusForSite(siteId: string, responses: LetsCampSearchResponse[]): AvailabilityCode {
+  const available = new Set<string>();
+  const blocked = new Set<string>();
+  for (const response of responses) {
+    for (const site of response.sites ?? []) available.add(site._id);
+    for (const id of response.metaData?.availabilityInfo?.bookedSiteIds ?? []) blocked.add(id);
+    for (const id of response.metaData?.availabilityInfo?.lockedSiteIds ?? []) blocked.add(id);
+  }
+  if (available.has(siteId)) return "available";
+  if (blocked.has(siteId)) return "reserved";
   return "reserved";
 }
 
@@ -336,7 +389,131 @@ async function updateRefreshState(env: Env, siteId: string, window: RefreshWindo
   });
 }
 
-async function fetchVendorAvailability(target: FetchTarget, startDate: string, endDate: string): Promise<SiteNight[]> {
+function campspotHeaders(baseUrl: string, slug: string): HeadersInit {
+  return {
+    Accept: "application/json, text/plain, */*",
+    "Accept-Language": "en-CA,en;q=0.9",
+    Referer: `${baseUrl.replace(/\/+$/, "")}/book/${slug}`,
+    "User-Agent": DEFAULT_USER_AGENT,
+    "x-cognito-userpool-clientid": "60jmeb5kmfgfkeljne4car54vo",
+    "x-client-type": "CONSUMER",
+  };
+}
+
+async function fetchCampspotRows(target: FetchTarget, night: string, caches: ProviderCaches): Promise<CampspotAvailabilityRow[]> {
+  const cacheKey = `${target.operator_id}:${target.vendor_park_id}:${night}`;
+  let promise = caches.campspotAvailability.get(cacheKey);
+  if (!promise) {
+    const baseUrl = target.operator_base_url.replace(/\/+$/, "");
+    const url = new URL(`${baseUrl}/api/gator-core/v2/availability/parks/${target.vendor_park_id}`);
+    url.searchParams.set("checkin", night);
+    url.searchParams.set("checkout", addDays(night, 1));
+    url.searchParams.set("guests", "guests0,2,0");
+    url.searchParams.set("useCustomParkData", "true");
+    url.searchParams.set("includeUnavailable", "true");
+    promise = fetch(url, {
+      headers: campspotHeaders(baseUrl, target.park_slug),
+      signal: AbortSignal.timeout(20_000),
+    }).then(async (response) => {
+      if (!response.ok) throw new Error(`Campspot HTTP ${response.status} at ${url.hostname}${url.pathname}`);
+      return await response.json() as CampspotAvailabilityRow[];
+    });
+    caches.campspotAvailability.set(cacheKey, promise);
+  }
+  return promise;
+}
+
+function letsCampHeaders(): HeadersInit {
+  return {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+    "x-tenant-type": "camp",
+  };
+}
+
+async function fetchLetsCampCamp(target: FetchTarget, caches: ProviderCaches): Promise<LetsCampCamp> {
+  let promise = caches.letsCampCamp.get(target.vendor_park_id);
+  if (!promise) {
+    const baseUrl = target.operator_base_url.replace(/\/+$/, "");
+    promise = fetch(`${baseUrl}/api/camps/${encodeURIComponent(target.vendor_park_id)}`, {
+      headers: letsCampHeaders(),
+      signal: AbortSignal.timeout(20_000),
+    }).then(async (response) => {
+      if (!response.ok) throw new Error(`Let's Camp camp HTTP ${response.status}`);
+      const data = await response.json() as { camp?: LetsCampCamp | null };
+      if (!data.camp) throw new Error("Let's Camp camp not found");
+      return data.camp;
+    });
+    caches.letsCampCamp.set(target.vendor_park_id, promise);
+  }
+  return promise;
+}
+
+function letsCampUnitSearches(camp: LetsCampCamp) {
+  const allowed = camp.siteSearchCriteria?.allowedUnitTypes?.length ? camp.siteSearchCriteria.allowedUnitTypes : ["tent"];
+  return allowed.map((unitType, i) => unitType === "rv"
+    ? [{ uid: `unitTypeSiteSearch_${i}`, unitType, length: 20, measurementUnit: "ft" }]
+    : [{ uid: `unitTypeSiteSearch_${i}`, unitType }]);
+}
+
+async function fetchLetsCampResponses(target: FetchTarget, camp: LetsCampCamp, night: string, caches: ProviderCaches): Promise<LetsCampSearchResponse[]> {
+  const cacheKey = `${target.operator_id}:${target.vendor_park_id}:${night}`;
+  let promise = caches.letsCampAvailability.get(cacheKey);
+  if (!promise) {
+    const baseUrl = target.operator_base_url.replace(/\/+$/, "");
+    const minNights = Math.max(1, Math.floor(camp.settings?.minNights ?? 1));
+    const endDate = addDays(night, minNights);
+    promise = Promise.all(letsCampUnitSearches(camp).map(async (unitTypes) => {
+      const body = {
+        startDate: night,
+        endDate,
+        guestCount: { infant: 0, youth: 0, adult: 2, senior: 0 },
+        numPets: 0,
+        unitTypes,
+        electrical: [],
+        water: false,
+        sewer: false,
+        pullThrough: false,
+        accessible: false,
+        allowPastDates: false,
+        numVehicles: camp.settings?.collectVehicleDataEnable ? 1 : undefined,
+      };
+      const response = await fetch(`${baseUrl}/api/camps/${encodeURIComponent(camp._id)}/sites/available/search`, {
+        method: "POST",
+        headers: letsCampHeaders(),
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (!response.ok) throw new Error(`Let's Camp availability HTTP ${response.status}`);
+      return await response.json() as LetsCampSearchResponse;
+    }));
+    caches.letsCampAvailability.set(cacheKey, promise);
+  }
+  return promise;
+}
+
+async function fetchVendorAvailability(target: FetchTarget, startDate: string, endDate: string, caches: ProviderCaches): Promise<SiteNight[]> {
+  const nowIso = new Date().toISOString();
+  if (target.operator_vendor === "campspot") {
+    const out: SiteNight[] = [];
+    for (let night = startDate; night < endDate; night = addDays(night, 1)) {
+      const rows = await fetchCampspotRows(target, night, caches);
+      const row = rows.find((r) => String(r.id) === target.vendor_site_id);
+      out.push({ site_id: target.site_id, night_date: night, status: decodeCampspotAvailability(row), last_checked_at: nowIso });
+    }
+    return out;
+  }
+
+  if (target.operator_vendor === "letscamp") {
+    const camp = await fetchLetsCampCamp(target, caches);
+    const out: SiteNight[] = [];
+    for (let night = startDate; night < endDate; night = addDays(night, 1)) {
+      const responses = await fetchLetsCampResponses(target, camp, night, caches);
+      out.push({ site_id: target.site_id, night_date: night, status: letsCampStatusForSite(target.vendor_site_id, responses), last_checked_at: nowIso });
+    }
+    return out;
+  }
+
   const baseUrl = target.operator_base_url.replace(/\/+$/, "");
   const url = new URL(baseUrl + "/api/availability/resourceDailyAvailability");
   url.searchParams.set("resourceLocationId", String(target.vendor_resource_location_id));
@@ -363,7 +540,6 @@ async function fetchVendorAvailability(target: FetchTarget, startDate: string, e
   if (!response.ok) throw new Error(`HTTP ${response.status} at ${url.hostname}${url.pathname}`);
 
   const rows = await response.json() as Array<{ availability: number; processedAvailability?: number }>;
-  const nowIso = new Date().toISOString();
   let night = startDate;
   return rows.map((row) => {
     const out = {
@@ -394,6 +570,11 @@ async function refreshAvailability(env: Env, input: RefreshOptions): Promise<Ref
   try {
     const targets = await loadTargets(env, opts);
     const errors: string[] = [];
+    const caches: ProviderCaches = {
+      campspotAvailability: new Map(),
+      letsCampCamp: new Map(),
+      letsCampAvailability: new Map(),
+    };
     let cursor = 0;
     let sitesUpdated = 0;
     let nightsUpdated = 0;
@@ -405,7 +586,7 @@ async function refreshAvailability(env: Env, input: RefreshOptions): Promise<Ref
         const target = targets[i];
         try {
           if (delayMs > 0) await sleep(delayMs + Math.floor(Math.random() * 200));
-          const rows = await fetchVendorAvailability(target, startDate, endDate);
+          const rows = await fetchVendorAvailability(target, startDate, endDate, caches);
           await upsertAvailability(env, rows);
           if (opts.window) await updateRefreshState(env, target.site_id, opts.window, rows);
           sitesUpdated += 1;

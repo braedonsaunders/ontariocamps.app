@@ -15,6 +15,9 @@
  */
 
 import { CamisClient } from "./camis-client";
+import { CampspotClient, decodeCampspotStatus, type CampspotAvailabilityRow } from "./campspot-client";
+import { LetsCampClient, type LetsCampCamp, type LetsCampSearchResponse } from "./letscamp-client";
+import { addDays } from "./provider-utils";
 import {
   upsertSiteAvailabilityBatch,
   startRefreshLog,
@@ -26,6 +29,7 @@ import {
   type SiteNight,
 } from "../db/queries";
 import { sqlDirect } from "../db/client";
+import type { Vendor } from "../types";
 
 type AvailabilityCode = "available" | "reserved" | "closed" | "unknown";
 
@@ -55,10 +59,13 @@ function decodeAvailability(row: { availability: number; processedAvailability?:
 
 type FetchTarget = {
   site_id: string;
+  vendor_site_id: string;
+  vendor_park_id: string;
   vendor_resource_location_id: number;
   vendor_resource_id: number;
   vendor_booking_category_id: number;
   operator_id: string;
+  operator_vendor: Vendor;
   operator_base_url: string;
   equipment_category_id: number;
   sub_equipment_category_id: number;
@@ -71,10 +78,13 @@ type FetchTarget = {
 async function loadFetchTargets(opts: Pick<AvailabilityRefreshOptions, "missingOnly" | "staleHours"> = {}): Promise<FetchTarget[]> {
   const rows = await sqlDirect()<FetchTarget[]>`
     SELECT s.id              AS site_id,
+           s.vendor_site_id,
+           p.vendor_park_id,
            s.vendor_resource_location_id,
            s.vendor_resource_id,
            s.vendor_booking_category_id,
            o.id              AS operator_id,
+           o.vendor          AS operator_vendor,
            o.base_url        AS operator_base_url,
            ofc.equipment_category_id,
            ofc.sub_equipment_category_id
@@ -99,6 +109,19 @@ async function loadFetchTargets(opts: Pick<AvailabilityRefreshOptions, "missingO
      ORDER BY s.id
   `;
   return rows.map((r) => ({ ...r }));
+}
+
+function letsCampStatusForSite(siteId: string, responses: LetsCampSearchResponse[]): AvailabilityCode {
+  const available = new Set<string>();
+  const blocked = new Set<string>();
+  for (const response of responses) {
+    for (const site of response.sites ?? []) available.add(site._id);
+    for (const id of response.metaData?.availabilityInfo?.bookedSiteIds ?? []) blocked.add(id);
+    for (const id of response.metaData?.availabilityInfo?.lockedSiteIds ?? []) blocked.add(id);
+  }
+  if (available.has(siteId)) return "available";
+  if (blocked.has(siteId)) return "reserved";
+  return "reserved";
 }
 
 export type AvailabilityRefreshOptions = {
@@ -181,12 +204,107 @@ export async function refreshAvailability(
   // sees one logical client per hostname).
   let cursor = 0;
   const clients = new Map<string, CamisClient>();
+  const campspotClients = new Map<string, CampspotClient>();
+  const letsCampClients = new Map<string, LetsCampClient>();
+  const campspotAvailabilityCache = new Map<string, Promise<CampspotAvailabilityRow[]>>();
+  const letsCampCampCache = new Map<string, Promise<LetsCampCamp>>();
+  const letsCampAvailabilityCache = new Map<string, Promise<LetsCampSearchResponse[]>>();
+
   function clientFor(operator_id: string, base_url: string): CamisClient {
     const c = clients.get(operator_id);
     if (c) return c;
     const fresh = new CamisClient({ baseUrl: base_url, requestDelayMs });
     clients.set(operator_id, fresh);
     return fresh;
+  }
+  function campspotClientFor(operator_id: string, base_url: string): CampspotClient {
+    const c = campspotClients.get(operator_id);
+    if (c) return c;
+    const fresh = new CampspotClient(base_url);
+    campspotClients.set(operator_id, fresh);
+    return fresh;
+  }
+  function letsCampClientFor(operator_id: string, base_url: string): LetsCampClient {
+    const c = letsCampClients.get(operator_id);
+    if (c) return c;
+    const fresh = new LetsCampClient(base_url);
+    letsCampClients.set(operator_id, fresh);
+    return fresh;
+  }
+
+  async function fetchTargetAvailability(t: FetchTarget): Promise<SiteNight[]> {
+    const nowIso = new Date().toISOString();
+    if (t.operator_vendor === "campspot") {
+      const client = campspotClientFor(t.operator_id, t.operator_base_url);
+      const out: SiteNight[] = [];
+      for (let night = startStr; night < endStr; night = addDays(night, 1)) {
+        const cacheKey = `${t.operator_id}:${t.vendor_park_id}:${night}`;
+        let promise = campspotAvailabilityCache.get(cacheKey);
+        if (!promise) {
+          promise = client.getAvailability({ parkId: t.vendor_park_id, startDate: night });
+          campspotAvailabilityCache.set(cacheKey, promise);
+        }
+        const rows = await promise;
+        const row = rows.find((r) => String(r.id) === t.vendor_site_id);
+        out.push({
+          site_id: t.site_id,
+          night_date: night,
+          status: decodeCampspotStatus(row),
+          last_checked_at: nowIso,
+        });
+      }
+      return out;
+    }
+
+    if (t.operator_vendor === "letscamp") {
+      const client = letsCampClientFor(t.operator_id, t.operator_base_url);
+      let campPromise = letsCampCampCache.get(t.vendor_park_id);
+      if (!campPromise) {
+        campPromise = client.getCamp(t.vendor_park_id);
+        letsCampCampCache.set(t.vendor_park_id, campPromise);
+      }
+      const camp = await campPromise;
+      const out: SiteNight[] = [];
+      for (let night = startStr; night < endStr; night = addDays(night, 1)) {
+        const cacheKey = `${t.operator_id}:${t.vendor_park_id}:${night}`;
+        let promise = letsCampAvailabilityCache.get(cacheKey);
+        if (!promise) {
+          promise = client.searchAvailability({ camp, startDate: night });
+          letsCampAvailabilityCache.set(cacheKey, promise);
+        }
+        const responses = await promise;
+        out.push({
+          site_id: t.site_id,
+          night_date: night,
+          status: letsCampStatusForSite(t.vendor_site_id, responses),
+          last_checked_at: nowIso,
+        });
+      }
+      return out;
+    }
+
+    const client = clientFor(t.operator_id, t.operator_base_url);
+    const rows = await client.getResourceDailyAvailability({
+      resourceLocationId: t.vendor_resource_location_id,
+      resourceId: t.vendor_resource_id,
+      bookingCategoryId: t.vendor_booking_category_id,
+      equipmentCategoryId: t.equipment_category_id,
+      subEquipmentCategoryId: t.sub_equipment_category_id,
+      startDate: startStr,
+      endDate: endStr,
+    });
+    const out: SiteNight[] = [];
+    const cur = new Date(startStr + "T00:00:00Z");
+    for (const row of rows) {
+      out.push({
+        site_id: t.site_id,
+        night_date: cur.toISOString().slice(0, 10),
+        status: decodeAvailability(row),
+        last_checked_at: nowIso,
+      });
+      cur.setUTCDate(cur.getUTCDate() + 1);
+    }
+    return out;
   }
 
   const errors: string[] = [];
@@ -217,30 +335,12 @@ export async function refreshAvailability(
       const i = cursor++;
       if (i >= targets.length) return;
       const t = targets[i];
-      const client = clientFor(t.operator_id, t.operator_base_url);
       try {
-        const rows = await client.getResourceDailyAvailability({
-          resourceLocationId: t.vendor_resource_location_id,
-          resourceId: t.vendor_resource_id,
-          bookingCategoryId: t.vendor_booking_category_id,
-          equipmentCategoryId: t.equipment_category_id,
-          subEquipmentCategoryId: t.sub_equipment_category_id,
-          startDate: startStr,
-          endDate: endStr,
-        });
-        const nowIso = new Date().toISOString();
-        const cur = new Date(startStr + "T00:00:00Z");
+        const rows = await fetchTargetAvailability(t);
         let added = 0;
         for (const row of rows) {
-          const night = cur.toISOString().slice(0, 10);
-          writeBuffer.push({
-            site_id: t.site_id,
-            night_date: night,
-            status: decodeAvailability(row),
-            last_checked_at: nowIso,
-          });
+          writeBuffer.push(row);
           added += 1;
-          cur.setUTCDate(cur.getUTCDate() + 1);
         }
         sitesUpdated += 1;
         nightsUpdated += added;

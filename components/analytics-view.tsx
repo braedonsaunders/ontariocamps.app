@@ -1505,7 +1505,7 @@ export function AnalyticsView({ snapshot }: { snapshot: AnalyticsSnapshot }) {
         <InventoryCharts siteTypePieData={siteTypePieData} electricPieData={electricPieData} />
 
         <p className="text-xs leading-relaxed text-stone-500">
-          Sources: Ontario Parks, Parks Canada, and GoingToCamp-backed Conservation Authorities, polled live for this
+          Sources: Ontario Parks, Parks Canada, and reservation-backed Conservation Authorities, polled live for this
           snapshot. <Link href="/data" className="font-medium text-forest-700 hover:underline">See data freshness</Link>{" "}
           for per-operator update times and CSV downloads.
         </p>

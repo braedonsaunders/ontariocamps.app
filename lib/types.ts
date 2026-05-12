@@ -1,4 +1,4 @@
-export type Vendor = "camis5" | "goingtocamp" | "pcrs";
+export type Vendor = "camis5" | "goingtocamp" | "pcrs" | "campspot" | "letscamp";
 
 export type Operator = {
   id: string;

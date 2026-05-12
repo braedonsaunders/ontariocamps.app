@@ -366,7 +366,8 @@ export function DataTabs({ ops, datasets, scopes }: Props) {
         <div className="card p-5 mt-4 text-sm text-stone-600 leading-relaxed">
           <div className="font-semibold text-stone-900 mb-2">License &amp; attribution</div>
           <p>
-            This data is sourced from publicly accessible operator APIs (Ontario Parks / Camis, Parks Canada, Conservation Authorities via GoingToCamp).
+            This data is sourced from publicly accessible operator APIs (Ontario Parks / Camis, Parks Canada,
+            and Conservation Authorities via GoingToCamp, Campspot, and Let&apos;s Camp).
             We are not affiliated with any operator. Data is provided as-is with no warranty. A link back to{" "}
             <a href="https://ontariocamps.app" className="text-forest-700 hover:underline">ontariocamps.app</a> is appreciated but not required.
           </p>
