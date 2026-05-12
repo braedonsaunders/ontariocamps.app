@@ -145,7 +145,7 @@ function scenarioList(): Scenario[] {
       params: { ...LOCATIONS.toronto, start_date: "2026-06-12", end_date: "2026-06-16", stay_mode: "same_park", limit: RESULT_LIMIT },
     },
     {
-      name: "nightly four-night route changes parks every night",
+      name: "nightly four-night route changes sites every night",
       params: { ...LOCATIONS.toronto, start_date: "2026-06-12", end_date: "2026-06-16", stay_mode: "anywhere", sort: "route", limit: RESULT_LIMIT },
     },
   );
@@ -338,12 +338,8 @@ function validateResultShape(scenario: Scenario, result: SearchResult) {
 
   if (params.stay_mode === "anywhere") {
     assert(result.stay.move_count > 0, `${scenario.name}: nightly route did not force a site change`);
-    assert(result.stay.park_count > 1, `${scenario.name}: nightly route did not change parks`);
     assert(result.stay.segment_count === resultNights.length, `${scenario.name}: nightly route did not create a stop per night`);
     assert(unique(segments.map((segment) => segment.site.id)).length === resultNights.length, `${scenario.name}: nightly route reused a campsite`);
-    for (let index = 1; index < segments.length; index += 1) {
-      assert(segments[index].park.slug !== segments[index - 1].park.slug, `${scenario.name}: nightly route kept the same park on consecutive nights`);
-    }
     if (params.end_lat != null && params.end_lng != null) {
       assert(result.stay.end_distance_km != null, `${scenario.name}: endpoint route missing end distance`);
     }
@@ -373,6 +369,50 @@ async function validateScenario(scenario: Scenario) {
   return { total: response.total, returned: response.results.length };
 }
 
+async function validateNightlyIsNotHarderThanSamePark() {
+  const shared = {
+    ...LOCATIONS.toronto,
+    start_date: "2026-06-12",
+    end_date: "2026-06-16",
+    party_size: 2,
+    limit: RESULT_LIMIT,
+  } satisfies SearchParams;
+  const samePark = await runSearch({ ...shared, stay_mode: "same_park" });
+  const nightly = await runSearch({ ...shared, stay_mode: "anywhere", sort: "route" });
+  assert(samePark.total === 0 || nightly.total > 0, "nightly route returned nothing when same-park routes exist");
+  return { samePark: samePark.total, nightly: nightly.total };
+}
+
+async function validateGroupedPagination() {
+  const shared = {
+    ...LOCATIONS.toronto,
+    start_date: "2026-06-12",
+    end_date: "2026-06-16",
+    party_size: 2,
+    stay_mode: "same_site" as const,
+    sort: "distance" as const,
+    group_by: "park" as const,
+    group_limit: 10,
+    group_result_limit: 3,
+  } satisfies SearchParams;
+  const page1 = await runSearch({ ...shared, group_offset: 0 });
+  const page2 = await runSearch({ ...shared, group_offset: 10 });
+  assert(page1.groups && page1.groups.length > 0 && page1.groups.length <= 10, "grouped search did not return a bounded first group page");
+  assert(page1.group_total != null && page1.group_total >= page1.groups.length, "grouped search did not include total group count");
+  assert(page1.results.length <= page1.groups.length * 3, "grouped search returned too many loaded results per group");
+  for (const group of page1.groups) {
+    assert(group.result_count >= group.results.length, `group ${group.label} result count is smaller than loaded results`);
+    assert(group.results.length <= 3, `group ${group.label} exceeded the per-group result limit`);
+  }
+  if (page2.groups && page2.groups.length > 0) {
+    const page1Keys = new Set(page1.groups.map((group) => group.key));
+    for (const group of page2.groups) {
+      assert(!page1Keys.has(group.key), `group pagination repeated ${group.label} on page 2`);
+    }
+  }
+  return { total: page1.total, groupTotal: page1.group_total ?? 0, page1: page1.groups.length, page2: page2.groups?.length ?? 0 };
+}
+
 async function main() {
   const scenarios = scenarioList();
   let passed = 0;
@@ -394,8 +434,28 @@ async function main() {
     }
   }
 
+  try {
+    const summary = await validateNightlyIsNotHarderThanSamePark();
+    passed += 1;
+    console.log(`[extra] PASS nightly route is not harder than same-park (${summary.nightly}/${summary.samePark})`);
+  } catch (error) {
+    failures.push({ name: "nightly route is not harder than same-park", error });
+    console.error("[extra] FAIL nightly route is not harder than same-park");
+    console.error(error);
+  }
+
+  try {
+    const summary = await validateGroupedPagination();
+    passed += 1;
+    console.log(`[extra] PASS grouped pagination (${summary.page1}+${summary.page2}/${summary.groupTotal} groups, ${summary.total} results)`);
+  } catch (error) {
+    failures.push({ name: "grouped pagination", error });
+    console.error("[extra] FAIL grouped pagination");
+    console.error(error);
+  }
+
   await sql().end({ timeout: 2 }).catch(() => undefined);
-  console.log(`${passed}/${scenarios.length} scenarios passed`);
+  console.log(`${passed}/${scenarios.length + 2} scenarios passed`);
   if (failures.length > 0) {
     process.exitCode = 1;
   }

@@ -238,6 +238,7 @@ export type AvailabilityRow = {
 
 export type SearchStayMode = "same_site" | "same_park" | "anywhere";
 export type SearchSortMode = "distance" | "route" | "moves" | "freshness" | "name" | "availability" | "price";
+export type SearchGroupMode = "park" | "campground" | "operator" | "none";
 
 export type SearchResultSite = {
   id: string;
@@ -287,10 +288,21 @@ export type SearchResult = SearchResultSegment & {
   };
 };
 
+export type SearchResultGroup = {
+  key: string;
+  label: string;
+  detail: string;
+  result_count: number;
+  distance?: number;
+  results: SearchResult[];
+};
+
 export type SearchResponse = {
   results: SearchResult[];
   total: number;
   freshness_p50_minutes: number;
+  group_total?: number;
+  groups?: SearchResultGroup[];
 };
 
 export type ReviewStatus = "pending" | "approved" | "rejected" | "flagged";

@@ -12,9 +12,11 @@ import type {
   SearchResult,
   SearchResultAvailability,
   SearchResultCampground,
+  SearchResultGroup,
   SearchResultPark,
   SearchResultSegment,
   SearchResultSite,
+  SearchGroupMode,
   SearchSortMode,
   SearchStayMode,
   SitePhoto,
@@ -41,6 +43,10 @@ export type SearchParams = {
   operators?: string[];
   equipment_length_ft?: number;
   stay_mode?: SearchStayMode;
+  group_by?: SearchGroupMode;
+  group_limit?: number;
+  group_offset?: number;
+  group_result_limit?: number;
   limit?: number;
   offset?: number;
   sort?: SearchSortMode;
@@ -120,7 +126,7 @@ function stayLabel(mode: SearchStayMode, moveCount: number, parkCount: number): 
   if (mode === "same_site") return "Same site";
   if (mode === "same_park") return `${moveCount + 1} sites in park`;
   if (parkCount > 1) return `${parkCount} parks · ${moveCount} moves`;
-  return moveCount > 0 ? `Move sites ${moveCount}x` : "One-site route";
+  return moveCount > 0 ? `${moveCount + 1} sites · ${moveCount} moves` : "One-site route";
 }
 
 function haversineKm(
@@ -384,6 +390,56 @@ function itinerarySignature(result: SearchResult): string {
     .join(">");
 }
 
+function resultSegments(result: SearchResult): SearchResultSegment[] {
+  return result.stay?.segments ?? [result];
+}
+
+function groupSearchResults(
+  results: SearchResult[],
+  groupBy: SearchGroupMode,
+  resultLimit: number,
+): SearchResultGroup[] {
+  const groups = new Map<string, SearchResultGroup>();
+
+  for (const result of results) {
+    let key = "all";
+    let label = "All results";
+    let detail = "Ungrouped campsite matches";
+    if (groupBy === "park") {
+      const parks = Array.from(new Set(resultSegments(result).map((segment) => segment.park.name)));
+      key = result.park.slug;
+      label = result.park.name;
+      detail = parks.length > 1 ? `${parks.length} parks on route` : `${result.park.operator} / ${result.campground.name}`;
+    } else if (groupBy === "campground") {
+      key = result.campground.id;
+      label = result.campground.name;
+      detail = `${result.park.name} / ${result.park.operator}`;
+    } else if (groupBy === "operator") {
+      key = result.park.operator_id;
+      label = result.park.operator;
+      detail = "Operator network";
+    }
+
+    const existing = groups.get(key);
+    if (existing) {
+      existing.result_count += 1;
+      if (existing.results.length < resultLimit) existing.results.push(result);
+      if (result.park.distance_km != null) existing.distance = Math.min(existing.distance ?? Infinity, result.park.distance_km);
+    } else {
+      groups.set(key, {
+        key,
+        label,
+        detail,
+        result_count: 1,
+        distance: result.park.distance_km,
+        results: resultLimit > 0 ? [result] : [],
+      });
+    }
+  }
+
+  return Array.from(groups.values());
+}
+
 export async function runSearch(params: SearchParams): Promise<SearchResponse> {
   const client = sql();
   const wantDates = params.start_date && params.end_date
@@ -527,9 +583,7 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
       for (const seed of firstNightRows) {
         const itinerary = buildItinerary(preparedRows, dates, params, "anywhere", seed, {
           forceMove: true,
-          forceParkMove: true,
           forceMoveEveryNight: true,
-          forceParkMoveEveryNight: true,
           requireUniqueSites: true,
         });
         if (!itinerary) continue;
@@ -568,6 +622,23 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
   const p50 = freshnessSamples.length ? freshnessSamples[Math.floor(freshnessSamples.length / 2)] : 0;
   const offset = params.offset ?? 0;
   const limit = params.limit ?? DEFAULT_LIMIT;
+  const groupBy = params.group_by;
+
+  if (groupBy && groupBy !== "none") {
+    const groupOffset = Math.max(0, params.group_offset ?? 0);
+    const groupLimit = Math.max(1, params.group_limit ?? 10);
+    const groupResultLimit = Math.max(1, params.group_result_limit ?? 60);
+    const groups = groupSearchResults(results, groupBy, groupResultLimit);
+    const visibleGroups = groups.slice(groupOffset, groupOffset + groupLimit);
+
+    return {
+      results: visibleGroups.flatMap((group) => group.results),
+      total: results.length,
+      group_total: groups.length,
+      groups: visibleGroups,
+      freshness_p50_minutes: Math.round(p50),
+    };
+  }
 
   return {
     results: results.slice(offset, offset + limit),

@@ -10,7 +10,7 @@ import {
   useQueryStates,
 } from "nuqs";
 import { PRESET_LOCATIONS } from "@/lib/locations";
-import { AMENITIES, type SearchResponse, type SearchResult } from "@/lib/types";
+import { AMENITIES, type SearchResponse, type SearchResult, type SearchResultGroup } from "@/lib/types";
 import { ResultCard } from "@/components/result-card";
 import { ParkMap, type ParkSummary } from "@/components/park-map";
 import type { LucideIcon } from "lucide-react";
@@ -53,6 +53,9 @@ const OPERATOR_OPTIONS: { id: string; label: string }[] = [
   { id: "gtc_catfish", label: "Catfish Creek CA" },
 ];
 const SORT_OPTIONS = ["distance", "route", "moves", "availability", "freshness", "name", "price"] as const;
+const RAW_RESULTS_PER_PAGE = 60;
+const GROUPS_PER_PAGE = 10;
+const RESULTS_PER_GROUP = 60;
 
 const SORT_LABELS: Record<(typeof SORT_OPTIONS)[number], string> = {
   distance: "Distance from you",
@@ -78,7 +81,7 @@ const STAY_MODE_OPTIONS: {
 }[] = [
   { id: "same_site", label: "Same site", detail: "One campsite for the full stay" },
   { id: "same_park", label: "Same park", detail: "Change sites without changing parks" },
-  { id: "anywhere", label: "Nightly route", detail: "Change parks between nights" },
+  { id: "anywhere", label: "Nightly route", detail: "Move sites every night" },
 ];
 
 const EQUIPMENT_ICONS: Record<string, LucideIcon> = {
@@ -141,10 +144,7 @@ function resultSegments(result: SearchResult) {
 }
 
 function groupResults(results: SearchResult[], groupBy: (typeof GROUP_OPTIONS)[number]) {
-  const groups = new Map<
-    string,
-    { key: string; label: string; detail: string; results: SearchResult[]; distance?: number }
-  >();
+  const groups = new Map<string, SearchResultGroup>();
 
   for (const result of results) {
     let key = "all";
@@ -167,6 +167,7 @@ function groupResults(results: SearchResult[], groupBy: (typeof GROUP_OPTIONS)[n
 
     const existing = groups.get(key);
     if (existing) {
+      existing.result_count += 1;
       existing.results.push(result);
       if (result.park.distance_km != null) existing.distance = Math.min(existing.distance ?? Infinity, result.park.distance_km);
     } else {
@@ -174,6 +175,7 @@ function groupResults(results: SearchResult[], groupBy: (typeof GROUP_OPTIONS)[n
         key,
         label,
         detail,
+        result_count: 1,
         results: [result],
         distance: result.park.distance_km,
       });
@@ -209,6 +211,7 @@ export function SearchPage() {
     view: parseAsStringLiteral(VIEW_MODES).withDefault("list"),
     group_by: parseAsStringLiteral(GROUP_OPTIONS).withDefault("park"),
     sort: parseAsStringLiteral(SORT_OPTIONS).withDefault("distance"),
+    page: parseAsInteger.withDefault(1),
   });
 
   // Local input state for the "Near" field so the user can type freely without
@@ -277,7 +280,7 @@ export function SearchPage() {
   async function runSearch() {
     // Commit typed place strings into state only when the user runs a search.
     const query = nearInput.trim();
-    const nextState: Partial<typeof state> = {};
+    const nextState: Partial<typeof state> = { page: 1 };
     setLocationMessage(null);
 
     if (query.toLowerCase() === "current location" && state.lat != null && state.lng != null) {
@@ -395,7 +398,7 @@ export function SearchPage() {
     if (searchKey === 0) return;
     const searchNights = rangeNights(state.start_date, state.end_date);
     if (state.stay_mode !== "same_site" && (!searchNights || searchNights < 2)) {
-      setData({ results: [], total: 0, freshness_p50_minutes: 0 });
+      setData({ results: [], total: 0, group_total: 0, groups: [], freshness_p50_minutes: 0 });
       setLoading(false);
       return;
     }
@@ -421,7 +424,16 @@ export function SearchPage() {
     if (state.operators.length) sp.set("operators", state.operators.join(","));
     sp.set("stay_mode", state.stay_mode);
     sp.set("sort", state.sort);
-    sp.set("limit", "60");
+    if (state.group_by === "none") {
+      sp.set("group_by", "none");
+      sp.set("limit", String(RAW_RESULTS_PER_PAGE));
+      sp.set("offset", String((Math.max(1, state.page) - 1) * RAW_RESULTS_PER_PAGE));
+    } else {
+      sp.set("group_by", state.group_by);
+      sp.set("group_limit", String(GROUPS_PER_PAGE));
+      sp.set("group_offset", String((Math.max(1, state.page) - 1) * GROUPS_PER_PAGE));
+      sp.set("group_result_limit", String(RESULTS_PER_GROUP));
+    }
 
     setLoading(true);
     const ac = new AbortController();
@@ -446,7 +458,27 @@ export function SearchPage() {
       equipment: option.id,
       equipment_length_ft: option.equipmentLengthFt ?? null,
       site_types: option.siteTypes,
+      page: 1,
     });
+  }
+
+  async function updateGroupBy(groupBy: typeof state.group_by) {
+    await setState({ group_by: groupBy, page: 1 });
+    if (data) setSearchKey((k) => k + 1);
+  }
+
+  async function updateStayMode(stayMode: typeof state.stay_mode) {
+    await setState({
+      stay_mode: stayMode,
+      page: 1,
+      sort: stayMode === "anywhere" && state.sort === "distance" ? "route" : state.sort,
+    });
+    if (data) setSearchKey((k) => k + 1);
+  }
+
+  async function goToPage(page: number) {
+    await setState({ page: Math.max(1, page) });
+    setSearchKey((k) => k + 1);
   }
 
   function setFlexibleDates(next: boolean) {
@@ -509,10 +541,29 @@ export function SearchPage() {
     state.operators.length +
     (state.flexible ? 1 : 0);
   const resultWord = state.stay_mode === "same_site" ? "sites" : "routes";
+  const groupedMode = state.group_by !== "none";
   const groupedResults = useMemo(
-    () => (data ? groupResults(data.results, state.group_by) : []),
+    () => (data?.groups ? data.groups : data ? groupResults(data.results, state.group_by) : []),
     [data, state.group_by],
   );
+  const groupTotal = data?.group_total ?? groupedResults.length;
+  const groupUnit = state.group_by === "park" ? "parks" : state.group_by === "campground" ? "campgrounds" : "operators";
+  const pageStart = data
+    ? groupedMode
+      ? Math.min((state.page - 1) * GROUPS_PER_PAGE + 1, groupTotal)
+      : Math.min((state.page - 1) * RAW_RESULTS_PER_PAGE + 1, data.total)
+    : 0;
+  const pageEnd = data
+    ? groupedMode
+      ? Math.min(state.page * GROUPS_PER_PAGE, groupTotal)
+      : Math.min(state.page * RAW_RESULTS_PER_PAGE, data.total)
+    : 0;
+  const hasPreviousPage = state.page > 1;
+  const hasNextPage = data
+    ? groupedMode
+      ? state.page * GROUPS_PER_PAGE < groupTotal
+      : state.page * RAW_RESULTS_PER_PAGE < data.total
+    : false;
   const hasRouteEndpoint = state.stay_mode === "anywhere" && state.end_lat != null && state.end_lng != null;
   const routeNeedsDates = state.stay_mode !== "same_site" && (!dateWindowNights || dateWindowNights < 2);
   const minRouteNights = state.stay_mode === "same_site" ? 1 : 2;
@@ -561,7 +612,7 @@ export function SearchPage() {
                   type="date"
                   className="w-full min-w-0 bg-transparent text-sm font-semibold text-stone-950 outline-none"
                   value={state.start_date}
-                  onChange={(e) => setState({ start_date: e.target.value })}
+                  onChange={(e) => setState({ start_date: e.target.value, page: 1 })}
                 />
               </div>
 
@@ -573,7 +624,7 @@ export function SearchPage() {
                   type="date"
                   className="w-full min-w-0 bg-transparent text-sm font-semibold text-stone-950 outline-none"
                   value={state.end_date}
-                  onChange={(e) => setState({ end_date: e.target.value })}
+                  onChange={(e) => setState({ end_date: e.target.value, page: 1 })}
                 />
               </div>
 
@@ -603,7 +654,7 @@ export function SearchPage() {
                   max={500}
                   step={10}
                   value={state.radius_km}
-                  onChange={(e) => setState({ radius_km: Number(e.target.value) })}
+                  onChange={(e) => setState({ radius_km: Number(e.target.value), page: 1 })}
                 />
               </div>
 
@@ -614,7 +665,7 @@ export function SearchPage() {
                 <select
                   className="w-full min-w-0 appearance-none bg-transparent text-sm font-semibold text-stone-950 outline-none"
                   value={state.sort}
-                  onChange={(e) => setState({ sort: e.target.value as typeof state.sort })}
+                  onChange={(e) => setState({ sort: e.target.value as typeof state.sort, page: 1 })}
                 >
                   {SORT_OPTIONS.map((option) => (
                     <option key={option} value={option}>{SORT_LABELS[option]}</option>
@@ -648,7 +699,7 @@ export function SearchPage() {
                     <button
                       key={option.id}
                       type="button"
-                      onClick={() => setState({ stay_mode: option.id })}
+                      onClick={() => updateStayMode(option.id)}
                       className={`rounded-md px-3 py-2 text-left ring-1 transition ${
                         active
                           ? "bg-forest-700 text-white ring-forest-700"
@@ -676,6 +727,12 @@ export function SearchPage() {
                       placeholder="End near (optional)"
                       value={endInput}
                       onChange={(e) => setEndInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          runSearch();
+                        }
+                      }}
                     />
                   </label>
                 )}
@@ -684,7 +741,7 @@ export function SearchPage() {
                   <select
                     className="bg-transparent text-right outline-none"
                     value={state.group_by}
-                    onChange={(e) => setState({ group_by: e.target.value as typeof state.group_by })}
+                    onChange={(e) => updateGroupBy(e.target.value as typeof state.group_by)}
                   >
                     {GROUP_OPTIONS.map((option) => (
                       <option key={option} value={option}>{GROUP_LABELS[option]}</option>
@@ -708,7 +765,7 @@ export function SearchPage() {
                     max={dateWindowNights ?? 21}
                     className="w-11 bg-transparent text-right outline-none"
                     value={Math.max(minRouteNights, state.min_nights ?? dateWindowNights ?? minRouteNights)}
-                    onChange={(e) => setState({ min_nights: Math.max(minRouteNights, Number(e.target.value)), flexible: true })}
+                    onChange={(e) => setState({ min_nights: Math.max(minRouteNights, Number(e.target.value)), flexible: true, page: 1 })}
                   />
                 </label>
                 <label className="inline-flex h-8 items-center gap-1.5 rounded-md bg-white px-2 text-xs font-semibold text-stone-700 ring-1 ring-stone-200">
@@ -719,7 +776,7 @@ export function SearchPage() {
                     max={12}
                     className="w-10 bg-transparent text-right outline-none"
                     value={state.party_size}
-                    onChange={(e) => setState({ party_size: Number(e.target.value) })}
+                    onChange={(e) => setState({ party_size: Number(e.target.value), page: 1 })}
                   />
                 </label>
               </div>
@@ -738,6 +795,7 @@ export function SearchPage() {
                   site_types: toggle(state.site_types, t),
                   equipment: "any",
                   equipment_length_ft: null,
+                  page: 1,
                 })}
                 className={`chip shrink-0 ring-1 ${
                   state.site_types.includes(t)
@@ -753,7 +811,7 @@ export function SearchPage() {
               <button
                 key={code}
                 type="button"
-                onClick={() => setState({ amenities: toggle(state.amenities, code) })}
+                onClick={() => setState({ amenities: toggle(state.amenities, code), page: 1 })}
                 className={`chip shrink-0 ring-1 ${
                   state.amenities.includes(code)
                     ? "bg-lake-700 text-white ring-lake-700"
@@ -768,7 +826,7 @@ export function SearchPage() {
               <button
                 key={op.id}
                 type="button"
-                onClick={() => setState({ operators: toggle(state.operators, op.id) })}
+                onClick={() => setState({ operators: toggle(state.operators, op.id), page: 1 })}
                 className={`chip shrink-0 ring-1 ${
                   state.operators.includes(op.id)
                     ? "bg-stone-900 text-white ring-stone-900"
@@ -839,7 +897,9 @@ export function SearchPage() {
                   ) : data ? (
                     <>
                       <span className="font-semibold text-stone-950">{data.total.toLocaleString()}</span> {resultWord}
-                      {data.total > data.results.length ? (
+                      {groupedMode && groupTotal > 0 ? (
+                        <span className="text-stone-400"> / {groupTotal.toLocaleString()} {groupUnit}</span>
+                      ) : data.total > data.results.length ? (
                         <span className="text-stone-400"> / showing {data.results.length}</span>
                       ) : null}
                     </>
@@ -849,8 +909,13 @@ export function SearchPage() {
                 </div>
               </div>
               {data && !loading && (
-                <div className="mt-2 text-xs text-stone-500">
-                  Median freshness {data.freshness_p50_minutes}m
+                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-stone-500">
+                  <span>Median freshness {data.freshness_p50_minutes}m</span>
+                  {groupedMode && groupTotal > 0 ? (
+                    <span>Showing groups {pageStart.toLocaleString()}-{pageEnd.toLocaleString()}</span>
+                  ) : data.total > 0 ? (
+                    <span>Showing results {pageStart.toLocaleString()}-{pageEnd.toLocaleString()}</span>
+                  ) : null}
                 </div>
               )}
             </header>
@@ -861,9 +926,14 @@ export function SearchPage() {
                   Choose at least two nights to build routes that change campsites every night.
                 </div>
               )}
-              {data?.results.length === 0 && !loading && !routeNeedsDates && (
+              {data && data.total === 0 && !loading && !routeNeedsDates && (
                 <div className="rounded-lg border border-dashed border-stone-300 bg-stone-50 p-8 text-center text-sm text-stone-600">
                   No availability matches your filters. Try expanding the radius, allowing moves, or easing site filters.
+                </div>
+              )}
+              {data && data.total > 0 && groupedMode && groupedResults.length === 0 && !loading && (
+                <div className="rounded-lg border border-dashed border-stone-300 bg-stone-50 p-8 text-center text-sm text-stone-600">
+                  No groups on this page.
                 </div>
               )}
               {!data && !loading && !routeNeedsDates && (
@@ -871,8 +941,8 @@ export function SearchPage() {
                   Type a location, choose dates and equipment, then search. Results land here with map context beside them.
                 </div>
               )}
-              {groupedResults.map((group) => (
-                <details key={group.key} open className="group overflow-hidden rounded-lg bg-stone-50 ring-1 ring-stone-200">
+              {groupedMode ? groupedResults.map((group) => (
+                <details key={group.key} className="group overflow-hidden rounded-lg bg-stone-50 ring-1 ring-stone-200">
                   <summary className="flex cursor-pointer list-none items-center gap-3 px-3 py-2.5 transition hover:bg-white">
                     <ChevronRight size={14} className="shrink-0 text-stone-400 transition-transform group-open:rotate-90" />
                     <div className="min-w-0 flex-1">
@@ -883,7 +953,7 @@ export function SearchPage() {
                       </div>
                     </div>
                     <span className="rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-stone-600 ring-1 ring-stone-200">
-                      {group.results.length}
+                      {group.result_count.toLocaleString()}
                     </span>
                   </summary>
                   <div className="space-y-2 border-t border-stone-200 p-2">
@@ -896,9 +966,51 @@ export function SearchPage() {
                         loadingSiteId={loadingSiteId}
                       />
                     ))}
+                    {group.result_count > group.results.length && (
+                      <div className="rounded-md bg-white px-3 py-2 text-xs text-stone-500 ring-1 ring-stone-200">
+                        Showing first {group.results.length} results in this group. Refine filters to narrow it further.
+                      </div>
+                    )}
                   </div>
                 </details>
+              )) : data?.results.map((r, index) => (
+                <ResultCard
+                  key={`${r.site.id}-${r.availability.nights.join("-")}-${r.stay?.mode ?? "single"}-${index}`}
+                  result={r}
+                  onOpenResult={openResult}
+                  onOpenSiteDetails={openSiteDetails}
+                  loadingSiteId={loadingSiteId}
+                />
               ))}
+
+              {data && (hasPreviousPage || hasNextPage) && !loading && (
+                <div className="flex items-center justify-between gap-3 rounded-lg bg-white px-3 py-2 text-sm ring-1 ring-stone-200">
+                  <button
+                    type="button"
+                    onClick={() => goToPage(state.page - 1)}
+                    disabled={!hasPreviousPage}
+                    className="rounded-md bg-stone-100 px-3 py-1.5 font-semibold text-stone-700 ring-1 ring-stone-200 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Previous
+                  </button>
+                  <span className="text-xs text-stone-500">
+                    Page {state.page}
+                    {groupedMode && groupTotal > 0
+                      ? ` / groups ${pageStart}-${pageEnd} of ${groupTotal.toLocaleString()}`
+                      : data.total > 0
+                      ? ` / results ${pageStart}-${pageEnd} of ${data.total.toLocaleString()}`
+                      : ""}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => goToPage(state.page + 1)}
+                    disabled={!hasNextPage}
+                    className="rounded-md bg-stone-100 px-3 py-1.5 font-semibold text-stone-700 ring-1 ring-stone-200 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
             </div>
           </section>
 
