@@ -94,7 +94,7 @@ export const PARK_COORDS: ParkCoord[] = [
   { match: "Kawartha Highlands", lat: 44.875, lng: -78.222, region: "Central" },
   { match: "Kettle Lakes", lat: 48.581, lng: -80.997, region: "Northeastern" },
   { match: "Killarney", lat: 46.013, lng: -81.401, region: "Northeastern",
-    description: "White quartzite ridges of the La Cloche range over deep clear lakes.",
+    description: "White quartzite ridges of the La Cloche range over deep clear lakes." },
   { match: "Killbear", lat: 45.351, lng: -80.21, region: "Central" },
   { match: "Komoka", lat: 42.953, lng: -81.466, region: "Southwestern" },
   { match: /Lake on the Mountain/i, lat: 44.043, lng: -77.058, region: "Southeastern" },
