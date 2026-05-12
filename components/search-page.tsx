@@ -780,7 +780,7 @@ export function SearchPage() {
               </div>
             )}
 
-            <div className="mt-1.5 grid gap-1.5 lg:grid-cols-3">
+            <div className="mt-1.5 grid grid-cols-3 gap-1.5">
               <details className="group rounded-md bg-stone-50 ring-1 ring-stone-200">
                 <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-xs font-semibold text-stone-800 transition hover:bg-white">
                   <span className="inline-flex min-w-0 items-center gap-2">
@@ -839,7 +839,7 @@ export function SearchPage() {
                 )}
               </details>
 
-              <details className="group rounded-md bg-stone-50 ring-1 ring-stone-200 lg:col-span-2">
+              <details className="group rounded-md bg-stone-50 ring-1 ring-stone-200">
                 <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-xs font-semibold text-stone-800 transition hover:bg-white">
                   <span className="inline-flex min-w-0 items-center gap-2">
                     <Sliders size={13} className="text-stone-500" />
@@ -921,75 +921,75 @@ export function SearchPage() {
                 </label>
                 </div>
               </details>
+
+              <details className="group rounded-md bg-stone-50 ring-1 ring-stone-200">
+                <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-xs font-semibold text-stone-800 transition hover:bg-white">
+                  <span className="inline-flex min-w-0 items-center gap-2">
+                    <Sliders size={13} className="text-stone-500" />
+                    <span>Filters</span>
+                    <span className="truncate text-stone-500">
+                      {advancedFilterCount ? `${advancedFilterCount} active` : "Types, amenities, operators"}
+                    </span>
+                  </span>
+                  <span className="inline-flex shrink-0 items-center gap-2">
+                    {advancedFilterCount > 0 && <span className="rounded-full bg-white px-1.5 py-0.5 text-[10px] text-stone-500 ring-1 ring-stone-200">{advancedFilterCount}</span>}
+                    <ChevronDown size={14} className="text-stone-400 transition-transform group-open:rotate-180" />
+                  </span>
+                </summary>
+                <div className="flex items-center gap-2 overflow-x-auto border-t border-stone-200 p-1.5 scrollbar-none">
+                  {SITE_TYPES.map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setState({
+                        site_types: toggle(state.site_types, t),
+                        equipment: "any",
+                        equipment_length_ft: null,
+                        page: 1,
+                      })}
+                      className={`chip shrink-0 ring-1 ${
+                        state.site_types.includes(t)
+                          ? "bg-forest-700 text-white ring-forest-700"
+                          : "bg-white text-stone-700 ring-stone-300 hover:bg-stone-50"
+                      }`}
+                    >
+                      {t.toUpperCase()}
+                    </button>
+                  ))}
+                  <span className="h-4 w-px shrink-0 bg-stone-300" />
+                  {Object.entries(AMENITIES).slice(0, 6).map(([code, a]) => (
+                    <button
+                      key={code}
+                      type="button"
+                      onClick={() => setState({ amenities: toggle(state.amenities, code), page: 1 })}
+                      className={`chip shrink-0 ring-1 ${
+                        state.amenities.includes(code)
+                          ? "bg-lake-700 text-white ring-lake-700"
+                          : "bg-white text-stone-700 ring-stone-300 hover:bg-stone-50"
+                      }`}
+                    >
+                      {a.label}
+                    </button>
+                  ))}
+                  <span className="h-4 w-px shrink-0 bg-stone-300" />
+                  {OPERATOR_OPTIONS.map((op) => (
+                    <button
+                      key={op.id}
+                      type="button"
+                      onClick={() => setState({ operators: toggle(state.operators, op.id), page: 1 })}
+                      className={`chip shrink-0 ring-1 ${
+                        state.operators.includes(op.id)
+                          ? "bg-stone-900 text-white ring-stone-900"
+                          : "bg-white text-stone-700 ring-stone-300 hover:bg-stone-50"
+                      }`}
+                    >
+                      {op.label}
+                    </button>
+                  ))}
+                </div>
+              </details>
             </div>
           </div>
-
-          <details className="group mt-2 rounded-md bg-white ring-1 ring-stone-200">
-            <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-xs font-semibold text-stone-800 transition hover:bg-stone-50">
-              <span className="inline-flex min-w-0 items-center gap-2">
-                <Sliders size={13} className="text-stone-500" />
-                <span>Filters</span>
-                <span className="truncate text-stone-500">
-                  {advancedFilterCount ? `${advancedFilterCount} active` : "Types, amenities, operators"}
-                </span>
-              </span>
-              <span className="inline-flex shrink-0 items-center gap-2">
-                {advancedFilterCount > 0 && <span className="rounded-full bg-stone-50 px-1.5 py-0.5 text-[10px] text-stone-500 ring-1 ring-stone-200">{advancedFilterCount}</span>}
-                <ChevronDown size={14} className="text-stone-400 transition-transform group-open:rotate-180" />
-              </span>
-            </summary>
-            <div className="flex items-center gap-2 overflow-x-auto border-t border-stone-200 p-2 scrollbar-none">
-            {SITE_TYPES.map((t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => setState({
-                  site_types: toggle(state.site_types, t),
-                  equipment: "any",
-                  equipment_length_ft: null,
-                  page: 1,
-                })}
-                className={`chip shrink-0 ring-1 ${
-                  state.site_types.includes(t)
-                    ? "bg-forest-700 text-white ring-forest-700"
-                    : "bg-white text-stone-700 ring-stone-300 hover:bg-stone-50"
-                }`}
-              >
-                {t.toUpperCase()}
-              </button>
-            ))}
-            <span className="h-4 w-px shrink-0 bg-stone-300" />
-            {Object.entries(AMENITIES).slice(0, 6).map(([code, a]) => (
-              <button
-                key={code}
-                type="button"
-                onClick={() => setState({ amenities: toggle(state.amenities, code), page: 1 })}
-                className={`chip shrink-0 ring-1 ${
-                  state.amenities.includes(code)
-                    ? "bg-lake-700 text-white ring-lake-700"
-                    : "bg-white text-stone-700 ring-stone-300 hover:bg-stone-50"
-                }`}
-              >
-                {a.label}
-              </button>
-            ))}
-            <span className="h-4 w-px shrink-0 bg-stone-300" />
-            {OPERATOR_OPTIONS.map((op) => (
-              <button
-                key={op.id}
-                type="button"
-                onClick={() => setState({ operators: toggle(state.operators, op.id), page: 1 })}
-                className={`chip shrink-0 ring-1 ${
-                  state.operators.includes(op.id)
-                    ? "bg-stone-900 text-white ring-stone-900"
-                    : "bg-white text-stone-700 ring-stone-300 hover:bg-stone-50"
-                }`}
-              >
-                {op.label}
-              </button>
-            ))}
-            </div>
-          </details>
 
           <div className="mt-2 flex items-center justify-between gap-2 lg:hidden">
             <div className="text-xs text-stone-500">
