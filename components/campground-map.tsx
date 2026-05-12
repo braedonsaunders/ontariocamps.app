@@ -2,8 +2,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { CampMap, Site, EquipmentOption } from "@/lib/types";
-import { Minus, Plus, RotateCcw, Move, X, ExternalLink, Zap, Tent as TentIcon, Users, Tent, MapPin, CircleDot } from "lucide-react";
-import { legendTypeLabel } from "@/lib/legend-types";
+import { Minus, Plus, RotateCcw, Move, X, ExternalLink, Zap, Tent as TentIcon, Users, Tent, MapPin, CircleDot, Accessibility, Anchor, Bike, BookOpen, Bus, Church, CigaretteOff, Cross, Dog, DollarSign, DoorOpen, Droplet, Droplets, Dumbbell, Eye, Fish, Flag, Flame, Footprints, Heart, House, Info, Landmark, Lightbulb, Lock, Mountain, ParkingCircle, Phone, PlugZap, Radio, Recycle, Sailboat, Ship, ShoppingBag, ShowerHead, Snowflake, Store, TentTree, Theater, TreePine, Trophy, Umbrella, UtensilsCrossed, Volleyball, WashingMachine, Waves, Wifi, Wrench, type LucideIcon } from "lucide-react";
+import { legendTypeLabel, legendTypeIcon } from "@/lib/legend-types";
+
+const LEGEND_ICONS: Record<string, LucideIcon> = {
+  Accessibility, Anchor, Bike, BookOpen, Bus, Church, CigaretteOff, Cross, Dog, DollarSign, DoorOpen, Droplet, Droplets, Dumbbell, Eye, Fish, Flag, Flame, Footprints, Heart, House, Info, Landmark, Lightbulb, Lock, Mountain, ParkingCircle, Phone, PlugZap, Radio, Recycle, Sailboat, Ship, ShoppingBag, ShowerHead, Snowflake, Store, Tent, TentTree, Theater, TreePine, Trophy, Umbrella, UtensilsCrossed, Volleyball, WashingMachine, Waves, Wifi, Wrench,
+};
+
+function featureIcon(typeId: number): LucideIcon {
+  const name = legendTypeIcon(typeId);
+  return name ? (LEGEND_ICONS[name] ?? CircleDot) : CircleDot;
+}
 
 type SiteStatus = "available" | "reserved" | "closed" | "unknown";
 
@@ -241,8 +250,8 @@ export function CampgroundMap({
             <span className="hidden sm:inline-block h-3 w-px bg-stone-200" aria-hidden />
             {featureLegend.types.map(({ lit, count }) => (
               <span key={lit} className="inline-flex items-center gap-1 text-stone-500" title={`${legendTypeLabel(lit)} · ${count}`}>
-                <CircleDot size={10} className="text-stone-400" />
-                {legendTypeLabel(lit)} · {count}
+                 {(() => { const I = featureIcon(lit); return <I size={10} className="text-stone-400" />; })()}
+                 {legendTypeLabel(lit)} · {count}
               </span>
             ))}
             {featureLegend.accessCount > 0 && (
@@ -507,7 +516,7 @@ function PanZoomViewer({
                       boxShadow: `0 0 0 ${1 / transform.scale}px white, 0 ${1 / transform.scale}px ${2 / transform.scale}px rgba(0,0,0,0.15)`,
                     }}
                   >
-                    <CircleDot size={(inner * fGrow) * 0.7} style={{ color }} strokeWidth={2.5} />
+                    {(() => { const I = featureIcon(f.legendItemType); return <I size={(inner * fGrow) * 0.7} style={{ color }} strokeWidth={2.5} />; })()}
                   </span>
                 </button>
               );
@@ -603,7 +612,7 @@ function PanZoomViewer({
               if (f && f.kind === "legend") {
                 return (
                   <div className="absolute top-3 left-3 chip bg-white ring-1 ring-stone-200 text-stone-800 z-30 shadow-sm">
-                    <CircleDot size={10} className="text-stone-400" />
+                    {(() => { const I = featureIcon(f.legendItemType); return <I size={10} className="text-stone-400" />; })()}
                     {legendTypeLabel(f.legendItemType)}
                   </div>
                 );
@@ -636,7 +645,7 @@ function PanZoomViewer({
                   border: "2px solid rgb(" + f.r + "," + f.g + "," + f.b + ")",
                 }}
               >
-                <CircleDot size={14} style={{ color: `rgb(${f.r},${f.g},${f.b})` }} strokeWidth={2.5} />
+                {(() => { const I = featureIcon(f.legendItemType); return <I size={14} style={{ color: `rgb(${f.r},${f.g},${f.b})` }} strokeWidth={2.5} />; })()}
               </span>
               <div>
                 <div className="font-semibold text-stone-900 text-sm">{label}</div>
