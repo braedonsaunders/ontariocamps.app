@@ -491,7 +491,7 @@ export function OntarioMap({ parks }: { parks: Park[] }) {
         style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0 }}
       />
       <div className="absolute left-3 right-3 top-3 z-10 sm:left-4 sm:right-auto">
-        <div className="inline-flex max-w-full flex-wrap items-center gap-1.5 rounded-lg bg-white/95 p-1.5 text-xs shadow-lg shadow-stone-950/10 ring-1 ring-stone-200 backdrop-blur">
+        <div className="inline-flex max-w-full flex-wrap items-center gap-1.5 rounded-lg bg-stone-50/95 p-1.5 text-xs shadow-lg shadow-stone-950/10 ring-1 ring-stone-200 backdrop-blur">
           {CATEGORY_ORDER.map((category) => {
             const meta = CATEGORY_META[category];
             const Icon = meta.icon;
@@ -500,7 +500,9 @@ export function OntarioMap({ parks }: { parks: Park[] }) {
               <label
                 key={category}
                 className={`inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-md px-2.5 font-medium transition ${
-                  enabled ? "bg-stone-950 text-white shadow-sm" : "text-stone-600 hover:bg-stone-100 hover:text-stone-950"
+                  enabled
+                    ? "bg-white text-stone-900 shadow-sm ring-1 ring-stone-300"
+                    : "text-stone-500 hover:bg-white/80 hover:text-stone-900"
                 }`}
                 title={meta.label}
               >
@@ -517,11 +519,10 @@ export function OntarioMap({ parks }: { parks: Park[] }) {
                 />
                 <Icon
                   size={13}
-                  className={enabled ? "text-white" : ""}
                   fill={category === "provincial" ? "currentColor" : "none"}
                 />
                 <span>{meta.shortLabel}</span>
-                <span className={enabled ? "text-white/70" : "text-stone-400"}>
+                <span className={enabled ? "text-stone-500" : "text-stone-400"}>
                   {categoryCounts[category]}
                 </span>
               </label>
