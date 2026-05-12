@@ -94,7 +94,7 @@ async function main() {
       skipped++;
       continue;
     }
-    await sql`UPDATE parks SET hero_image_url = ${hero} WHERE id = ${p.id}`;
+    await sql`UPDATE parks SET hero_image_url = ${hero} WHERE id = ${p.id} AND (hero_image_url IS NULL OR hero_image_url ILIKE '%ontarioparks.ca%')`;
     updated += 1;
 
     if (i % 20 === 19 || i === parks.length - 1) {
