@@ -43,6 +43,8 @@ type Props = {
   equipmentOptions?: EquipmentOption[];
   /** Park slug, so the popover can deep-link to the site-detail page. */
   parkSlug?: string;
+  /** Opens the in-page site flyout without navigating away from the map. */
+  onOpenSiteDetails?: (siteId: string) => void;
   /** ID of the section tab to show first; defaults to the first map. */
   initialMapId?: string;
 };
@@ -95,6 +97,7 @@ export function CampgroundMap({
   operatorName,
   equipmentOptions,
   parkSlug,
+  onOpenSiteDetails,
   initialMapId,
 }: Props) {
   const [activeMapId, setActiveMapId] = useState<string>(
@@ -210,6 +213,7 @@ export function CampgroundMap({
         operatorName={operatorName}
         equipmentOptions={equipmentOptions}
         parkSlug={parkSlug}
+        onOpenSiteDetails={onOpenSiteDetails}
       />
       <div className="flex items-center gap-x-4 gap-y-1.5 px-4 py-2.5 border-t border-stone-100 text-xs text-stone-600 flex-wrap">
         <span className="inline-flex items-center gap-1.5">
@@ -277,6 +281,7 @@ function PanZoomViewer({
   operatorName,
   equipmentOptions,
   parkSlug,
+  onOpenSiteDetails,
 }: {
   campMap: CampMap;
   sites: SiteOnMap[];
@@ -284,6 +289,7 @@ function PanZoomViewer({
   operatorName?: string;
   equipmentOptions?: EquipmentOption[];
   parkSlug?: string;
+  onOpenSiteDetails?: (siteId: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   // Tracks a potential drag — only escalated to "actually dragging" once the
@@ -650,6 +656,7 @@ function PanZoomViewer({
           operatorName={operatorName}
           equipmentOptions={equipmentOptions}
           parkSlug={parkSlug}
+          onOpenSiteDetails={onOpenSiteDetails}
           onClose={() => setSelected(null)}
         />
       )}
@@ -664,6 +671,7 @@ function SitePopover({
   operatorName,
   equipmentOptions,
   parkSlug,
+  onOpenSiteDetails,
   onClose,
 }: {
   site: SiteOnMap;
@@ -672,6 +680,7 @@ function SitePopover({
   operatorName?: string;
   equipmentOptions?: EquipmentOption[];
   parkSlug?: string;
+  onOpenSiteDetails?: (siteId: string) => void;
   onClose: () => void;
 }) {
   const c = dotColor(site.status);
@@ -803,14 +812,22 @@ function SitePopover({
       </div>
 
       <div className="flex gap-2 px-3 pb-3 pt-0">
-        {parkSlug && (
+        {onOpenSiteDetails ? (
+          <button
+            type="button"
+            onClick={() => onOpenSiteDetails(site.site.id)}
+            className="btn-secondary flex-1 text-xs justify-center"
+          >
+            Details
+          </button>
+        ) : parkSlug ? (
           <Link
             href={`/park/${parkSlug}/site/${site.site.vendor_site_id}`}
             className="btn-secondary flex-1 text-xs justify-center"
           >
             Details
           </Link>
-        )}
+        ) : null}
         {bookingUrl && (
           <a
             href={bookingUrl}

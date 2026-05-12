@@ -29,6 +29,8 @@ type Props = {
   vendorSiteIds?: Record<string, string>;
   /** The park's pre-built vendor URL (already includes resourceLocationId etc). */
   vendorUrl?: string;
+  /** Opens a site detail flyout in the parent park page. */
+  onOpenSiteDetails?: (siteId: string) => void;
 };
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -54,7 +56,7 @@ function fmt(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-export function AvailabilityCalendar({ rows, totalSites, lastCheckedAt, vendorSiteIds, vendorUrl }: Props) {
+export function AvailabilityCalendar({ rows, totalSites, lastCheckedAt, vendorSiteIds, vendorUrl, onOpenSiteDetails }: Props) {
   // Compose the operator booking URL for one (site, night) cell client-side.
   // (Server-rendered components can't pass functions across the boundary.)
   const buildBookingUrl = (siteId: string, night: string): string | null => {
@@ -252,7 +254,17 @@ export function AvailabilityCalendar({ rows, totalSites, lastCheckedAt, vendorSi
                 <tr key={row.site.id} className="border-t border-stone-100 hover:bg-stone-50/60">
                   <td className="py-1.5 px-3 sticky left-0 bg-white border-r border-stone-200 whitespace-nowrap">
                     <div className="flex items-center gap-2">
-                      <span className="text-stone-900 font-medium tabular-nums">{row.site.name}</span>
+                      {onOpenSiteDetails ? (
+                        <button
+                          type="button"
+                          onClick={() => onOpenSiteDetails(row.site.id)}
+                          className="text-stone-900 font-medium tabular-nums hover:text-forest-700 transition-colors"
+                        >
+                          {row.site.name}
+                        </button>
+                      ) : (
+                        <span className="text-stone-900 font-medium tabular-nums">{row.site.name}</span>
+                      )}
                       <span className="text-[10px] uppercase text-stone-400">{row.site.site_type}</span>
                       {row.site.has_electric && (
                         <span className="text-[10px] text-amber-600 font-medium">⚡</span>
