@@ -14,6 +14,7 @@ import { AMENITIES, type SearchResponse } from "@/lib/types";
 import { ResultCard } from "@/components/result-card";
 import { ParkMap, type ParkSummary } from "@/components/park-map";
 import { Loader2, MapPin, Calendar, Sliders, Search } from "lucide-react";
+import { SEARCH_EQUIPMENT_OPTIONS, searchEquipmentById } from "@/lib/search-equipment";
 
 const SITE_TYPES = ["tent", "rv", "cabin", "yurt"] as const;
 const OPERATOR_OPTIONS: { id: string; label: string }[] = [
@@ -30,6 +31,12 @@ const OPERATOR_OPTIONS: { id: string; label: string }[] = [
   { id: "gtc_catfish", label: "Catfish Creek CA" },
 ];
 const SORT_OPTIONS = ["distance", "freshness", "name", "price"] as const;
+
+type GeocodeSuggestion = {
+  label: string;
+  lat: number;
+  lng: number;
+};
 
 /** Match a typed location label against PRESET_LOCATIONS — case-insensitive
  *  exact-or-prefix match on either the key or the display label. Returns the
@@ -50,6 +57,15 @@ function resolveNear(input: string): { lat: number; lng: number; label: string }
   return null;
 }
 
+async function geocodeNear(input: string): Promise<GeocodeSuggestion | null> {
+  const query = input.trim();
+  if (query.length < 2) return null;
+  const response = await fetch(`/api/geocode?q=${encodeURIComponent(query)}`);
+  if (!response.ok) return null;
+  const data = (await response.json()) as { suggestions?: GeocodeSuggestion[] };
+  return data.suggestions?.[0] ?? null;
+}
+
 export function SearchPage() {
   const [state, setState] = useQueryStates({
     loc: parseAsString.withDefault(""),
@@ -61,6 +77,8 @@ export function SearchPage() {
     flexible: parseAsBoolean.withDefault(false),
     min_nights: parseAsInteger,
     party_size: parseAsInteger.withDefault(2),
+    equipment: parseAsString.withDefault("any"),
+    equipment_length_ft: parseAsInteger,
     site_types: parseAsArrayOf(parseAsString).withDefault([]),
     amenities: parseAsArrayOf(parseAsString).withDefault([]),
     operators: parseAsArrayOf(parseAsString).withDefault([]),
@@ -79,18 +97,21 @@ export function SearchPage() {
 
   const [data, setData] = useState<SearchResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [resolvingNear, setResolvingNear] = useState(false);
   const [allParks, setAllParks] = useState<ParkSummary[]>([]);
   // `searchKey` bumps every time the user explicitly hits Search.
   // The fetch effect depends on it, NOT on filter state — so changing a chip
   // doesn't auto-fire a query.
-  //
-  // We start at 1 only when the page is opened with at least one meaningful
-  // URL param (so a shareable /search?lat=…&start_date=… still loads results).
-  const [searchKey, setSearchKey] = useState<number>(() => {
-    if (typeof window === "undefined") return 0;
+  const [searchKey, setSearchKey] = useState(0);
+
+  // Kick off shareable /search URLs after hydration. A useState initializer
+  // would see no `window` during the server render and miss these params.
+  useEffect(() => {
     const sp = new URLSearchParams(window.location.search);
-    return sp.has("lat") || sp.has("loc") || sp.has("start_date") || sp.has("end_date") ? 1 : 0;
-  });
+    if (sp.has("lat") || sp.has("loc") || sp.has("start_date") || sp.has("end_date") || sp.has("equipment")) {
+      setSearchKey(1);
+    }
+  }, []);
 
   // Fetch the full parks rollup once on mount. Used to render every park on
   // the map regardless of the current search filters.
@@ -113,18 +134,35 @@ export function SearchPage() {
     return preset ? { lat: preset.lat, lng: preset.lng } : null;
   }, [state.lat, state.lng, state.loc]);
 
-  function runSearch() {
+  async function runSearch() {
     // Commit the typed "near" string into state. If we can resolve it to a
     // preset, store the canonical preset key + clear lat/lng. Otherwise just
     // store the raw typed value for the URL.
-    const preset = resolveNear(nearInput);
+    const query = nearInput.trim();
+    const preset = resolveNear(query);
     if (preset) {
       // Find the key that maps to this preset
       const key = Object.entries(PRESET_LOCATIONS).find(([, p]) => p.label === preset.label)?.[0]
-        ?? nearInput.trim().toLowerCase();
+        ?? query.toLowerCase();
       setState({ loc: key, lat: null, lng: null });
+    } else if (query) {
+      setResolvingNear(true);
+      let place: GeocodeSuggestion | null = null;
+      try {
+        place = await geocodeNear(query);
+      } catch {
+        place = null;
+      } finally {
+        setResolvingNear(false);
+      }
+      if (place) {
+        setNearInput(place.label);
+        setState({ loc: place.label, lat: place.lat, lng: place.lng });
+      } else {
+        setState({ loc: query, lat: null, lng: null });
+      }
     } else {
-      setState({ loc: nearInput.trim() });
+      setState({ loc: "", lat: null, lng: null });
     }
     setSearchKey((k) => k + 1);
   }
@@ -144,6 +182,8 @@ export function SearchPage() {
     if (state.flexible) sp.set("flexible", "true");
     if (state.min_nights) sp.set("min_nights", String(state.min_nights));
     if (state.party_size) sp.set("party_size", String(state.party_size));
+    if (state.equipment && state.equipment !== "any") sp.set("equipment", state.equipment);
+    if (state.equipment_length_ft) sp.set("equipment_length_ft", String(state.equipment_length_ft));
     if (state.site_types.length) sp.set("site_types", state.site_types.join(","));
     if (state.amenities.length) sp.set("amenities", state.amenities.join(","));
     if (state.operators.length) sp.set("operators", state.operators.join(","));
@@ -167,6 +207,15 @@ export function SearchPage() {
     return arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v];
   }
 
+  function applyEquipment(id: string) {
+    const option = searchEquipmentById(id);
+    setState({
+      equipment: option.id,
+      equipment_length_ft: option.equipmentLengthFt ?? null,
+      site_types: option.siteTypes,
+    });
+  }
+
   // Slugs of parks that have at least one site in the current search results.
   const matchedSlugs = useMemo<Set<string> | null>(() => {
     if (!data) return null;
@@ -175,18 +224,15 @@ export function SearchPage() {
     return s;
   }, [data]);
 
-  const presetSuggestions = Object.values(PRESET_LOCATIONS).map((p) => p.label);
-
   return (
     <div className="bg-stone-50">
       <div className="border-b border-stone-200 bg-white">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-3 grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-[1.4fr_1fr_1fr_0.8fr_0.8fr_auto]">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-3 grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-[minmax(12rem,1.25fr)_0.85fr_0.85fr_0.95fr_0.7fr_0.75fr_auto]">
           <div className="flex flex-col col-span-2 sm:col-span-1">
             <label className="label flex items-center gap-1.5"><MapPin size={12} /> Near</label>
             <input
               type="text"
               className="field"
-              list="near-presets"
               placeholder="City, region, or town"
               value={nearInput}
               onChange={(e) => setNearInput(e.target.value)}
@@ -197,11 +243,6 @@ export function SearchPage() {
                 }
               }}
             />
-            <datalist id="near-presets">
-              {presetSuggestions.map((label) => (
-                <option key={label} value={label} />
-              ))}
-            </datalist>
           </div>
           <div className="flex flex-col">
             <label className="label flex items-center gap-1.5"><Calendar size={12} /> Check-in</label>
@@ -220,6 +261,18 @@ export function SearchPage() {
               value={state.end_date}
               onChange={(e) => setState({ end_date: e.target.value })}
             />
+          </div>
+          <div className="flex flex-col">
+            <label className="label">Equipment</label>
+            <select
+              className="field"
+              value={state.equipment}
+              onChange={(e) => applyEquipment(e.target.value)}
+            >
+              {SEARCH_EQUIPMENT_OPTIONS.map((option) => (
+                <option key={option.id} value={option.id}>{option.label}</option>
+              ))}
+            </select>
           </div>
           <div className="flex flex-col">
             <label className="label">Within (km)</label>
@@ -251,9 +304,9 @@ export function SearchPage() {
             <button
               className="btn-primary justify-center"
               onClick={runSearch}
-              disabled={loading}
+              disabled={loading || resolvingNear}
             >
-              {loading ? (
+              {loading || resolvingNear ? (
                 <>
                   <Loader2 size={14} className="animate-spin" /> Searching…
                 </>
@@ -281,7 +334,11 @@ export function SearchPage() {
           {SITE_TYPES.map((t) => (
             <button
               key={t}
-              onClick={() => setState({ site_types: toggle(state.site_types, t) })}
+              onClick={() => setState({
+                site_types: toggle(state.site_types, t),
+                equipment: "any",
+                equipment_length_ft: null,
+              })}
               className={`chip ring-1 ${
                 state.site_types.includes(t)
                   ? "bg-forest-700 text-white ring-forest-700"

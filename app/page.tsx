@@ -58,7 +58,7 @@ export default async function HomePage() {
 
   return (
     <div>
-      <section className="relative isolate overflow-hidden bg-forest-950 text-white">
+      <section className="relative isolate bg-forest-950 text-white">
         <HomeHeroBackground sceneId={heroSceneId} rotate />
         <div className="relative z-10 mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-20 sm:py-28">
           <MotionHero className="max-w-3xl">
