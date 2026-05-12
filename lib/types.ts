@@ -237,6 +237,7 @@ export type AvailabilityRow = {
 };
 
 export type SearchStayMode = "same_site" | "same_park" | "anywhere";
+export type SearchSortMode = "distance" | "route" | "moves" | "freshness" | "name" | "availability" | "price";
 
 export type SearchResultSite = {
   id: string;
@@ -280,6 +281,8 @@ export type SearchResult = SearchResultSegment & {
     move_count: number;
     park_count: number;
     segment_count: number;
+    route_distance_km?: number;
+    end_distance_km?: number;
     segments: SearchResultSegment[];
   };
 };

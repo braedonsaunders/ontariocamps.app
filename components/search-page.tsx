@@ -10,17 +10,18 @@ import {
   useQueryStates,
 } from "nuqs";
 import { PRESET_LOCATIONS } from "@/lib/locations";
-import { AMENITIES, type SearchResponse } from "@/lib/types";
+import { AMENITIES, type SearchResponse, type SearchResult } from "@/lib/types";
 import { ResultCard } from "@/components/result-card";
 import { ParkMap, type ParkSummary } from "@/components/park-map";
 import type { LucideIcon } from "lucide-react";
 import {
   Calendar,
+  ChevronRight,
   Home,
   List,
   Loader2,
   LocateFixed,
-  Map,
+  Map as MapIcon,
   MapPin,
   Navigation,
   Route,
@@ -31,10 +32,12 @@ import {
   Truck,
 } from "lucide-react";
 import { SEARCH_EQUIPMENT_OPTIONS, searchEquipmentById } from "@/lib/search-equipment";
+import { SiteDetailFlyout, type SiteFlyoutDetails } from "@/components/site-detail-flyout";
 
 const SITE_TYPES = ["tent", "rv", "cabin", "yurt"] as const;
 const STAY_MODES = ["same_site", "same_park", "anywhere"] as const;
 const VIEW_MODES = ["list", "map"] as const;
+const GROUP_OPTIONS = ["park", "campground", "operator", "none"] as const;
 const OPERATOR_OPTIONS: { id: string; label: string }[] = [
   { id: "ontario_parks", label: "Ontario Parks" },
   { id: "parks_canada", label: "Parks Canada" },
@@ -48,7 +51,24 @@ const OPERATOR_OPTIONS: { id: string; label: string }[] = [
   { id: "gtc_maitland", label: "Maitland Valley CA" },
   { id: "gtc_catfish", label: "Catfish Creek CA" },
 ];
-const SORT_OPTIONS = ["distance", "freshness", "name", "price"] as const;
+const SORT_OPTIONS = ["distance", "route", "moves", "availability", "freshness", "name", "price"] as const;
+
+const SORT_LABELS: Record<(typeof SORT_OPTIONS)[number], string> = {
+  distance: "Distance from you",
+  route: "Route fit",
+  moves: "Fewest moves",
+  availability: "Open nights",
+  freshness: "Freshness",
+  name: "Park name",
+  price: "Price",
+};
+
+const GROUP_LABELS: Record<(typeof GROUP_OPTIONS)[number], string> = {
+  park: "Park",
+  campground: "Campground",
+  operator: "Operator",
+  none: "No grouping",
+};
 
 const STAY_MODE_OPTIONS: {
   id: (typeof STAY_MODES)[number];
@@ -56,8 +76,8 @@ const STAY_MODE_OPTIONS: {
   detail: string;
 }[] = [
   { id: "same_site", label: "Same site", detail: "One campsite for the full stay" },
-  { id: "same_park", label: "Same park", detail: "Move sites without changing parks" },
-  { id: "anywhere", label: "Nightly route", detail: "Move across parks by night" },
+  { id: "same_park", label: "Same park", detail: "Change sites without changing parks" },
+  { id: "anywhere", label: "Nightly route", detail: "Change parks between nights" },
 ];
 
 const EQUIPMENT_ICONS: Record<string, LucideIcon> = {
@@ -115,11 +135,64 @@ function stayModeCopy(mode: (typeof STAY_MODES)[number]) {
   return STAY_MODE_OPTIONS.find((option) => option.id === mode) ?? STAY_MODE_OPTIONS[0];
 }
 
+function resultSegments(result: SearchResult) {
+  return result.stay?.segments ?? [result];
+}
+
+function groupResults(results: SearchResult[], groupBy: (typeof GROUP_OPTIONS)[number]) {
+  const groups = new Map<
+    string,
+    { key: string; label: string; detail: string; results: SearchResult[]; distance?: number }
+  >();
+
+  for (const result of results) {
+    let key = "all";
+    let label = "All results";
+    let detail = "Ungrouped campsite matches";
+    if (groupBy === "park") {
+      const parks = Array.from(new Set(resultSegments(result).map((segment) => segment.park.name)));
+      key = result.park.slug;
+      label = result.park.name;
+      detail = parks.length > 1 ? `${parks.length} parks on route` : `${result.park.operator} · ${result.campground.name}`;
+    } else if (groupBy === "campground") {
+      key = result.campground.id;
+      label = result.campground.name;
+      detail = `${result.park.name} · ${result.park.operator}`;
+    } else if (groupBy === "operator") {
+      key = result.park.operator_id;
+      label = result.park.operator;
+      detail = "Operator network";
+    }
+
+    const existing = groups.get(key);
+    if (existing) {
+      existing.results.push(result);
+      if (result.park.distance_km != null) existing.distance = Math.min(existing.distance ?? Infinity, result.park.distance_km);
+    } else {
+      groups.set(key, {
+        key,
+        label,
+        detail,
+        results: [result],
+        distance: result.park.distance_km,
+      });
+    }
+  }
+
+  return Array.from(groups.values()).sort((a, b) => {
+    if (a.distance != null && b.distance != null && a.distance !== b.distance) return a.distance - b.distance;
+    return a.label.localeCompare(b.label);
+  });
+}
+
 export function SearchPage() {
   const [state, setState] = useQueryStates({
     loc: parseAsString.withDefault(""),
     lat: parseAsFloat,
     lng: parseAsFloat,
+    end_loc: parseAsString.withDefault(""),
+    end_lat: parseAsFloat,
+    end_lng: parseAsFloat,
     radius_km: parseAsInteger.withDefault(150),
     start_date: parseAsString.withDefault(""),
     end_date: parseAsString.withDefault(""),
@@ -133,6 +206,7 @@ export function SearchPage() {
     operators: parseAsArrayOf(parseAsString).withDefault([]),
     stay_mode: parseAsStringLiteral(STAY_MODES).withDefault("same_site"),
     view: parseAsStringLiteral(VIEW_MODES).withDefault("list"),
+    group_by: parseAsStringLiteral(GROUP_OPTIONS).withDefault("park"),
     sort: parseAsStringLiteral(SORT_OPTIONS).withDefault("distance"),
   });
 
@@ -145,11 +219,14 @@ export function SearchPage() {
     }
     return "";
   });
+  const [endInput, setEndInput] = useState<string>(() => state.end_loc);
 
   const [data, setData] = useState<SearchResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [resolvingNear, setResolvingNear] = useState(false);
   const [locationMessage, setLocationMessage] = useState<string | null>(null);
+  const [selectedSiteDetails, setSelectedSiteDetails] = useState<SiteFlyoutDetails | null>(null);
+  const [loadingSiteId, setLoadingSiteId] = useState<string | null>(null);
   const [allParks, setAllParks] = useState<ParkSummary[]>([]);
   // `searchKey` bumps every time the user explicitly hits Search.
   // The fetch effect depends on it, NOT on filter state — so changing a chip
@@ -165,6 +242,8 @@ export function SearchPage() {
       sp.has("loc") ||
       sp.has("start_date") ||
       sp.has("end_date") ||
+      sp.has("end_lat") ||
+      sp.has("end_loc") ||
       sp.has("equipment") ||
       sp.has("stay_mode")
     ) {
@@ -194,37 +273,91 @@ export function SearchPage() {
   }, [state.lat, state.lng, state.loc]);
 
   async function runSearch() {
-    // Commit the typed "near" string into state. If we can resolve it to a
-    // preset, store the canonical preset key + clear lat/lng. Otherwise just
-    // store the raw typed value for the URL.
+    // Commit typed place strings into state only when the user runs a search.
     const query = nearInput.trim();
+    const nextState: Partial<typeof state> = {};
     setLocationMessage(null);
-    const preset = resolveNear(query);
-    if (preset) {
-      // Find the key that maps to this preset
-      const key = Object.entries(PRESET_LOCATIONS).find(([, p]) => p.label === preset.label)?.[0]
-        ?? query.toLowerCase();
-      await setState({ loc: key, lat: null, lng: null });
+
+    if (query.toLowerCase() === "current location" && state.lat != null && state.lng != null) {
+      nextState.loc = "Current location";
     } else if (query) {
-      setResolvingNear(true);
-      let place: GeocodeSuggestion | null = null;
-      try {
-        place = await geocodeNear(query);
-      } catch {
-        place = null;
-      } finally {
-        setResolvingNear(false);
-      }
-      if (place) {
-        setNearInput(place.label);
-        await setState({ loc: place.label, lat: place.lat, lng: place.lng });
+      const preset = resolveNear(query);
+      if (preset) {
+        const key = Object.entries(PRESET_LOCATIONS).find(([, p]) => p.label === preset.label)?.[0]
+          ?? query.toLowerCase();
+        nextState.loc = key;
+        nextState.lat = null;
+        nextState.lng = null;
       } else {
-        await setState({ loc: query, lat: null, lng: null });
-        setLocationMessage("Showing Ontario-wide results until this place can be resolved.");
+        setResolvingNear(true);
+        let place: GeocodeSuggestion | null = null;
+        try {
+          place = await geocodeNear(query);
+        } catch {
+          place = null;
+        } finally {
+          setResolvingNear(false);
+        }
+        if (place) {
+          setNearInput(place.label);
+          nextState.loc = place.label;
+          nextState.lat = place.lat;
+          nextState.lng = place.lng;
+        } else {
+          nextState.loc = query;
+          nextState.lat = null;
+          nextState.lng = null;
+          setLocationMessage("Showing Ontario-wide results until this place can be resolved.");
+        }
       }
     } else {
-      await setState({ loc: "", lat: null, lng: null });
+      nextState.loc = "";
+      nextState.lat = null;
+      nextState.lng = null;
     }
+
+    if (state.stay_mode === "anywhere") {
+      const endQuery = endInput.trim();
+      if (endQuery) {
+        const endPreset = resolveNear(endQuery);
+        if (endPreset) {
+          nextState.end_loc = endPreset.label;
+          nextState.end_lat = endPreset.lat;
+          nextState.end_lng = endPreset.lng;
+          setEndInput(endPreset.label);
+        } else {
+          setResolvingNear(true);
+          let endPlace: GeocodeSuggestion | null = null;
+          try {
+            endPlace = await geocodeNear(endQuery);
+          } catch {
+            endPlace = null;
+          } finally {
+            setResolvingNear(false);
+          }
+          if (endPlace) {
+            nextState.end_loc = endPlace.label;
+            nextState.end_lat = endPlace.lat;
+            nextState.end_lng = endPlace.lng;
+            setEndInput(endPlace.label);
+          } else {
+            nextState.end_loc = endQuery;
+            nextState.end_lat = null;
+            nextState.end_lng = null;
+            setLocationMessage("End point was not resolved; ranking routes from the starting location only.");
+          }
+        }
+      } else {
+        nextState.end_loc = "";
+        nextState.end_lat = null;
+        nextState.end_lng = null;
+      }
+    }
+
+    if (state.stay_mode === "anywhere" && (nextState.end_lat != null || state.end_lat != null) && state.sort === "distance") {
+      nextState.sort = "route";
+    }
+    await setState(nextState);
     setSearchKey((k) => k + 1);
   }
 
@@ -262,6 +395,10 @@ export function SearchPage() {
     if (effectiveAnchor) {
       sp.set("lat", String(effectiveAnchor.lat));
       sp.set("lng", String(effectiveAnchor.lng));
+    }
+    if (state.stay_mode === "anywhere" && state.end_lat != null && state.end_lng != null) {
+      sp.set("end_lat", String(state.end_lat));
+      sp.set("end_lng", String(state.end_lng));
     }
     sp.set("radius_km", String(state.radius_km));
     if (state.start_date) sp.set("start_date", state.start_date);
@@ -313,6 +450,25 @@ export function SearchPage() {
     });
   }
 
+  async function openSiteDetails(siteId: string, bookingUrl?: string) {
+    setLoadingSiteId(siteId);
+    setLocationMessage(null);
+    try {
+      const response = await fetch(`/api/sites/${encodeURIComponent(siteId)}/details`);
+      if (!response.ok) throw new Error("Failed to load site details");
+      const payload = (await response.json()) as { details?: SiteFlyoutDetails };
+      if (!payload.details) throw new Error("Missing site details");
+      setSelectedSiteDetails({
+        ...payload.details,
+        bookingUrl: bookingUrl ?? payload.details.bookingUrl,
+      });
+    } catch {
+      setLocationMessage("Site details could not be opened. The park link still works.");
+    } finally {
+      setLoadingSiteId(null);
+    }
+  }
+
   // Slugs of parks that have at least one site in the current search results.
   const matchedSlugs = useMemo<Set<string> | null>(() => {
     if (!data) return null;
@@ -333,6 +489,11 @@ export function SearchPage() {
     state.operators.length +
     (state.flexible ? 1 : 0);
   const resultWord = state.stay_mode === "same_site" ? "sites" : "routes";
+  const groupedResults = useMemo(
+    () => (data ? groupResults(data.results, state.group_by) : []),
+    [data, state.group_by],
+  );
+  const hasRouteEndpoint = state.stay_mode === "anywhere" && state.end_lat != null && state.end_lng != null;
 
   return (
     <div className="flex h-[calc(100dvh-3.5rem)] min-h-[42rem] flex-col bg-stone-50">
@@ -433,10 +594,9 @@ export function SearchPage() {
                   value={state.sort}
                   onChange={(e) => setState({ sort: e.target.value as typeof state.sort })}
                 >
-                  <option value="distance">Distance</option>
-                  <option value="freshness">Freshness</option>
-                  <option value="price">Price</option>
-                  <option value="name">Park name</option>
+                  {SORT_OPTIONS.map((option) => (
+                    <option key={option} value={option}>{SORT_LABELS[option]}</option>
+                  ))}
                 </select>
               </div>
 
@@ -485,6 +645,30 @@ export function SearchPage() {
               </div>
 
               <div className="flex flex-wrap items-center gap-1.5 rounded-md bg-stone-50 p-1.5 ring-1 ring-stone-200">
+                {state.stay_mode === "anywhere" && (
+                  <label className="inline-flex h-8 min-w-[12rem] flex-1 items-center gap-1.5 rounded-md bg-white px-2 text-xs font-semibold text-stone-700 ring-1 ring-stone-200">
+                    <MapPin size={12} className="text-stone-400" />
+                    <input
+                      type="text"
+                      className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-stone-400"
+                      placeholder="End near (optional)"
+                      value={endInput}
+                      onChange={(e) => setEndInput(e.target.value)}
+                    />
+                  </label>
+                )}
+                <label className="inline-flex h-8 items-center gap-1.5 rounded-md bg-white px-2 text-xs font-semibold text-stone-700 ring-1 ring-stone-200">
+                  <span>Group</span>
+                  <select
+                    className="bg-transparent text-right outline-none"
+                    value={state.group_by}
+                    onChange={(e) => setState({ group_by: e.target.value as typeof state.group_by })}
+                  >
+                    {GROUP_OPTIONS.map((option) => (
+                      <option key={option} value={option}>{GROUP_LABELS[option]}</option>
+                    ))}
+                  </select>
+                </label>
                 <button
                   type="button"
                   onClick={() => setFlexibleDates(!state.flexible)}
@@ -581,7 +765,7 @@ export function SearchPage() {
             </div>
             <div className="inline-flex rounded-md bg-stone-100 p-1 ring-1 ring-stone-200">
               {VIEW_MODES.map((mode) => {
-                const Icon = mode === "list" ? List : Map;
+                const Icon = mode === "list" ? List : MapIcon;
                 return (
                   <button
                     key={mode}
@@ -622,6 +806,7 @@ export function SearchPage() {
                     {nearInput.trim() || "Ontario"}
                     {dateWindowNights ? ` · ${dateWindowNights} nights` : ""}
                     {selectedEquipment.id !== "any" ? ` · ${selectedEquipment.shortLabel}` : ""}
+                    {hasRouteEndpoint ? ` · ends near ${state.end_loc || endInput}` : ""}
                   </div>
                 </div>
                 <div className="shrink-0 text-right text-sm text-stone-600">
@@ -659,11 +844,32 @@ export function SearchPage() {
                   Type a location, choose dates and equipment, then search. Results land here with map context beside them.
                 </div>
               )}
-              {data?.results.map((r, index) => (
-                <ResultCard
-                  key={`${r.site.id}-${r.availability.nights.join("-")}-${r.stay?.mode ?? "single"}-${index}`}
-                  result={r}
-                />
+              {groupedResults.map((group) => (
+                <details key={group.key} open className="group overflow-hidden rounded-lg bg-stone-50 ring-1 ring-stone-200">
+                  <summary className="flex cursor-pointer list-none items-center gap-3 px-3 py-2.5 transition hover:bg-white">
+                    <ChevronRight size={14} className="shrink-0 text-stone-400 transition-transform group-open:rotate-90" />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-semibold text-stone-950">{group.label}</div>
+                      <div className="truncate text-xs text-stone-500">
+                        {group.detail}
+                        {group.distance != null ? ` · ${group.distance.toFixed(0)} km away` : ""}
+                      </div>
+                    </div>
+                    <span className="rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-stone-600 ring-1 ring-stone-200">
+                      {group.results.length}
+                    </span>
+                  </summary>
+                  <div className="space-y-2 border-t border-stone-200 p-2">
+                    {group.results.map((r, index) => (
+                      <ResultCard
+                        key={`${r.site.id}-${r.availability.nights.join("-")}-${r.stay?.mode ?? "single"}-${index}`}
+                        result={r}
+                        onOpenSiteDetails={openSiteDetails}
+                        loadingSiteId={loadingSiteId}
+                      />
+                    ))}
+                  </div>
+                </details>
               ))}
             </div>
           </section>
@@ -682,6 +888,11 @@ export function SearchPage() {
           </section>
         </div>
       </div>
+
+      <SiteDetailFlyout
+        details={selectedSiteDetails}
+        onClose={() => setSelectedSiteDetails(null)}
+      />
     </div>
   );
 }

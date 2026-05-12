@@ -15,6 +15,7 @@ import type {
   SearchResultPark,
   SearchResultSegment,
   SearchResultSite,
+  SearchSortMode,
   SearchStayMode,
   SitePhoto,
   SiteType,
@@ -27,6 +28,8 @@ export { PRESET_LOCATIONS };
 export type SearchParams = {
   lat?: number;
   lng?: number;
+  end_lat?: number;
+  end_lng?: number;
   radius_km?: number;
   start_date?: string;
   end_date?: string;
@@ -40,7 +43,7 @@ export type SearchParams = {
   stay_mode?: SearchStayMode;
   limit?: number;
   offset?: number;
-  sort?: "distance" | "freshness" | "name" | "price";
+  sort?: SearchSortMode;
 };
 
 const DEFAULT_LIMIT = 30;
@@ -107,9 +110,25 @@ function distinctCount<T>(values: T[]): number {
 
 function stayLabel(mode: SearchStayMode, moveCount: number, parkCount: number): string {
   if (mode === "same_site") return "Same site";
-  if (mode === "same_park") return moveCount > 0 ? `Move sites ${moveCount}x` : "Same park, one site";
+  if (mode === "same_park") return `${moveCount + 1} sites in park`;
   if (parkCount > 1) return `${parkCount} parks · ${moveCount} moves`;
   return moveCount > 0 ? `Move sites ${moveCount}x` : "One-site route";
+}
+
+function haversineKm(
+  a: { lat: number; lng: number },
+  b: { lat: number; lng: number },
+): number {
+  const toRad = (degrees: number) => (degrees * Math.PI) / 180;
+  const earthKm = 6371;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 2 * earthKm * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
 function prepareRow(r: SearchRow, params: SearchParams): PreparedRow {
@@ -210,9 +229,18 @@ function sortCandidates(a: PreparedRow, b: PreparedRow, previous?: PreparedRow |
   return `${a.park.name} ${a.site.name}`.localeCompare(`${b.park.name} ${b.site.name}`);
 }
 
-function buildItinerary(rows: PreparedRow[], dates: string[], params: SearchParams, mode: SearchStayMode, seed?: PreparedRow) {
+function buildItinerary(
+  rows: PreparedRow[],
+  dates: string[],
+  params: SearchParams,
+  mode: SearchStayMode,
+  seed?: PreparedRow,
+  options: { forceMove?: boolean; forceParkMove?: boolean } = {},
+) {
   const chosen: Array<{ row: PreparedRow; night: string }> = [];
   let previous: PreparedRow | null = seed ?? null;
+  let moved = false;
+  let changedPark = false;
 
   for (const night of dates) {
     const candidates = rows
@@ -224,8 +252,17 @@ function buildItinerary(rows: PreparedRow[], dates: string[], params: SearchPara
         }
         return sortCandidates(a, b, previous);
       });
-    const next = candidates[0];
+    let next = candidates[0];
+    if (chosen.length > 0 && previous && options.forceMove && !moved) {
+      const forcedParkMove = options.forceParkMove
+        ? candidates.find((row) => row.park.slug !== previous!.park.slug)
+        : undefined;
+      const forcedSiteMove = candidates.find((row) => row.site.id !== previous!.site.id);
+      next = forcedParkMove ?? forcedSiteMove ?? candidates[0];
+    }
     if (!next) return null;
+    if (previous && next.site.id !== previous.site.id) moved = true;
+    if (previous && next.park.slug !== previous.park.slug) changedPark = true;
     chosen.push({ row: next, night });
     previous = next;
   }
@@ -244,6 +281,20 @@ function buildItinerary(rows: PreparedRow[], dates: string[], params: SearchPara
   if (!first) return null;
   const parkCount = distinctCount(segments.map((segment) => segment.park.slug));
   const moveCount = Math.max(0, segments.length - 1);
+  if (options.forceMove && moveCount === 0) return null;
+  if (options.forceParkMove && !changedPark) return null;
+
+  const routeHopKm = segments.reduce((sum, segment, index) => {
+    const previousSegment = segments[index - 1];
+    if (!previousSegment) return sum;
+    return sum + haversineKm(previousSegment.park.location, segment.park.location);
+  }, 0);
+  const endDistanceKm =
+    params.end_lat != null && params.end_lng != null
+      ? haversineKm(segments[segments.length - 1].park.location, { lat: params.end_lat, lng: params.end_lng })
+      : undefined;
+  const routeDistanceKm = (first.park.distance_km ?? 0) + routeHopKm + (endDistanceKm ?? 0);
+
   return {
     ...first,
     availability: {
@@ -259,6 +310,8 @@ function buildItinerary(rows: PreparedRow[], dates: string[], params: SearchPara
       move_count: moveCount,
       park_count: parkCount,
       segment_count: segments.length,
+      route_distance_km: Math.round(routeDistanceKm * 10) / 10,
+      end_distance_km: endDistanceKm != null ? Math.round(endDistanceKm * 10) / 10 : undefined,
       segments,
     },
   } satisfies SearchResult;
@@ -386,7 +439,7 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
     for (const parkRows of byPark.values()) {
       const dates = chooseDates(parkRows, wantDates, flexible, minNights);
       if (!dates) continue;
-      const itinerary = buildItinerary(parkRows, dates, params, "same_park");
+      const itinerary = buildItinerary(parkRows, dates, params, "same_park", undefined, { forceMove: true });
       if (itinerary) results.push(itinerary);
     }
   } else {
@@ -398,7 +451,10 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
         .slice(0, 40);
       const seen = new Set<string>();
       for (const seed of firstNightRows) {
-        const itinerary = buildItinerary(preparedRows, dates, params, "anywhere", seed);
+        const itinerary = buildItinerary(preparedRows, dates, params, "anywhere", seed, {
+          forceMove: true,
+          forceParkMove: true,
+        });
         if (!itinerary) continue;
         const signature = itinerarySignature(itinerary);
         if (seen.has(signature)) continue;
@@ -409,6 +465,7 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
   }
 
   const sortKey = params.sort ?? (hasAnchor ? "distance" : "freshness");
+  const routeMetric = (result: SearchResult) => result.stay?.route_distance_km ?? result.park.distance_km ?? Number.POSITIVE_INFINITY;
   results.sort((a, b) => {
     const aMoves = a.stay?.move_count ?? 0;
     const bMoves = b.stay?.move_count ?? 0;
@@ -422,6 +479,9 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
         || aParks - bParks
         || aMoves - bMoves;
     }
+    if (sortKey === "route") return routeMetric(a) - routeMetric(b) || aMoves - bMoves || a.park.name.localeCompare(b.park.name);
+    if (sortKey === "moves") return aMoves - bMoves || routeMetric(a) - routeMetric(b);
+    if (sortKey === "availability") return b.availability.nights.length - a.availability.nights.length || routeMetric(a) - routeMetric(b);
     if (sortKey === "name") return a.park.name.localeCompare(b.park.name);
     if (sortKey === "price") return (a.availability.price_cents ?? 0) - (b.availability.price_cents ?? 0);
     return aParks - bParks || aMoves - bMoves;

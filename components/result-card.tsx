@@ -4,7 +4,7 @@ import { motion } from "motion/react";
 import type { SearchResult } from "@/lib/types";
 import { AMENITIES } from "@/lib/types";
 import { formatPrice, timeAgo } from "@/lib/utils";
-import { ArrowUpRight, MapPin, Calendar, Wifi, Droplet, Flame, Tent, Caravan, Route } from "lucide-react";
+import { ArrowUpRight, MapPin, Calendar, Wifi, Droplet, Flame, Tent, Caravan, Route, Loader2 } from "lucide-react";
 
 function SiteIcon({ type }: { type: string }) {
   if (type === "rv") return <Caravan size={14} />;
@@ -26,7 +26,15 @@ function ruleToneClass(tone?: string) {
   return "bg-stone-100 text-stone-700 ring-stone-200";
 }
 
-export function ResultCard({ result }: { result: SearchResult }) {
+export function ResultCard({
+  result,
+  onOpenSiteDetails,
+  loadingSiteId,
+}: {
+  result: SearchResult;
+  onOpenSiteDetails?: (siteId: string, bookingUrl?: string) => void;
+  loadingSiteId?: string | null;
+}) {
   const segments = result.stay?.segments ?? [result];
   const thumbnail = result.site.thumbnail_url;
   const operatorClass =
@@ -38,7 +46,8 @@ export function ResultCard({ result }: { result: SearchResult }) {
 
   return (
     <motion.div
-      className="card overflow-hidden hover:ring-stone-300 transition-shadow"
+      className={`card overflow-hidden hover:ring-stone-300 transition-shadow ${onOpenSiteDetails ? "cursor-pointer" : ""}`}
+      onClick={() => onOpenSiteDetails?.(result.site.id, result.booking_url)}
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
@@ -77,7 +86,11 @@ export function ResultCard({ result }: { result: SearchResult }) {
                   </span>
                 )}
               </div>
-              <Link href={`/park/${result.park.slug}`} className="font-semibold hover:text-forest-700">
+              <Link
+                href={`/park/${result.park.slug}`}
+                className="font-semibold hover:text-forest-700"
+                onClick={(e) => e.stopPropagation()}
+              >
                 {result.park.name}
               </Link>
               <div className="text-sm text-stone-600 mt-0.5">
@@ -108,14 +121,22 @@ export function ResultCard({ result }: { result: SearchResult }) {
           {segments.length > 1 && (
             <div className="mt-2 grid gap-1.5">
               {segments.slice(0, 4).map((segment, index) => (
-                <div key={`${segment.site.id}-${segment.availability.nights.join("-")}`} className="flex items-center gap-2 rounded-md bg-stone-50 px-2 py-1 text-xs text-stone-600 ring-1 ring-stone-200">
+                <button
+                  key={`${segment.site.id}-${segment.availability.nights.join("-")}`}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenSiteDetails?.(segment.site.id, segment.booking_url);
+                  }}
+                  className="flex items-center gap-2 rounded-md bg-stone-50 px-2 py-1 text-left text-xs text-stone-600 ring-1 ring-stone-200 transition hover:bg-white hover:ring-forest-200"
+                >
                   <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white text-[10px] font-semibold text-forest-700 ring-1 ring-stone-200">
                     {index + 1}
                   </span>
                   <span className="min-w-0 flex-1 truncate">
                     {segment.availability.nights.join(", ")} · {segment.park.name} · site {segment.site.name}
                   </span>
-                </div>
+                </button>
               ))}
               {segments.length > 4 && <div className="text-xs text-stone-500">+ {segments.length - 4} more moves</div>}
             </div>
@@ -144,10 +165,24 @@ export function ResultCard({ result }: { result: SearchResult }) {
               href={result.booking_url}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
               className="inline-flex shrink-0 items-center gap-1 font-medium text-forest-700 hover:text-forest-800"
             >
               Book <ArrowUpRight size={13} />
             </a>
+            {onOpenSiteDetails && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenSiteDetails(result.site.id, result.booking_url);
+                }}
+                className="inline-flex shrink-0 items-center gap-1 font-medium text-stone-600 hover:text-stone-950"
+              >
+                {loadingSiteId === result.site.id ? <Loader2 size={13} className="animate-spin" /> : null}
+                Details
+              </button>
+            )}
           </div>
         </div>
       </div>

@@ -12,6 +12,8 @@ export async function GET(req: Request) {
   const data = await runSearch({
     lat: q.has("lat") ? Number(q.get("lat")) : undefined,
     lng: q.has("lng") ? Number(q.get("lng")) : undefined,
+    end_lat: q.has("end_lat") ? Number(q.get("end_lat")) : undefined,
+    end_lng: q.has("end_lng") ? Number(q.get("end_lng")) : undefined,
     radius_km: q.has("radius_km") ? Number(q.get("radius_km")) : undefined,
     start_date: q.get("start_date") ?? undefined,
     end_date: q.get("end_date") ?? undefined,
@@ -25,7 +27,7 @@ export async function GET(req: Request) {
     stay_mode: (q.get("stay_mode") as "same_site" | "same_park" | "anywhere" | null) ?? undefined,
     limit: q.has("limit") ? Number(q.get("limit")) : undefined,
     offset: q.has("offset") ? Number(q.get("offset")) : undefined,
-    sort: (q.get("sort") as "distance" | "freshness" | "name" | "price" | null) ?? undefined,
+    sort: (q.get("sort") as "distance" | "route" | "moves" | "freshness" | "name" | "availability" | "price" | null) ?? undefined,
   });
 
   return NextResponse.json(data, {
