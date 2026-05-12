@@ -418,6 +418,7 @@ export function ParkTabs(props: Props) {
                   totalSites={sites.length}
                   lastCheckedAt={calendarLastChecked}
                   vendorSiteIds={vendorSiteIds}
+                  bookingUrls={bookingUrls}
                   vendorUrl={vendorUrl}
                   onOpenSiteDetails={openSiteFlyout}
                 />

@@ -1,6 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Filter, ExternalLink } from "lucide-react";
+import { buildOneNightBookingUrl } from "@/lib/booking-url";
 
 type Status = "available" | "reserved" | "closed" | "unknown";
 
@@ -27,6 +28,8 @@ type Props = {
   lastCheckedAt: string | null;
   /** Per-site vendor_site_id (Camis resourceId) for booking URLs. */
   vendorSiteIds?: Record<string, string>;
+  /** Per-site operator booking URLs, including resourceId/mapId when known. */
+  bookingUrls?: Record<string, string>;
   /** The park's pre-built vendor URL (already includes resourceLocationId etc). */
   vendorUrl?: string;
   /** Opens a site detail flyout in the parent park page. */
@@ -56,17 +59,16 @@ function fmt(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-export function AvailabilityCalendar({ rows, totalSites, lastCheckedAt, vendorSiteIds, vendorUrl, onOpenSiteDetails }: Props) {
+export function AvailabilityCalendar({ rows, totalSites, lastCheckedAt, vendorSiteIds, bookingUrls, vendorUrl, onOpenSiteDetails }: Props) {
   // Compose the operator booking URL for one (site, night) cell client-side.
   // (Server-rendered components can't pass functions across the boundary.)
   const buildBookingUrl = (siteId: string, night: string): string | null => {
+    const siteBookingUrl = bookingUrls?.[siteId];
+    if (siteBookingUrl) return buildOneNightBookingUrl(siteBookingUrl, night);
     if (!vendorSiteIds || !vendorUrl) return null;
     const vendorSiteId = vendorSiteIds[siteId];
     if (!vendorSiteId) return null;
-    const sep = vendorUrl.includes("?") ? "&" : "?";
-    const end = new Date(night + "T00:00:00Z");
-    end.setUTCDate(end.getUTCDate() + 1);
-    return `${vendorUrl}${sep}resourceId=${vendorSiteId}&startDate=${night}&endDate=${end.toISOString().slice(0, 10)}&isReserving=true`;
+    return buildOneNightBookingUrl(vendorUrl, night, { resourceId: vendorSiteId });
   };
   // Determine the dataset's window from the first row.
   const window = useMemo(() => {

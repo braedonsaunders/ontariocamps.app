@@ -7,6 +7,7 @@ import type { Site, EquipmentOption, SiteReview, SiteReviewAggregate } from "@/l
 import type { GalleryPhoto } from "@/components/photo-gallery";
 import { PhotoGallery } from "@/components/photo-gallery";
 import { SiteReviewAggregateDisplay, SiteReviewList, SiteReviewForm } from "@/components/reviews";
+import { buildOneNightBookingUrl } from "@/lib/booking-url";
 import { timeAgo } from "@/lib/utils";
 import {
   Camera,
@@ -189,7 +190,7 @@ export function SiteTabs(props: Props) {
                               return (
                                 <a
                                   key={n.night_date}
-                                  href={`${bookingUrl}&startDate=${n.night_date}`}
+                                  href={buildOneNightBookingUrl(bookingUrl, n.night_date)}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="block hover:scale-[1.05] transition-transform"

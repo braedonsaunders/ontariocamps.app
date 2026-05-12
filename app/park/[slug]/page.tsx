@@ -18,6 +18,7 @@ import { type CalendarRow } from "@/components/availability-calendar";
 import { MotionHero } from "@/components/motion";
 import { ParkTabs, type DateContext } from "@/components/park-tabs";
 import type { SiteStatsEntry } from "@/components/site-field-notes";
+import { buildBookingUrl } from "@/lib/booking-url";
 
 export const dynamic = "force-dynamic";
 
@@ -210,9 +211,13 @@ export default async function ParkPage({
 
   const bookingUrls: Record<string, string> = {};
   const vendorSiteIds: Record<string, string> = {};
-  const sep = park.vendor_url.includes("?") ? "&" : "?";
+  const campMapById = new Map(parkCampMaps.map((m) => [m.id, m]));
   for (const s of allParkSites) {
-    bookingUrls[s.id] = `${park.vendor_url}${sep}resourceId=${s.vendor_site_id}&isReserving=true`;
+    const campMap = s.camp_map_id ? campMapById.get(s.camp_map_id) : null;
+    bookingUrls[s.id] = buildBookingUrl(park.vendor_url, {
+      resourceId: s.vendor_site_id,
+      mapId: campMap?.vendor_map_id || undefined,
+    });
     vendorSiteIds[s.id] = s.vendor_site_id;
   }
 
