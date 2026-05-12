@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useCallback, useState, useMemo } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "motion/react";
 import type { Site, CampMap, EquipmentOption, ParkReview, SiteReviewAggregate, ParkReviewAggregate } from "@/lib/types";
@@ -8,6 +8,7 @@ import { AvailabilityCalendar, type CalendarRow } from "@/components/availabilit
 import { CampgroundMap } from "@/components/campground-map";
 import { ParkReviewAggregateDisplay, ParkReviewList, ParkReviewForm } from "@/components/reviews";
 import { SiteFieldNotes, type SiteStatsEntry } from "@/components/site-field-notes";
+import { SiteDetailFlyout, type SiteFlyoutDetails } from "@/components/site-detail-flyout";
 import { timeAgo } from "@/lib/utils";
 import { Info, Map as MapIcon, Calendar, Tent, ArrowUpRight, CalendarRange, MessageSquare, TreePine } from "lucide-react";
 
@@ -132,6 +133,15 @@ export function ParkTabs(props: Props) {
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [sitesSubTab, setSitesSubTab] = useState<SitesSubTab>("map");
   const [selectedSection, setSelectedSection] = useState<string | undefined>(undefined);
+  const [selectedSiteFlyoutId, setSelectedSiteFlyoutId] = useState<string | null>(null);
+
+  const openSiteFlyout = useCallback((siteId: string) => {
+    setSelectedSiteFlyoutId(siteId);
+  }, []);
+
+  const closeSiteFlyout = useCallback(() => {
+    setSelectedSiteFlyoutId(null);
+  }, []);
 
   const siteTypeCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -168,6 +178,35 @@ export function ParkTabs(props: Props) {
     () => Object.values(availabilitySummary).filter((a) => a.status === "available").length,
     [availabilitySummary],
   );
+
+  const selectedSiteDetails: SiteFlyoutDetails | null = useMemo(() => {
+    if (!selectedSiteFlyoutId) return null;
+    const site = sites.find((s) => s.id === selectedSiteFlyoutId);
+    if (!site) return null;
+    return {
+      site,
+      parkName,
+      parkSlug,
+      operatorName,
+      bookingUrl: bookingUrls[site.id],
+      calendarRow: calendarRows.find((row) => row.site.id === site.id) ?? null,
+      lastCheckedAt: availabilitySummary[site.id]?.last_checked_at ?? calendarLastChecked,
+      stats: siteStats.find((entry) => entry.id === site.id) ?? null,
+      recentReviews: recentSiteReviews.filter((review) => review.site_id === site.id),
+    };
+  }, [
+    selectedSiteFlyoutId,
+    sites,
+    parkName,
+    parkSlug,
+    operatorName,
+    bookingUrls,
+    calendarRows,
+    availabilitySummary,
+    calendarLastChecked,
+    siteStats,
+    recentSiteReviews,
+  ]);
 
   return (
     <section className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
@@ -330,6 +369,7 @@ export function ParkTabs(props: Props) {
                           equipmentOptions={equipmentOptions}
                           parkSlug={parkSlug}
                           initialMapId={selectedSection}
+                          onOpenSiteDetails={openSiteFlyout}
                         />
                       </>
                     )}
@@ -351,6 +391,7 @@ export function ParkTabs(props: Props) {
                       siteStats={siteStats}
                       recentSiteReviews={recentSiteReviews}
                       vendorSiteIds={vendorSiteIds}
+                      onOpenSiteDetails={openSiteFlyout}
                     />
                   </>
                 )}
@@ -377,6 +418,7 @@ export function ParkTabs(props: Props) {
                   lastCheckedAt={calendarLastChecked}
                   vendorSiteIds={vendorSiteIds}
                   vendorUrl={vendorUrl}
+                  onOpenSiteDetails={openSiteFlyout}
                 />
               </motion.div>
             )}
@@ -484,6 +526,8 @@ export function ParkTabs(props: Props) {
           )}
         </aside>
       </div>
+
+      <SiteDetailFlyout details={selectedSiteDetails} onClose={closeSiteFlyout} />
     </section>
   );
 }

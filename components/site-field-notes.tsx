@@ -26,6 +26,7 @@ type Props = {
   siteStats: SiteStatsEntry[];
   recentSiteReviews: Array<SiteReview & { site_name: string }>;
   vendorSiteIds: Record<string, string>;
+  onOpenSiteDetails?: (siteId: string) => void;
 };
 
 function StarRating({ rating }: { rating: number }) {
@@ -73,6 +74,7 @@ export function SiteFieldNotes({
   siteStats,
   recentSiteReviews,
   vendorSiteIds,
+  onOpenSiteDetails,
 }: Props) {
   const withBooking = siteStats.filter((s) => s.totalNights > 0);
   const withReviews = siteStats.filter(
@@ -107,6 +109,28 @@ export function SiteFieldNotes({
     return `/park/${parkSlug}/site/${vendorSiteId}`;
   }
 
+  function siteAction(
+    site: Pick<SiteStatsEntry, "id" | "vendorSiteId" | "name">,
+    className: string,
+  ) {
+    if (onOpenSiteDetails) {
+      return (
+        <button
+          type="button"
+          onClick={() => onOpenSiteDetails(site.id)}
+          className={`${className} text-left`}
+        >
+          {site.name}
+        </button>
+      );
+    }
+    return (
+      <Link href={siteUrl(site.vendorSiteId)} className={className}>
+        {site.name}
+      </Link>
+    );
+  }
+
   return (
     <div className="space-y-8">
       <div className="grid grid-cols-2 gap-3">
@@ -127,12 +151,7 @@ export function SiteFieldNotes({
           title="Most popular"
           value={
             hottest ? (
-              <Link
-                href={siteUrl(hottest.vendorSiteId)}
-                className="hover:text-forest-700 transition-colors truncate block"
-              >
-                {hottest.name}
-              </Link>
+              siteAction(hottest, "hover:text-forest-700 transition-colors truncate block")
             ) : (
               "\u2014"
             )
@@ -148,12 +167,7 @@ export function SiteFieldNotes({
           title="Top rated"
           value={
             topRated ? (
-              <Link
-                href={siteUrl(topRated.vendorSiteId)}
-                className="hover:text-forest-700 transition-colors truncate block"
-              >
-                {topRated.name}
-              </Link>
+              siteAction(topRated, "hover:text-forest-700 transition-colors truncate block")
             ) : (
               "\u2014"
             )
@@ -181,12 +195,10 @@ export function SiteFieldNotes({
                 <span className="text-xs text-stone-400 w-5 shrink-0 tabular-nums font-medium">
                   {i + 1}
                 </span>
-                <Link
-                  href={siteUrl(s.vendorSiteId)}
-                  className="flex-1 min-w-0 text-sm font-medium text-stone-800 hover:text-forest-700 truncate transition-colors"
-                >
-                  {s.name}
-                </Link>
+                {siteAction(
+                  s,
+                  "flex-1 min-w-0 text-sm font-medium text-stone-800 hover:text-forest-700 truncate transition-colors",
+                )}
                 <span className="chip bg-stone-100 text-stone-600 shrink-0 hidden sm:inline-flex">
                   {s.siteTypeLabel}
                 </span>
@@ -227,12 +239,10 @@ export function SiteFieldNotes({
                 <span className="text-xs text-stone-400 w-5 shrink-0 tabular-nums font-medium">
                   {i + 1}
                 </span>
-                <Link
-                  href={siteUrl(s.vendorSiteId)}
-                  className="flex-1 min-w-0 text-sm font-medium text-stone-800 hover:text-forest-700 truncate transition-colors"
-                >
-                  {s.name}
-                </Link>
+                {siteAction(
+                  s,
+                  "flex-1 min-w-0 text-sm font-medium text-stone-800 hover:text-forest-700 truncate transition-colors",
+                )}
                 <span className="chip bg-stone-100 text-stone-600 shrink-0 hidden sm:inline-flex">
                   {s.siteTypeLabel}
                 </span>
@@ -297,12 +307,22 @@ export function SiteFieldNotes({
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         {vid ? (
-                          <Link
-                            href={siteUrl(vid)}
-                            className="text-sm font-semibold text-stone-900 hover:text-forest-700 transition-colors"
-                          >
-                            {r.site_name}
-                          </Link>
+                          onOpenSiteDetails ? (
+                            <button
+                              type="button"
+                              onClick={() => onOpenSiteDetails(r.site_id)}
+                              className="text-left text-sm font-semibold text-stone-900 hover:text-forest-700 transition-colors"
+                            >
+                              {r.site_name}
+                            </button>
+                          ) : (
+                            <Link
+                              href={siteUrl(vid)}
+                              className="text-sm font-semibold text-stone-900 hover:text-forest-700 transition-colors"
+                            >
+                              {r.site_name}
+                            </Link>
+                          )
                         ) : (
                           <span className="text-sm font-semibold text-stone-900">
                             {r.site_name}
@@ -320,12 +340,23 @@ export function SiteFieldNotes({
                       </p>
                     </div>
                     {vid && (
-                      <Link
-                        href={siteUrl(vid)}
-                        className="text-stone-400 hover:text-forest-700 shrink-0 transition-colors"
-                      >
-                        <ArrowUpRight size={14} />
-                      </Link>
+                      onOpenSiteDetails ? (
+                        <button
+                          type="button"
+                          onClick={() => onOpenSiteDetails(r.site_id)}
+                          className="text-stone-400 hover:text-forest-700 shrink-0 transition-colors"
+                          aria-label={`Open site ${r.site_name}`}
+                        >
+                          <ArrowUpRight size={14} />
+                        </button>
+                      ) : (
+                        <Link
+                          href={siteUrl(vid)}
+                          className="text-stone-400 hover:text-forest-700 shrink-0 transition-colors"
+                        >
+                          <ArrowUpRight size={14} />
+                        </Link>
+                      )
                     )}
                   </div>
                 </div>

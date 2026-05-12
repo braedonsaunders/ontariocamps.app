@@ -9,7 +9,6 @@ import { PhotoGallery } from "@/components/photo-gallery";
 import { SiteReviewAggregateDisplay, SiteReviewList, SiteReviewForm } from "@/components/reviews";
 import { timeAgo } from "@/lib/utils";
 import {
-  Info,
   Camera,
   Calendar,
   MessageSquare,
@@ -50,7 +49,7 @@ type Props = {
   bookableNights: number;
 };
 
-type Tab = "overview" | "photos" | "calendar" | "reviews";
+type Tab = "photos" | "calendar" | "reviews";
 
 function statusBadge(status: string) {
   if (status === "available") return { cls: "bg-emerald-50 text-emerald-700 ring-emerald-200", label: "Available" };
@@ -79,22 +78,19 @@ export function SiteTabs(props: Props) {
     bookableNights,
   } = props;
 
-  const [activeTab, setActiveTab] = useState<Tab>("overview");
+  const [activeTab, setActiveTab] = useState<Tab>("photos");
 
-  const TABS: Array<{ id: Tab; label: string; icon: typeof Info; hidden?: boolean }> = [
-    { id: "overview", label: "Overview", icon: Info },
-    { id: "photos", label: "Photos", icon: Camera, hidden: photos.length === 0 },
+  const TABS: Array<{ id: Tab; label: string; icon: typeof Camera }> = [
+    { id: "photos", label: "Photos", icon: Camera },
     { id: "calendar", label: "Calendar", icon: Calendar },
     { id: "reviews", label: "Reviews", icon: MessageSquare },
   ];
-
-  const visibleTabs = TABS.filter((t) => !t.hidden);
 
   return (
     <section className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
       {/* Tab strip */}
       <div className="border-b border-stone-200 flex items-end gap-1 overflow-x-auto scrollbar-none">
-        {visibleTabs.map((t) => {
+        {TABS.map((t) => {
           const active = activeTab === t.id;
           return (
             <button
@@ -126,80 +122,6 @@ export function SiteTabs(props: Props) {
       <div className="mt-6 grid lg:grid-cols-3 gap-6 lg:gap-8">
         <div className="lg:col-span-2">
           <AnimatePresence mode="wait">
-            {activeTab === "overview" && (
-              <motion.div
-                key="overview"
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -4 }}
-                transition={{ duration: 0.25 }}
-                className="space-y-8"
-              >
-                {site.description && (
-                  <div>
-                    <h2 className="text-xl font-semibold tracking-tight mb-2">About this site</h2>
-                    <p className="text-stone-700 leading-relaxed">{site.description}</p>
-                  </div>
-                )}
-
-                {photos.length > 0 && (
-                  <div>
-                    <div className="flex items-baseline justify-between mb-3 flex-wrap gap-2">
-                      <h2 className="text-xl font-semibold tracking-tight">Photos</h2>
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab("photos")}
-                        className="text-xs text-forest-700 hover:text-forest-800"
-                      >
-                        View all photos →
-                      </button>
-                    </div>
-                    <div className="grid gap-2 grid-cols-2 sm:grid-cols-4">
-                      {photos.slice(0, 4).map((p, i) => (
-                        <div
-                          key={(p.url ?? p.avifUrl ?? "") + String(i)}
-                          className={`relative overflow-hidden rounded-lg ring-1 ring-stone-200 group aspect-square ${
-                            i === 0 ? "col-span-2 row-span-2 aspect-auto" : ""
-                          }`}
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={p.url ?? p.avifUrl ?? ""}
-                            alt={`Site ${site.name} photo ${i + 1}`}
-                            className="absolute inset-0 h-full w-full object-cover group-hover:scale-[1.02] transition-transform duration-500"
-                            loading="lazy"
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {reviewAggregate.review_count > 0 && (
-                  <div>
-                    <div className="flex items-baseline justify-between mb-3 flex-wrap gap-2">
-                      <h2 className="text-xl font-semibold tracking-tight">Reviews</h2>
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab("reviews")}
-                        className="text-xs text-forest-700 hover:text-forest-800"
-                      >
-                        Read all reviews →
-                      </button>
-                    </div>
-                    <SiteReviewAggregateDisplay aggregate={reviewAggregate} />
-                  </div>
-                )}
-
-                {!site.description && photos.length === 0 && reviewAggregate.review_count === 0 && (
-                  <div className="card p-8 text-center text-stone-500">
-                    <Info size={20} className="mx-auto mb-2 text-stone-400" />
-                    No detailed info available yet. Check the Calendar tab for availability or leave the first review.
-                  </div>
-                )}
-              </motion.div>
-            )}
-
             {activeTab === "photos" && (
               <motion.div
                 key="photos"
@@ -207,6 +129,7 @@ export function SiteTabs(props: Props) {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -4 }}
                 transition={{ duration: 0.25 }}
+                className="space-y-5"
               >
                 <div className="flex items-baseline justify-between mb-3 flex-wrap gap-2">
                   <h2 className="text-xl font-semibold tracking-tight">Photos</h2>
@@ -215,6 +138,12 @@ export function SiteTabs(props: Props) {
                   </span>
                 </div>
                 <PhotoGallery photos={photos} alt={`Site ${site.name} at ${parkName}`} />
+                {site.description && (
+                  <div>
+                    <h2 className="text-xl font-semibold tracking-tight mb-2">Operator notes</h2>
+                    <p className="text-stone-700 leading-relaxed">{site.description}</p>
+                  </div>
+                )}
               </motion.div>
             )}
 
