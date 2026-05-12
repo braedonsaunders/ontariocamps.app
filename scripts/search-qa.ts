@@ -145,7 +145,7 @@ function scenarioList(): Scenario[] {
       params: { ...LOCATIONS.toronto, start_date: "2026-06-12", end_date: "2026-06-16", stay_mode: "same_park", limit: RESULT_LIMIT },
     },
     {
-      name: "nightly four-night route changes sites every night",
+      name: "nightly four-night route changes sites and parks",
       params: { ...LOCATIONS.toronto, start_date: "2026-06-12", end_date: "2026-06-16", stay_mode: "anywhere", sort: "route", limit: RESULT_LIMIT },
     },
   );
@@ -338,8 +338,15 @@ function validateResultShape(scenario: Scenario, result: SearchResult) {
 
   if (params.stay_mode === "anywhere") {
     assert(result.stay.move_count > 0, `${scenario.name}: nightly route did not force a site change`);
+    assert(result.stay.park_count > 1, `${scenario.name}: nightly route did not force a park change`);
     assert(result.stay.segment_count === resultNights.length, `${scenario.name}: nightly route did not create a stop per night`);
     assert(unique(segments.map((segment) => segment.site.id)).length === resultNights.length, `${scenario.name}: nightly route reused a campsite`);
+    for (let i = 1; i < segments.length; i += 1) {
+      assert(
+        segments[i].park.slug !== segments[i - 1].park.slug,
+        `${scenario.name}: nightly route reused park ${segments[i].park.slug} on adjacent nights`,
+      );
+    }
     if (params.end_lat != null && params.end_lng != null) {
       assert(result.stay.end_distance_km != null, `${scenario.name}: endpoint route missing end distance`);
     }
@@ -369,7 +376,7 @@ async function validateScenario(scenario: Scenario) {
   return { total: response.total, returned: response.results.length };
 }
 
-async function validateNightlyIsNotHarderThanSamePark() {
+async function validateNightlyRouteChangesParksWithoutEndpoint() {
   const shared = {
     ...LOCATIONS.toronto,
     start_date: "2026-06-12",
@@ -377,10 +384,16 @@ async function validateNightlyIsNotHarderThanSamePark() {
     party_size: 2,
     limit: RESULT_LIMIT,
   } satisfies SearchParams;
-  const samePark = await runSearch({ ...shared, stay_mode: "same_park" });
   const nightly = await runSearch({ ...shared, stay_mode: "anywhere", sort: "route" });
-  assert(samePark.total === 0 || nightly.total > 0, "nightly route returned nothing when same-park routes exist");
-  return { samePark: samePark.total, nightly: nightly.total };
+  assert(nightly.total > 0, "nightly route without an endpoint returned no results");
+  for (const result of nightly.results) {
+    const segments = allSegments(result);
+    assert(result.stay?.park_count > 1, "nightly route did not span parks");
+    for (let i = 1; i < segments.length; i += 1) {
+      assert(segments[i].park.slug !== segments[i - 1].park.slug, "nightly route reused a park on adjacent nights");
+    }
+  }
+  return { nightly: nightly.total };
 }
 
 async function validateGroupedPagination() {
@@ -435,12 +448,12 @@ async function main() {
   }
 
   try {
-    const summary = await validateNightlyIsNotHarderThanSamePark();
+    const summary = await validateNightlyRouteChangesParksWithoutEndpoint();
     passed += 1;
-    console.log(`[extra] PASS nightly route is not harder than same-park (${summary.nightly}/${summary.samePark})`);
+    console.log(`[extra] PASS nightly route changes parks without endpoint (${summary.nightly})`);
   } catch (error) {
-    failures.push({ name: "nightly route is not harder than same-park", error });
-    console.error("[extra] FAIL nightly route is not harder than same-park");
+    failures.push({ name: "nightly route changes parks without endpoint", error });
+    console.error("[extra] FAIL nightly route changes parks without endpoint");
     console.error(error);
   }
 

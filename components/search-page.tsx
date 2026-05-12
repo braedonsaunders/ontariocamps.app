@@ -81,7 +81,7 @@ const STAY_MODE_OPTIONS: {
 }[] = [
   { id: "same_site", label: "Same site", detail: "One campsite for the full stay" },
   { id: "same_park", label: "Same park", detail: "Change sites without changing parks" },
-  { id: "anywhere", label: "Nightly route", detail: "Move sites every night" },
+  { id: "anywhere", label: "Nightly route", detail: "Change parks every night" },
 ];
 
 const EQUIPMENT_ICONS: Record<string, LucideIcon> = {

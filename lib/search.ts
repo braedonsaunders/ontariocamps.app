@@ -584,6 +584,7 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
         const itinerary = buildItinerary(preparedRows, dates, params, "anywhere", seed, {
           forceMove: true,
           forceMoveEveryNight: true,
+          forceParkMoveEveryNight: true,
           requireUniqueSites: true,
         });
         if (!itinerary) continue;
