@@ -2,16 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import maplibregl, { type LngLatBoundsLike } from "maplibre-gl";
+import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { Tent, MapPin, ChevronUp } from "lucide-react";
 
 const MAP_STYLE = "https://tiles.openfreemap.org/styles/positron";
-
-const ONTARIO_BOUNDS: LngLatBoundsLike = [
-  [-95.5, 41.5], // SW
-  [-74.0, 56.5], // NE
-];
+const BARRIE_CENTER: [number, number] = [-79.6903, 44.3894];
+const INITIAL_ZOOM = 6.55;
 
 export type Park = {
   slug: string;
@@ -69,8 +66,8 @@ export function OntarioMap({ parks }: { parks: Park[] }) {
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: MAP_STYLE,
-      bounds: ONTARIO_BOUNDS,
-      fitBoundsOptions: { padding: 40 },
+      center: BARRIE_CENTER,
+      zoom: INITIAL_ZOOM,
       attributionControl: { compact: true },
     });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
