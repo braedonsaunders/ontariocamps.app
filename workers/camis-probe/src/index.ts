@@ -8,6 +8,8 @@ type ScheduledEvent = { cron?: string; scheduledTime?: number };
 type ExecutionContext = { waitUntil(promise: Promise<unknown>): void };
 
 type AvailabilityCode = "available" | "reserved" | "closed" | "unknown";
+type RefreshMode = "hot" | "near" | "planning" | "deep" | "ondemand";
+type RefreshWindow = Exclude<RefreshMode, "ondemand">;
 
 type FetchTarget = {
   site_id: string;
@@ -21,6 +23,10 @@ type FetchTarget = {
   equipment_category_id: number;
   sub_equipment_category_id: number;
   today_last_checked_at: string | null;
+  hot_due_at: string | null;
+  near_due_at: string | null;
+  planning_due_at: string | null;
+  deep_due_at: string | null;
 };
 
 type SiteNight = {
@@ -31,7 +37,8 @@ type SiteNight = {
 };
 
 type RefreshOptions = {
-  mode?: "hot" | "deep" | "ondemand";
+  mode?: RefreshMode;
+  window?: RefreshWindow;
   parkId?: string;
   parkSlug?: string;
   siteIds?: string[];
@@ -47,7 +54,7 @@ type RefreshOptions = {
 };
 
 type RefreshResult = {
-  status: "success" | "partial";
+  status: "success" | "partial" | "failed";
   mode: string;
   scope: string | null;
   startDate: string;
@@ -61,6 +68,47 @@ type RefreshResult = {
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:121.0) Gecko/20100101 Firefox/121.0";
+const WINDOW_CONFIG: Record<RefreshWindow, {
+  startOffset: number;
+  days: number;
+  maxSites: number;
+  concurrency: number;
+  delayMs: number;
+  dueField: keyof FetchTarget;
+}> = {
+  hot: {
+    startOffset: 0,
+    days: 2,
+    maxSites: 120,
+    concurrency: 3,
+    delayMs: 450,
+    dueField: "hot_due_at",
+  },
+  near: {
+    startOffset: 3,
+    days: 10,
+    maxSites: 120,
+    concurrency: 3,
+    delayMs: 650,
+    dueField: "near_due_at",
+  },
+  planning: {
+    startOffset: 14,
+    days: 75,
+    maxSites: 60,
+    concurrency: 2,
+    delayMs: 900,
+    dueField: "planning_due_at",
+  },
+  deep: {
+    startOffset: 90,
+    days: 89,
+    maxSites: 30,
+    concurrency: 2,
+    delayMs: 1200,
+    dueField: "deep_due_at",
+  },
+};
 
 function isoDate(offsetDays = 0): string {
   return new Date(Date.now() + offsetDays * ONE_DAY_MS).toISOString().slice(0, 10);
@@ -111,6 +159,7 @@ async function rest<T>(env: Env, path: string, init: RequestInit = {}): Promise<
   const response = await fetch(`${env.SUPABASE_URL}/rest/v1/${path}`, {
     ...init,
     headers: restHeaders(env, init.headers),
+    signal: AbortSignal.timeout(25_000),
   });
   const text = await response.text();
   if (!response.ok) throw new Error(`Supabase REST ${response.status} ${path}: ${text.slice(0, 260)}`);
@@ -124,6 +173,11 @@ function scopeFor(opts: Required<Pick<RefreshOptions, "mode">> & RefreshOptions)
   if (opts.parkSlug) return `park:${opts.parkSlug}`;
   if (opts.operatorIds?.length) return opts.operatorIds.join(",");
   return opts.mode;
+}
+
+function windowFor(opts: Required<Pick<RefreshOptions, "mode">> & RefreshOptions): RefreshWindow | null {
+  if (opts.window) return opts.window;
+  return opts.mode === "ondemand" ? null : opts.mode;
 }
 
 async function startLog(env: Env, scope: string | null): Promise<number> {
@@ -142,7 +196,7 @@ async function startLog(env: Env, scope: string | null): Promise<number> {
 
 async function finishLog(env: Env, args: {
   id: number;
-  status: "success" | "partial";
+  status: "success" | "partial" | "failed";
   sitesSeen: number;
   sitesUpdated: number;
   nightsUpdated: number;
@@ -172,11 +226,18 @@ async function finishLog(env: Env, args: {
 }
 
 function buildTargetPath(opts: RefreshOptions & { maxSites: number }): string {
+  const window = windowFor({ ...opts, mode: opts.mode ?? "hot" });
+  const dueField = window ? WINDOW_CONFIG[window].dueField : "today_last_checked_at";
   const parts = [
     "availability_fetch_targets?select=*",
-    "order=today_last_checked_at.asc.nullsfirst",
-    "order=site_id.asc",
+    `order=${String(dueField)}.asc.nullsfirst,site_id.asc`,
   ];
+  if (!opts.parkId && !opts.parkSlug && !opts.siteIds?.length) {
+    // Scheduled refreshes are ordered by the relevant due timestamp so the
+    // oldest/most important work is handled first.
+  } else {
+    parts[1] = "order=today_last_checked_at.asc.nullsfirst,site_id.asc";
+  }
   if (opts.parkId) parts.push(`park_id=eq.${encodeURIComponent(opts.parkId)}`);
   if (opts.parkSlug) parts.push(`park_slug=eq.${encodeURIComponent(opts.parkSlug)}`);
   if (opts.operatorIds?.length) parts.push(`operator_id=in.(${opts.operatorIds.map(encodeURIComponent).join(",")})`);
@@ -185,7 +246,10 @@ function buildTargetPath(opts: RefreshOptions & { maxSites: number }): string {
   const staleMinutes = opts.staleMinutes ?? (opts.staleHours == null ? null : opts.staleHours * 60);
   if (!opts.parkId && !opts.parkSlug && !opts.siteIds?.length && staleMinutes != null) {
     const cutoff = new Date(Date.now() - staleMinutes * 60 * 1000).toISOString();
-    parts.push(`or=(today_last_checked_at.is.null,today_last_checked_at.lte.${encodeURIComponent(cutoff)})`);
+    parts.push(`or=(${String(dueField)}.is.null,${String(dueField)}.lte.${encodeURIComponent(cutoff)})`);
+  } else if (!opts.parkId && !opts.parkSlug && !opts.siteIds?.length && window) {
+    const now = new Date().toISOString();
+    parts.push(`or=(${String(dueField)}.is.null,${String(dueField)}.lte.${encodeURIComponent(now)})`);
   }
 
   if (!opts.siteIds?.length || opts.siteIds.length <= 80) parts.push(`limit=${opts.maxSites}`);
@@ -193,6 +257,14 @@ function buildTargetPath(opts: RefreshOptions & { maxSites: number }): string {
 }
 
 async function loadTargets(env: Env, opts: RefreshOptions & { maxSites: number; startDate: string }): Promise<FetchTarget[]> {
+  const window = windowFor({ ...opts, mode: opts.mode ?? "hot" });
+  if (window && !opts.parkId && !opts.parkSlug && !opts.siteIds?.length && !opts.operatorIds?.length) {
+    return rest<FetchTarget[]>(env, "rpc/claim_availability_refresh_targets", {
+      method: "POST",
+      body: JSON.stringify({ p_window: window, p_limit: opts.maxSites }),
+    });
+  }
+
   let targets = await rest<FetchTarget[]>(env, buildTargetPath(opts));
 
   if (opts.siteIds?.length && opts.siteIds.length > 80) {
@@ -230,6 +302,39 @@ async function upsertAvailability(env: Env, rows: SiteNight[]): Promise<void> {
   }
 }
 
+function dueAt(window: RefreshWindow, checkedAt: string, rows: SiteNight[]): string {
+  const available = rows.filter((row) => row.status === "available").length;
+  const reserved = rows.filter((row) => row.status === "reserved").length;
+  const base = new Date(checkedAt).getTime();
+  const hours =
+    window === "hot"
+      ? available > 0 ? 4 : reserved > 0 ? 18 : 72
+      : window === "near"
+        ? available > 0 ? 18 : reserved > 0 ? 48 : 10 * 24
+        : window === "planning"
+          ? available > 0 ? 72 : reserved > 0 ? 7 * 24 : 30 * 24
+          : available > 0 ? 7 * 24 : reserved > 0 ? 21 * 24 : 45 * 24;
+  return new Date(base + hours * 60 * 60 * 1000).toISOString();
+}
+
+async function updateRefreshState(env: Env, siteId: string, window: RefreshWindow, rows: SiteNight[]): Promise<void> {
+  if (rows.length === 0) return;
+  const checkedAt = rows[0].last_checked_at;
+  const patch: Record<string, unknown> = {
+    [`${window}_last_checked_at`]: checkedAt,
+    [`${window}_due_at`]: dueAt(window, checkedAt, rows),
+    [`${window}_sampled_nights`]: rows.length,
+    [`${window}_available_nights`]: rows.filter((row) => row.status === "available").length,
+    [`${window}_reserved_nights`]: rows.filter((row) => row.status === "reserved").length,
+    updated_at: new Date().toISOString(),
+  };
+  await rest(env, `availability_refresh_state?site_id=eq.${encodeURIComponent(siteId)}`, {
+    method: "PATCH",
+    headers: { Prefer: "return=minimal" },
+    body: JSON.stringify(patch),
+  });
+}
+
 async function fetchVendorAvailability(target: FetchTarget, startDate: string, endDate: string): Promise<SiteNight[]> {
   const baseUrl = target.operator_base_url.replace(/\/+$/, "");
   const url = new URL(baseUrl + "/api/availability/resourceDailyAvailability");
@@ -252,6 +357,7 @@ async function fetchVendorAvailability(target: FetchTarget, startDate: string, e
       "User-Agent": DEFAULT_USER_AGENT,
       "X-Contact": "ontariocamps.app - lightweight availability refresh",
     },
+    signal: AbortSignal.timeout(20_000),
   });
   if (!response.ok) throw new Error(`HTTP ${response.status} at ${url.hostname}${url.pathname}`);
 
@@ -273,62 +379,90 @@ async function fetchVendorAvailability(target: FetchTarget, startDate: string, e
 async function refreshAvailability(env: Env, input: RefreshOptions): Promise<RefreshResult> {
   const started = Date.now();
   const mode = input.mode ?? (input.parkId || input.parkSlug || input.siteIds?.length ? "ondemand" : "hot");
-  const startDate = input.startDate ?? isoDate();
-  const days = clampInt(input.days, mode === "deep" ? 180 : mode === "ondemand" ? 14 : 30, 1, 180);
+  const window = windowFor({ ...input, mode });
+  const config = window ? WINDOW_CONFIG[window] : null;
+  const startDate = input.startDate ?? isoDate(config?.startOffset ?? 0);
+  const days = clampInt(input.days, config?.days ?? (mode === "ondemand" ? 14 : 30), 1, 180);
   const endDate = addDays(startDate, days);
-  const maxSites = clampInt(input.maxSites, mode === "ondemand" ? 500 : mode === "deep" ? 60 : 90, 0, 1000);
-  const concurrency = clampInt(input.concurrency, mode === "ondemand" ? 4 : 2, 1, 8);
-  const delayMs = clampInt(input.delayMs, mode === "ondemand" ? 250 : 900, 0, 5000);
-  const opts = { ...input, mode, startDate, days, maxSites, concurrency, delayMs };
+  const maxSites = clampInt(input.maxSites, config?.maxSites ?? (mode === "ondemand" ? 500 : 90), 0, 1000);
+  const concurrency = clampInt(input.concurrency, config?.concurrency ?? (mode === "ondemand" ? 4 : 2), 1, 8);
+  const delayMs = clampInt(input.delayMs, config?.delayMs ?? (mode === "ondemand" ? 250 : 900), 0, 5000);
+  const opts = { ...input, mode, window: window ?? undefined, startDate, days, maxSites, concurrency, delayMs };
   const scope = scopeFor(opts);
   const logId = await startLog(env, scope);
-  const targets = await loadTargets(env, opts);
-  const errors: string[] = [];
-  let cursor = 0;
-  let sitesUpdated = 0;
-  let nightsUpdated = 0;
+  try {
+    const targets = await loadTargets(env, opts);
+    const errors: string[] = [];
+    let cursor = 0;
+    let sitesUpdated = 0;
+    let nightsUpdated = 0;
 
-  async function worker() {
-    while (true) {
-      const i = cursor++;
-      if (i >= targets.length) return;
-      const target = targets[i];
-      try {
-        if (delayMs > 0) await sleep(delayMs + Math.floor(Math.random() * 200));
-        const rows = await fetchVendorAvailability(target, startDate, endDate);
-        await upsertAvailability(env, rows);
-        sitesUpdated += 1;
-        nightsUpdated += rows.length;
-      } catch (err) {
-        if (errors.length < 50) errors.push(`site ${target.site_id}: ${(err as Error).message}`);
+    async function worker() {
+      while (true) {
+        const i = cursor++;
+        if (i >= targets.length) return;
+        const target = targets[i];
+        try {
+          if (delayMs > 0) await sleep(delayMs + Math.floor(Math.random() * 200));
+          const rows = await fetchVendorAvailability(target, startDate, endDate);
+          await upsertAvailability(env, rows);
+          if (opts.window) await updateRefreshState(env, target.site_id, opts.window, rows);
+          sitesUpdated += 1;
+          nightsUpdated += rows.length;
+        } catch (err) {
+          if (errors.length < 50) errors.push(`site ${target.site_id}: ${(err as Error).message}`);
+        }
       }
     }
-  }
 
-  await Promise.all(Array.from({ length: concurrency }, worker));
-  const status = errors.length ? "partial" : "success";
-  const result: RefreshResult = {
-    status,
-    mode,
-    scope,
-    startDate,
-    endDate,
-    sitesSeen: targets.length,
-    sitesUpdated,
-    nightsUpdated,
-    durationMs: Date.now() - started,
-    errors,
-  };
-  await finishLog(env, {
-    id: logId,
-    status,
-    sitesSeen: result.sitesSeen,
-    sitesUpdated,
-    nightsUpdated,
-    durationMs: result.durationMs,
-    errors,
-  });
-  return result;
+    await Promise.all(Array.from({ length: concurrency }, worker));
+    const status = errors.length ? "partial" : "success";
+    const result: RefreshResult = {
+      status,
+      mode,
+      scope,
+      startDate,
+      endDate,
+      sitesSeen: targets.length,
+      sitesUpdated,
+      nightsUpdated,
+      durationMs: Date.now() - started,
+      errors,
+    };
+    await finishLog(env, {
+      id: logId,
+      status,
+      sitesSeen: result.sitesSeen,
+      sitesUpdated,
+      nightsUpdated,
+      durationMs: result.durationMs,
+      errors,
+    });
+    return result;
+  } catch (err) {
+    const result: RefreshResult = {
+      status: "failed",
+      mode,
+      scope,
+      startDate,
+      endDate,
+      sitesSeen: 0,
+      sitesUpdated: 0,
+      nightsUpdated: 0,
+      durationMs: Date.now() - started,
+      errors: [(err as Error).message],
+    };
+    await finishLog(env, {
+      id: logId,
+      status: "failed",
+      sitesSeen: 0,
+      sitesUpdated: 0,
+      nightsUpdated: 0,
+      durationMs: result.durationMs,
+      errors: result.errors,
+    });
+    return result;
+  }
 }
 
 function requireAuth(request: Request, env: Env): Response | null {
@@ -375,10 +509,11 @@ export default {
 
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
     const minute = new Date().getUTCMinutes();
-    const mode: "hot" | "deep" = minute === 0 ? "deep" : "hot";
-    const run = refreshAvailability(env, mode === "deep"
-      ? { mode, days: 180, staleHours: 72, maxSites: 20, concurrency: 2, delayMs: 1000, skipRollups: true }
-      : { mode, days: 14, staleHours: 12, maxSites: 30, concurrency: 2, delayMs: 900, skipRollups: true });
+    const hour = new Date().getUTCHours();
+    const mode: RefreshMode = minute === 0
+      ? (hour % 2 === 0 ? "planning" : "deep")
+      : (minute === 15 || minute === 45 ? "near" : "hot");
+    const run = refreshAvailability(env, { mode, skipRollups: true });
     ctx.waitUntil(run.then((result) => console.log(JSON.stringify(result))).catch((err) => console.error(err)));
   },
 };

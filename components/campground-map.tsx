@@ -1,6 +1,5 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import type { CampMap, Site, EquipmentOption } from "@/lib/types";
 import { Minus, Plus, RotateCcw, Move, X, ExternalLink, Zap, Tent as TentIcon, Users, Tent, MapPin, CircleDot, Accessibility, Anchor, Bike, BookOpen, Bus, Church, CigaretteOff, Cross, Dog, DollarSign, DoorOpen, Droplet, Droplets, Dumbbell, Eye, Fish, Flag, Flame, Footprints, Heart, House, Info, Landmark, Lightbulb, Lock, Mountain, ParkingCircle, Phone, PlugZap, Radio, Recycle, Sailboat, Ship, ShoppingBag, ShowerHead, Snowflake, Store, TentTree, Theater, TreePine, Trophy, Umbrella, UtensilsCrossed, Volleyball, WashingMachine, Waves, Wifi, Wrench, type LucideIcon } from "lucide-react";
 import { legendTypeLabel, legendTypeIcon } from "@/lib/legend-types";
@@ -41,12 +40,12 @@ type Props = {
   operatorName?: string;
   /** Equipment options at this operator (Tent / Van / Trailer-up-to-Nft / …). */
   equipmentOptions?: EquipmentOption[];
-  /** Park slug, so the popover can deep-link to the site-detail page. */
-  parkSlug?: string;
   /** Opens the in-page site flyout without navigating away from the map. */
   onOpenSiteDetails?: (siteId: string) => void;
   /** ID of the section tab to show first; defaults to the first map. */
   initialMapId?: string;
+  /** True while live availability is being refreshed; book links are withheld. */
+  checkingLive?: boolean;
 };
 
 const MIN_SCALE = 1;
@@ -104,9 +103,9 @@ export function CampgroundMap({
   bookingUrls,
   operatorName,
   equipmentOptions,
-  parkSlug,
   onOpenSiteDetails,
   initialMapId,
+  checkingLive = false,
 }: Props) {
   const [activeMapId, setActiveMapId] = useState<string>(
     initialMapId && campMaps.some((m) => m.id === initialMapId)
@@ -220,13 +219,13 @@ export function CampgroundMap({
         bookingUrls={bookingUrls}
         operatorName={operatorName}
         equipmentOptions={equipmentOptions}
-        parkSlug={parkSlug}
         onOpenSiteDetails={onOpenSiteDetails}
+        checkingLive={checkingLive}
       />
       <div className="flex items-center gap-x-4 gap-y-1.5 px-4 py-2.5 border-t border-stone-100 text-xs text-stone-600 flex-wrap">
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-full ring-2 ring-white" style={{ backgroundColor: "#10b981" }} />
-          <span className="text-stone-700">{availableCount} available</span>
+          <span className="text-stone-700">{availableCount} {checkingLive ? "last seen open" : "available"}</span>
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-full ring-2 ring-white" style={{ backgroundColor: "#ef4444" }} />
@@ -288,16 +287,16 @@ function PanZoomViewer({
   bookingUrls,
   operatorName,
   equipmentOptions,
-  parkSlug,
   onOpenSiteDetails,
+  checkingLive,
 }: {
   campMap: CampMap;
   sites: SiteOnMap[];
   bookingUrls?: Record<string, string>;
   operatorName?: string;
   equipmentOptions?: EquipmentOption[];
-  parkSlug?: string;
   onOpenSiteDetails?: (siteId: string) => void;
+  checkingLive?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   // Tracks a potential drag — only escalated to "actually dragging" once the
@@ -668,8 +667,8 @@ function PanZoomViewer({
           bookingUrl={bookingUrls?.[selectedSite.site.id]}
           operatorName={operatorName}
           equipmentOptions={equipmentOptions}
-          parkSlug={parkSlug}
           onOpenSiteDetails={onOpenSiteDetails}
+          checkingLive={checkingLive}
           onClose={() => setSelected(null)}
         />
       )}
@@ -683,8 +682,8 @@ function SitePopover({
   bookingUrl,
   operatorName,
   equipmentOptions,
-  parkSlug,
   onOpenSiteDetails,
+  checkingLive,
   onClose,
 }: {
   site: SiteOnMap;
@@ -692,8 +691,8 @@ function SitePopover({
   bookingUrl: string | undefined;
   operatorName?: string;
   equipmentOptions?: EquipmentOption[];
-  parkSlug?: string;
   onOpenSiteDetails?: (siteId: string) => void;
+  checkingLive?: boolean;
   onClose: () => void;
 }) {
   const c = dotColor(site.status);
@@ -780,7 +779,7 @@ function SitePopover({
               }`}
             >
               <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: c.fill }} />
-              {c.label}
+              {checkingLive && site.status === "available" ? "Last seen open" : c.label}
             </span>
             {site.site.has_electric && (
               <span className="chip bg-amber-50 text-amber-800 ring-1 ring-amber-200">
@@ -830,7 +829,7 @@ function SitePopover({
       </div>
 
       <div className="flex gap-2 px-3 pb-3 pt-0">
-        {onOpenSiteDetails ? (
+        {onOpenSiteDetails && (
           <button
             type="button"
             onClick={() => onOpenSiteDetails(site.site.id)}
@@ -838,23 +837,22 @@ function SitePopover({
           >
             Details
           </button>
-        ) : parkSlug ? (
-          <Link
-            href={`/park/${parkSlug}/site/${site.site.vendor_site_id}`}
-            className="btn-secondary flex-1 text-xs justify-center"
-          >
-            Details
-          </Link>
-        ) : null}
+        )}
         {bookingUrl && (
-          <a
-            href={bookingUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn-primary flex-1 text-xs justify-center"
-          >
-            Book <ExternalLink size={12} />
-          </a>
+          checkingLive ? (
+            <button type="button" disabled className="btn-primary flex-1 cursor-not-allowed justify-center text-xs opacity-60">
+              Checking live
+            </button>
+          ) : (
+            <a
+              href={bookingUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-primary flex-1 text-xs justify-center"
+            >
+              Book <ExternalLink size={12} />
+            </a>
+          )
         )}
       </div>
     </div>
