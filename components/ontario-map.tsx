@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { AnimatePresence, motion } from "motion/react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { Tent, MapPin, ChevronUp } from "lucide-react";
+import { ArrowUpRight, Calendar, ChevronLeft, ChevronUp, Loader2, MapPin, Tent, X } from "lucide-react";
 
 const MAP_STYLE = "https://tiles.openfreemap.org/styles/positron";
 const BARRIE_CENTER: [number, number] = [-79.6903, 44.3894];
@@ -21,6 +22,31 @@ export type Park = {
   total_sites: number;
   available_sites: number;
   availability_pct: number;
+};
+
+type ParkDetail = {
+  park: {
+    slug: string;
+    name: string;
+    description: string;
+    region: string;
+    address: string;
+    hero_image_url?: string | null;
+    vendor_url: string;
+  };
+  operator?: {
+    id: string;
+    name: string;
+  };
+  campgrounds: Array<{
+    campground: {
+      id: string;
+      name: string;
+    };
+    site_count: number;
+    availability_pct: number;
+    last_checked_at: string | null;
+  }>;
 };
 
 function colorForAvailability(pct: number): string {
@@ -40,6 +66,30 @@ export function OntarioMap({ parks }: { parks: Park[] }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const [selected, setSelected] = useState<Park | null>(null);
+  const [flyoutPark, setFlyoutPark] = useState<Park | null>(null);
+  const [parkDetail, setParkDetail] = useState<ParkDetail | null>(null);
+  const [parkDetailLoading, setParkDetailLoading] = useState(false);
+
+  useEffect(() => {
+    if (!flyoutPark) {
+      setParkDetail(null);
+      setParkDetailLoading(false);
+      return;
+    }
+    const ac = new AbortController();
+    setParkDetail(null);
+    setParkDetailLoading(true);
+    fetch(`/api/park/${flyoutPark.slug}`, { signal: ac.signal })
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error("Failed to load park"))))
+      .then((data: ParkDetail) => setParkDetail(data))
+      .catch((err) => {
+        if (err.name !== "AbortError") setParkDetail(null);
+      })
+      .finally(() => {
+        if (!ac.signal.aborted) setParkDetailLoading(false);
+      });
+    return () => ac.abort();
+  }, [flyoutPark]);
 
   const features = useMemo(
     () =>
@@ -386,14 +436,228 @@ export function OntarioMap({ parks }: { parks: Park[] }) {
               <div className="font-semibold tabular-nums">{selected.lat.toFixed(2)}, {selected.lng.toFixed(2)}</div>
             </div>
           </div>
-          <Link
-            href={`/park/${selected.slug}`}
+          <button
+            type="button"
+            onClick={() => setFlyoutPark(selected)}
             className="btn-primary mt-4 w-full justify-center text-xs"
           >
             View park
-          </Link>
+          </button>
         </div>
       )}
+      <MapParkFlyout
+        park={flyoutPark}
+        detail={parkDetail}
+        loading={parkDetailLoading}
+        onClose={() => setFlyoutPark(null)}
+      />
     </>
+  );
+}
+
+function MapParkFlyout({
+  park,
+  detail,
+  loading,
+  onClose,
+}: {
+  park: Park | null;
+  detail: ParkDetail | null;
+  loading: boolean;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    if (!park) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [park, onClose]);
+
+  const displayPark = detail?.park;
+  const operatorName = detail?.operator?.name ?? park?.operator;
+  const sortedCampgrounds = [...(detail?.campgrounds ?? [])]
+    .sort((a, b) => b.site_count - a.site_count)
+    .slice(0, 8);
+
+  return (
+    <AnimatePresence>
+      {park && (
+        <motion.div
+          className="fixed inset-0 z-50"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.18 }}
+        >
+          <button
+            type="button"
+            aria-label="Close park details"
+            className="absolute inset-0 bg-stone-950/35 backdrop-blur-[2px]"
+            onClick={onClose}
+          />
+          <motion.aside
+            role="dialog"
+            aria-modal="true"
+            aria-label={`${park.name} details`}
+            className="absolute inset-y-0 right-0 flex w-full max-w-[720px] flex-col bg-stone-50 shadow-2xl ring-1 ring-stone-950/10"
+            initial={{ x: "100%" }}
+            animate={{ x: 0 }}
+            exit={{ x: "100%" }}
+            transition={{ type: "spring", stiffness: 330, damping: 34 }}
+          >
+            <header className="relative shrink-0 overflow-hidden bg-forest-900 text-white">
+              {displayPark?.hero_image_url && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={displayPark.hero_image_url}
+                  alt={park.name}
+                  className="absolute inset-0 h-full w-full object-cover opacity-65"
+                />
+              )}
+              <div className="absolute inset-0 bg-gradient-to-t from-stone-950 via-stone-950/55 to-stone-950/15" />
+              <div className="relative p-4 sm:p-5">
+                <div className="flex items-start gap-3">
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/15 text-white ring-1 ring-white/20 transition-colors hover:bg-white/25"
+                    aria-label="Back to map"
+                    title="Back to map"
+                  >
+                    <ChevronLeft size={18} />
+                  </button>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-white/80">
+                      <span className="chip bg-white/15 text-white ring-1 ring-white/20">{displayPark?.region || park.region}</span>
+                      {operatorName && (
+                        <span className="chip bg-white/15 text-white ring-1 ring-white/20">{operatorName}</span>
+                      )}
+                    </div>
+                    <h2 className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl">{park.name}</h2>
+                    {(displayPark?.address || park.region) && (
+                      <div className="mt-1 flex items-center gap-1.5 text-sm text-white/85">
+                        <MapPin size={14} /> {displayPark?.address || park.region}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white/80 transition-colors hover:bg-white/15 hover:text-white"
+                    aria-label="Close"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+            </header>
+
+            <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
+              {loading ? (
+                <div className="flex min-h-64 items-center justify-center text-sm text-stone-500">
+                  <Loader2 size={18} className="mr-2 animate-spin" />
+                  Loading park details
+                </div>
+              ) : (
+                <div className="space-y-5">
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="rounded-lg bg-white p-4 ring-1 ring-stone-200">
+                      <div className="flex items-center gap-1 text-xs font-medium uppercase text-stone-500">
+                        <Tent size={12} /> Sites
+                      </div>
+                      <div className="mt-1 text-2xl font-semibold tabular-nums text-stone-950">
+                        {park.total_sites.toLocaleString()}
+                      </div>
+                    </div>
+                    <div className="rounded-lg bg-white p-4 ring-1 ring-stone-200">
+                      <div className="text-xs font-medium uppercase text-stone-500">Open</div>
+                      <div className="mt-1 text-2xl font-semibold tabular-nums" style={{ color: colorForAvailability(park.availability_pct) }}>
+                        {park.availability_pct}%
+                      </div>
+                    </div>
+                    <div className="rounded-lg bg-white p-4 ring-1 ring-stone-200">
+                      <div className="flex items-center gap-1 text-xs font-medium uppercase text-stone-500">
+                        <Calendar size={12} /> Sections
+                      </div>
+                      <div className="mt-1 text-2xl font-semibold tabular-nums text-stone-950">
+                        {detail?.campgrounds.length ?? "--"}
+                      </div>
+                    </div>
+                  </div>
+
+                  {displayPark?.description && (
+                    <section className="rounded-lg bg-white p-4 ring-1 ring-stone-200">
+                      <h3 className="text-sm font-semibold text-stone-950">About</h3>
+                      <p className="mt-2 line-clamp-5 text-sm leading-relaxed text-stone-700">{displayPark.description}</p>
+                    </section>
+                  )}
+
+                  <section className="rounded-lg bg-white p-4 ring-1 ring-stone-200">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <h3 className="text-sm font-semibold text-stone-950">Campground Sections</h3>
+                      {detail?.campgrounds.length ? (
+                        <span className="text-xs text-stone-500">{detail.campgrounds.length} total</span>
+                      ) : null}
+                    </div>
+                    {sortedCampgrounds.length > 0 ? (
+                      <div className="divide-y divide-stone-100">
+                        {sortedCampgrounds.map((cg) => (
+                          <div key={cg.campground.id} className="flex items-center gap-3 py-2.5">
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-sm font-medium text-stone-900">{cg.campground.name}</div>
+                              <div className="mt-0.5 text-xs text-stone-500">{cg.site_count.toLocaleString()} sites</div>
+                            </div>
+                            <span
+                              className={`chip shrink-0 ring-1 ${
+                                cg.availability_pct >= 50
+                                  ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                                  : cg.availability_pct >= 10
+                                  ? "bg-amber-50 text-amber-700 ring-amber-200"
+                                  : "bg-red-50 text-red-700 ring-red-200"
+                              }`}
+                            >
+                              {cg.availability_pct}% open
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="py-6 text-center text-sm text-stone-500">
+                        Section details are not available yet.
+                      </div>
+                    )}
+                  </section>
+                </div>
+              )}
+            </div>
+
+            <footer className="shrink-0 border-t border-stone-200 bg-white px-4 py-3 sm:px-5">
+              <div className="flex flex-wrap items-center gap-2">
+                {displayPark?.vendor_url && (
+                  <a
+                    href={displayPark.vendor_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn-secondary flex-1 justify-center"
+                  >
+                    Book with {operatorName ?? "operator"} <ArrowUpRight size={14} />
+                  </a>
+                )}
+                <Link href={`/park/${park.slug}`} className="btn-primary flex-1 justify-center">
+                  Full park page
+                </Link>
+              </div>
+            </footer>
+          </motion.aside>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
