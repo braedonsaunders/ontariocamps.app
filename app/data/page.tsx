@@ -19,7 +19,6 @@ export default async function DataPage() {
   ]);
   const dataSource = info.hasReal ? "real" : "mock";
   const dataSourceGeneratedAt = info.availabilityLastRefreshedAt ?? info.metadataLastRefreshedAt;
-  const ingestRuns = info.refreshRuns;
   const totalSites = totals[0]?.sites ?? 0;
   const totalParks = totals[0]?.parks ?? 0;
   const overallMedian = Math.round(
@@ -101,7 +100,6 @@ export default async function DataPage() {
 
       <DataTabs
         ops={ops}
-        ingestRuns={ingestRuns}
         datasets={datasets}
       />
     </div>

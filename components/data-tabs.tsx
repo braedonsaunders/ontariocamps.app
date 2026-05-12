@@ -1,23 +1,12 @@
-import { Download, Clock, Database } from "lucide-react";
+"use client";
+
+import { useState } from "react";
+import { ChevronLeft, ChevronRight, Download, Clock, Database } from "lucide-react";
 
 type OperatorHealth = {
   operator: { id: string; name: string; vendor: string };
   sites_indexed: number;
   median_freshness_minutes: number;
-};
-
-type IngestRun = {
-  id: number | string;
-  refresh_type: string;
-  scope: string | null;
-  status: string;
-  parks_seen: number;
-  sites_seen: number;
-  sites_updated: number;
-  nights_updated: number;
-  duration_ms: number | null;
-  errors: string[];
-  finished_at: string | null;
 };
 
 type Dataset = {
@@ -31,11 +20,78 @@ type Dataset = {
 
 type Props = {
   ops: OperatorHealth[];
-  ingestRuns: IngestRun[];
   datasets: Dataset[];
 };
 
-export function DataTabs({ ops, ingestRuns, datasets }: Props) {
+const OPERATOR_PAGE_SIZE = 8;
+
+function totalPages(total: number, pageSize: number) {
+  return Math.max(1, Math.ceil(total / pageSize));
+}
+
+function clampPage(page: number, pages: number) {
+  return Math.min(Math.max(page, 1), pages);
+}
+
+function paginate<T>(items: T[], page: number, pageSize: number) {
+  const start = (page - 1) * pageSize;
+  return items.slice(start, start + pageSize);
+}
+
+type PaginationControlsProps = {
+  label: string;
+  page: number;
+  pageSize: number;
+  total: number;
+  onPageChange: (page: number) => void;
+};
+
+function PaginationControls({ label, page, pageSize, total, onPageChange }: PaginationControlsProps) {
+  const pages = totalPages(total, pageSize);
+  const first = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const last = Math.min(page * pageSize, total);
+
+  return (
+    <div className="border-t border-stone-100 px-3 py-2.5 flex flex-col gap-2 text-xs text-stone-500 sm:flex-row sm:items-center sm:justify-between">
+      <div className="tabular-nums">
+        Showing {first}-{last} of {total} {label}
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="tabular-nums text-stone-600">
+          Page {page} of {pages}
+        </span>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => onPageChange(Math.max(1, page - 1))}
+            disabled={page <= 1}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md ring-1 ring-stone-200 text-stone-600 transition-colors hover:bg-stone-50 disabled:opacity-40 disabled:pointer-events-none"
+          >
+            <ChevronLeft size={15} />
+            <span className="sr-only">Previous {label} page</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => onPageChange(Math.min(pages, page + 1))}
+            disabled={page >= pages}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md ring-1 ring-stone-200 text-stone-600 transition-colors hover:bg-stone-50 disabled:opacity-40 disabled:pointer-events-none"
+          >
+            <ChevronRight size={15} />
+            <span className="sr-only">Next {label} page</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function DataTabs({ ops, datasets }: Props) {
+  const [operatorPage, setOperatorPage] = useState(1);
+
+  const operatorPages = totalPages(ops.length, OPERATOR_PAGE_SIZE);
+  const currentOperatorPage = clampPage(operatorPage, operatorPages);
+  const paginatedOps = paginate(ops, currentOperatorPage, OPERATOR_PAGE_SIZE);
+
   return (
     <div className="mt-10 space-y-12">
       <nav className="border-b border-stone-200 flex items-end gap-1 overflow-x-auto scrollbar-none">
@@ -60,90 +116,45 @@ export function DataTabs({ ops, ingestRuns, datasets }: Props) {
         <div>
           <h2 className="text-xl font-semibold tracking-tight">Per-operator status</h2>
           <div className="mt-3 card overflow-hidden">
-            <table className="min-w-full text-sm">
-              <thead className="bg-stone-50 text-stone-500 text-xs uppercase tracking-wide">
-                <tr>
-                  <th className="text-left p-3 font-medium">Operator</th>
-                  <th className="text-left p-3 font-medium">Vendor</th>
-                  <th className="text-right p-3 font-medium">Sites</th>
-                  <th className="text-right p-3 font-medium">Freshness (p50)</th>
-                  <th className="text-left p-3 font-medium">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {ops.map((o) => (
-                  <tr key={o.operator.id} className="border-t border-stone-100">
-                    <td className="p-3 font-medium">{o.operator.name}</td>
-                    <td className="p-3 text-stone-600">
-                      <span className="font-mono text-xs">{o.operator.vendor}</span>
-                    </td>
-                    <td className="p-3 text-right tabular-nums">{o.sites_indexed.toLocaleString()}</td>
-                    <td className="p-3 text-right tabular-nums">{o.median_freshness_minutes}m</td>
-                    <td className="p-3">
-                      <span className="chip bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> active
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {ingestRuns.length > 0 && (
-          <div>
-            <h2 className="text-xl font-semibold tracking-tight">Last refresh per type</h2>
-            <div className="mt-3 card overflow-hidden">
-              <table className="min-w-full text-sm">
+            <div className="overflow-x-auto">
+              <table className="min-w-[720px] w-full text-sm">
                 <thead className="bg-stone-50 text-stone-500 text-xs uppercase tracking-wide">
                   <tr>
-                    <th className="text-left p-3 font-medium">Type</th>
-                    <th className="text-left p-3 font-medium">Scope</th>
-                    <th className="text-left p-3 font-medium">Status</th>
-                    <th className="text-right p-3 font-medium">Parks</th>
+                    <th className="text-left p-3 font-medium">Operator</th>
+                    <th className="text-left p-3 font-medium">Vendor</th>
                     <th className="text-right p-3 font-medium">Sites</th>
-                    <th className="text-right p-3 font-medium">Nights</th>
-                    <th className="text-right p-3 font-medium">Duration</th>
-                    <th className="text-right p-3 font-medium">Errors</th>
-                    <th className="text-left p-3 font-medium">Finished</th>
+                    <th className="text-right p-3 font-medium">Freshness (p50)</th>
+                    <th className="text-left p-3 font-medium">Status</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {ingestRuns.map((r) => (
-                    <tr key={r.id} className="border-t border-stone-100">
-                      <td className="p-3 font-medium font-mono text-xs">{r.refresh_type}</td>
-                      <td className="p-3 text-stone-600 text-xs">{r.scope ?? "all"}</td>
+                  {paginatedOps.map((o) => (
+                    <tr key={o.operator.id} className="border-t border-stone-100">
+                      <td className="p-3 font-medium">{o.operator.name}</td>
+                      <td className="p-3 text-stone-600">
+                        <span className="font-mono text-xs">{o.operator.vendor}</span>
+                      </td>
+                      <td className="p-3 text-right tabular-nums">{o.sites_indexed.toLocaleString()}</td>
+                      <td className="p-3 text-right tabular-nums whitespace-nowrap">{o.median_freshness_minutes}m</td>
                       <td className="p-3">
-                        <span
-                          className={`chip ring-1 ${
-                            r.status === "success"
-                              ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
-                              : r.status === "partial"
-                                ? "bg-amber-50 text-amber-700 ring-amber-200"
-                                : "bg-red-50 text-red-700 ring-red-200"
-                          }`}
-                        >
-                          {r.status}
+                        <span className="chip bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> active
                         </span>
-                      </td>
-                      <td className="p-3 text-right tabular-nums">{r.parks_seen}</td>
-                      <td className="p-3 text-right tabular-nums">{r.sites_updated.toLocaleString()}</td>
-                      <td className="p-3 text-right tabular-nums">{r.nights_updated.toLocaleString()}</td>
-                      <td className="p-3 text-right tabular-nums text-stone-600">
-                        {r.duration_ms != null ? `${(r.duration_ms / 1000).toFixed(1)}s` : "—"}
-                      </td>
-                      <td className="p-3 text-right tabular-nums">{r.errors.length}</td>
-                      <td className="p-3 text-stone-600 text-xs">
-                        {r.finished_at ? new Date(r.finished_at).toLocaleTimeString() : "—"}
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+            <PaginationControls
+              label="operators"
+              page={currentOperatorPage}
+              pageSize={OPERATOR_PAGE_SIZE}
+              total={ops.length}
+              onPageChange={setOperatorPage}
+            />
           </div>
-        )}
+        </div>
 
         <div className="prose prose-stone max-w-none">
           <h2>How we refresh</h2>

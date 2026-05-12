@@ -19,14 +19,12 @@ import {
   getAllSites,
   getAllEquipmentOptions,
   getRefreshMeta,
-  getLatestRefreshLogPerType,
   getSiteReviews,
   getSiteReviewAggregate,
   getParkReviews,
   getParkReviewAggregate,
   getRecentSiteReviewsForPark,
   getSiteReviewStatsForPark,
-  type RefreshLogRow,
 } from "./db/queries";
 import type { Operator, Park, Campground, Site, CampMap, EquipmentOption, SiteReview, ParkReview, SiteReviewAggregate, ParkReviewAggregate } from "./types";
 
@@ -320,25 +318,22 @@ export type DataSourceInfo = {
   hasReal: boolean;
   metadataLastRefreshedAt: string | null;
   availabilityLastRefreshedAt: string | null;
-  refreshRuns: RefreshLogRow[];
 };
 
 export async function getDataSourceInfo(): Promise<DataSourceInfo> {
   try {
-    const [meta, runs] = await Promise.all([getRefreshMeta(), getLatestRefreshLogPerType()]);
+    const meta = await getRefreshMeta();
     const find = (t: string) => meta.find((m) => m.refresh_type === t)?.last_success_at ?? null;
     return {
-      hasReal: meta.length > 0 || runs.length > 0,
+      hasReal: meta.length > 0,
       metadataLastRefreshedAt: find("metadata"),
       availabilityLastRefreshedAt: find("availability"),
-      refreshRuns: runs,
     };
   } catch {
     return {
       hasReal: false,
       metadataLastRefreshedAt: null,
       availabilityLastRefreshedAt: null,
-      refreshRuns: [],
     };
   }
 }
