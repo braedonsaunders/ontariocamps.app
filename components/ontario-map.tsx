@@ -32,6 +32,13 @@ type SelectedPark = Park & {
   category: ParkCategory;
 };
 
+type OntarioMapProps = {
+  parks: Park[];
+  anchor?: { lat: number; lng: number } | null;
+  radiusKm?: number;
+  matchedSlugs?: Set<string> | null;
+};
+
 const CATEGORY_META: Record<ParkCategory, {
   label: string;
   shortLabel: string;
@@ -104,7 +111,7 @@ function categoryForOperator(operatorId: string): ParkCategory {
   return "conservation";
 }
 
-export function OntarioMap({ parks }: { parks: Park[] }) {
+export function OntarioMap({ parks, anchor = null, radiusKm = 0, matchedSlugs = null }: OntarioMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const selectedRef = useRef<SelectedPark | null>(null);
@@ -149,11 +156,12 @@ export function OntarioMap({ parks }: { parks: Park[] }) {
             category,
             category_label: meta.shortLabel,
             category_glyph: meta.glyph,
+            matched: matchedSlugs ? (matchedSlugs.has(p.slug) ? 1 : 0) : 1,
           },
           geometry: { type: "Point" as const, coordinates: [p.lng, p.lat] },
         };
       }),
-    [filteredParks],
+    [filteredParks, matchedSlugs],
   );
 
   useEffect(() => {
@@ -181,6 +189,31 @@ export function OntarioMap({ parks }: { parks: Park[] }) {
     requestAnimationFrame(() => map.resize());
 
     map.on("load", () => {
+      map.addSource("anchor", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+      map.addSource("anchor-radius", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+      map.addLayer({
+        id: "anchor-radius-fill",
+        type: "fill",
+        source: "anchor-radius",
+        paint: { "fill-color": "#5a8849", "fill-opacity": 0.06 },
+      });
+      map.addLayer({
+        id: "anchor-radius-line",
+        type: "line",
+        source: "anchor-radius",
+        paint: { "line-color": "#37562e", "line-width": 1.5, "line-dasharray": [3, 2], "line-opacity": 0.55 },
+      });
+      map.addLayer({
+        id: "anchor-pin",
+        type: "circle",
+        source: "anchor",
+        paint: {
+          "circle-radius": 6,
+          "circle-color": "#37562e",
+          "circle-stroke-color": "#ffffff",
+          "circle-stroke-width": 2,
+        },
+      });
       map.addSource("parks", {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
@@ -246,7 +279,17 @@ export function OntarioMap({ parks }: { parks: Park[] }) {
         layout: {
           "text-field": ["get", "category_glyph"],
           "text-font": ["Noto Sans Bold"],
-          "text-size": ["interpolate", ["linear"], ["zoom"], 5, 13, 10, 18, 14, 24],
+          "text-size": [
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            5,
+            ["case", ["==", ["get", "category"], "provincial"], 18, 13],
+            10,
+            ["case", ["==", ["get", "category"], "provincial"], 25, 18],
+            14,
+            ["case", ["==", ["get", "category"], "provincial"], 32, 24],
+          ],
           "text-allow-overlap": true,
           "text-ignore-placement": true,
         },
@@ -254,6 +297,7 @@ export function OntarioMap({ parks }: { parks: Park[] }) {
           "text-color": ["get", "color"],
           "text-halo-color": "#ffffff",
           "text-halo-width": 2,
+          "text-opacity": ["case", ["==", ["get", "matched"], 1], 1, 0.3],
         },
       });
       // Park-name labels next to each individual (non-clustered) pin. We
@@ -286,7 +330,7 @@ export function OntarioMap({ parks }: { parks: Park[] }) {
             6,
             0,
             6.4,
-            1,
+            ["case", ["==", ["get", "matched"], 1], 1, 0.3],
           ],
         },
       });
@@ -295,7 +339,7 @@ export function OntarioMap({ parks }: { parks: Park[] }) {
         type: "circle",
         source: "parks",
         filter: ["!", ["has", "point_count"]],
-        paint: { "circle-radius": 16, "circle-color": "rgba(0,0,0,0)" },
+        paint: { "circle-radius": 20, "circle-color": "rgba(0,0,0,0)" },
       });
       // Selected parks use the same shape-only marker, just larger with a dark
       // halo. Availability remains the marker colour; there is no circular base.
@@ -306,7 +350,17 @@ export function OntarioMap({ parks }: { parks: Park[] }) {
         layout: {
           "text-field": ["get", "category_glyph"],
           "text-font": ["Noto Sans Bold"],
-          "text-size": ["interpolate", ["linear"], ["zoom"], 5, 11, 10, 16, 14, 21],
+          "text-size": [
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            5,
+            ["case", ["==", ["get", "category"], "provincial"], 22, 16],
+            10,
+            ["case", ["==", ["get", "category"], "provincial"], 30, 22],
+            14,
+            ["case", ["==", ["get", "category"], "provincial"], 38, 28],
+          ],
           "text-allow-overlap": true,
           "text-ignore-placement": true,
         },
@@ -374,6 +428,7 @@ export function OntarioMap({ parks }: { parks: Park[] }) {
               properties: {
                 color: colorForAvailability(park.availability_pct),
                 category_glyph: CATEGORY_META[park.category].glyph,
+                category: park.category,
               },
               geometry: { type: "Point", coordinates: [lng, lat] },
             },
@@ -467,6 +522,45 @@ export function OntarioMap({ parks }: { parks: Park[] }) {
     const src = map.getSource("parks") as maplibregl.GeoJSONSource | undefined;
     if (src) src.setData({ type: "FeatureCollection", features });
   }, [features]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const apply = () => {
+      const anchorSrc = map.getSource("anchor") as maplibregl.GeoJSONSource | undefined;
+      const radiusSrc = map.getSource("anchor-radius") as maplibregl.GeoJSONSource | undefined;
+      if (!anchorSrc || !radiusSrc) return;
+      if (!anchor) {
+        anchorSrc.setData({ type: "FeatureCollection", features: [] });
+        radiusSrc.setData({ type: "FeatureCollection", features: [] });
+        return;
+      }
+      anchorSrc.setData({
+        type: "FeatureCollection",
+        features: [{ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: [anchor.lng, anchor.lat] } }],
+      });
+      radiusSrc.setData({
+        type: "FeatureCollection",
+        features: [
+          {
+            type: "Feature",
+            properties: {},
+            geometry: { type: "Polygon", coordinates: [circlePolygon(anchor.lng, anchor.lat, Math.max(1, radiusKm))] },
+          },
+        ],
+      });
+      const radiusDeg = Math.max(1, radiusKm) / 111;
+      map.fitBounds(
+        [
+          [anchor.lng - radiusDeg * 1.5, anchor.lat - radiusDeg],
+          [anchor.lng + radiusDeg * 1.5, anchor.lat + radiusDeg],
+        ],
+        { padding: 60, duration: 400, maxZoom: 9 },
+      );
+    };
+    if (map.isStyleLoaded()) apply();
+    else map.once("load", apply);
+  }, [anchor, radiusKm]);
 
   useEffect(() => {
     if (!selected || enabledCategories[selected.category]) return;
@@ -628,4 +722,24 @@ export function OntarioMap({ parks }: { parks: Park[] }) {
       )}
     </>
   );
+}
+
+function circlePolygon(lng: number, lat: number, radiusKm: number, steps = 64): [number, number][] {
+  const R = 6371;
+  const out: [number, number][] = [];
+  for (let i = 0; i <= steps; i += 1) {
+    const bearing = (i / steps) * 2 * Math.PI;
+    const latRad = (lat * Math.PI) / 180;
+    const lngRad = (lng * Math.PI) / 180;
+    const d = radiusKm / R;
+    const newLat = Math.asin(Math.sin(latRad) * Math.cos(d) + Math.cos(latRad) * Math.sin(d) * Math.cos(bearing));
+    const newLng =
+      lngRad +
+      Math.atan2(
+        Math.sin(bearing) * Math.sin(d) * Math.cos(latRad),
+        Math.cos(d) - Math.sin(latRad) * Math.sin(newLat),
+      );
+    out.push([(newLng * 180) / Math.PI, (newLat * 180) / Math.PI]);
+  }
+  return out;
 }

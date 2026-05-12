@@ -12,7 +12,7 @@ import {
 import { PRESET_LOCATIONS } from "@/lib/locations";
 import { AMENITIES, type SearchResponse, type SearchResult, type SearchResultGroup } from "@/lib/types";
 import { ResultCard } from "@/components/result-card";
-import { ParkMap, type ParkSummary } from "@/components/park-map";
+import { OntarioMap, type Park as MapPark } from "@/components/ontario-map";
 import type { LucideIcon } from "lucide-react";
 import {
   Calendar,
@@ -36,6 +36,8 @@ import {
 import { SEARCH_EQUIPMENT_OPTIONS, searchEquipmentById } from "@/lib/search-equipment";
 import { SiteDetailFlyout, type SiteFlyoutDetails } from "@/components/site-detail-flyout";
 import { ItineraryFlyout } from "@/components/itinerary-flyout";
+
+type ParkSummary = Omit<MapPark, "description" | "hero_image_url">;
 
 const SITE_TYPES = ["tent", "rv", "cabin", "yurt"] as const;
 const STAY_MODES = ["same_site", "same_park", "anywhere"] as const;
@@ -573,6 +575,10 @@ export function SearchPage() {
         };
       }),
     [allParks, state.park_slugs],
+  );
+  const mapParks = useMemo<MapPark[]>(
+    () => allParks.map((park) => ({ ...park, description: null, hero_image_url: null })),
+    [allParks],
   );
   const parkSuggestions = useMemo(() => {
     const query = parkInput.trim().toLowerCase();
@@ -1168,14 +1174,14 @@ export function SearchPage() {
           </section>
 
           <section
-            className={`min-h-0 overflow-hidden rounded-lg bg-white ring-1 ring-stone-200 ${
+            className={`relative min-h-0 overflow-hidden rounded-lg bg-white ring-1 ring-stone-200 ${
               state.view === "list" ? "hidden lg:block" : "block"
             }`}
           >
-            <ParkMap
+            <OntarioMap
+              parks={mapParks}
               anchor={effectiveAnchor}
               radiusKm={state.radius_km}
-              allParks={allParks}
               matchedSlugs={matchedSlugs}
             />
           </section>
