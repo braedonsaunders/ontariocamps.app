@@ -67,68 +67,68 @@ export const homeHeroBackgrounds = homeHeroBackgroundScenes.map(({ id, label }) 
 }));
 
 export function HomeHeroBackground({
-  sceneId = "algonquin-dusk",
+  sceneId,
   rotate = true,
-  intervalMs = 14000,
+  intervalMs = 60000,
   className,
 }: HomeHeroBackgroundProps) {
   const requestedScene = useMemo(
-    () => homeHeroBackgroundScenes.find((scene) => scene.id === sceneId) ?? homeHeroBackgroundScenes[0],
+    () => (sceneId ? homeHeroBackgroundScenes.find((scene) => scene.id === sceneId) : undefined),
     [sceneId],
   );
-  const [activeId, setActiveId] = useState<HomeHeroBackgroundId>(requestedScene.id);
-  const [renderedIds, setRenderedIds] = useState<HomeHeroBackgroundId[]>([requestedScene.id]);
+  const initialSceneId = requestedScene?.id ?? homeHeroBackgroundScenes[0].id;
+  const [activeId, setActiveId] = useState<HomeHeroBackgroundId>(initialSceneId);
+  const [renderedIds, setRenderedIds] = useState<HomeHeroBackgroundId[]>([initialSceneId]);
   const [transitionKey, setTransitionKey] = useState(0);
-  const [manualSelection, setManualSelection] = useState(false);
   const activeScene =
     homeHeroBackgroundScenes.find((scene) => scene.id === activeId) ?? homeHeroBackgroundScenes[0];
 
-  useEffect(() => {
-    setActiveId((currentId) => {
-      setRenderedIds(currentId === requestedScene.id ? [requestedScene.id] : [currentId, requestedScene.id]);
-      if (currentId !== requestedScene.id) setTransitionKey((key) => key + 1);
-      return requestedScene.id;
+  function transitionToScene(nextId: HomeHeroBackgroundId) {
+    if (nextId === activeId) return;
+
+    setRenderedIds([activeId, nextId]);
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        setActiveId(nextId);
+        setTransitionKey((key) => key + 1);
+      });
     });
-    setManualSelection(false);
-  }, [requestedScene.id]);
+  }
+
+  useEffect(() => {
+    if (!requestedScene) return;
+
+    transitionToScene(requestedScene.id);
+    // `activeId` is intentionally omitted so prop-driven scene changes run once per requested id.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedScene?.id]);
 
   useEffect(() => {
     if (renderedIds.length < 2) return;
 
     const timer = window.setTimeout(() => {
       setRenderedIds([activeId]);
-    }, 1100);
+    }, 1500);
 
     return () => window.clearTimeout(timer);
   }, [activeId, renderedIds.length]);
 
   useEffect(() => {
-    if (!rotate || manualSelection || homeHeroBackgroundScenes.length < 2) return;
+    if (!rotate || homeHeroBackgroundScenes.length < 2) return;
 
     const timer = window.setInterval(() => {
-      setActiveId((currentId) => {
-        const currentIndex = homeHeroBackgroundScenes.findIndex((scene) => scene.id === currentId);
-        const nextScene = homeHeroBackgroundScenes[(currentIndex + 1) % homeHeroBackgroundScenes.length];
-        setRenderedIds([currentId, nextScene.id]);
-        setTransitionKey((key) => key + 1);
-        return nextScene.id;
-      });
+      const currentIndex = homeHeroBackgroundScenes.findIndex((scene) => scene.id === activeId);
+      const nextScene = homeHeroBackgroundScenes[(currentIndex + 1) % homeHeroBackgroundScenes.length];
+      transitionToScene(nextScene.id);
     }, intervalMs);
 
     return () => window.clearInterval(timer);
-  }, [intervalMs, manualSelection, rotate]);
+  }, [activeId, intervalMs, rotate]);
 
   function handleSceneChange(e: ChangeEvent<HTMLSelectElement>) {
     const nextId = e.target.value as HomeHeroBackgroundId;
 
-    setManualSelection(true);
-    setActiveId((currentId) => {
-      if (currentId === nextId) return currentId;
-
-      setRenderedIds([currentId, nextId]);
-      setTransitionKey((key) => key + 1);
-      return nextId;
-    });
+    transitionToScene(nextId);
   }
 
   return (
@@ -136,9 +136,9 @@ export function HomeHeroBackground({
       <style>{`
         .oc-scene-frame {
           transition:
-            opacity 1200ms cubic-bezier(0.22, 1, 0.36, 1),
-            transform 1400ms cubic-bezier(0.22, 1, 0.36, 1),
-            filter 1100ms cubic-bezier(0.22, 1, 0.36, 1);
+            opacity 1250ms cubic-bezier(0.22, 1, 0.36, 1),
+            transform 1450ms cubic-bezier(0.22, 1, 0.36, 1),
+            filter 1250ms cubic-bezier(0.22, 1, 0.36, 1);
           will-change: opacity, transform, filter;
         }
         .oc-scene-wash {
@@ -188,7 +188,9 @@ export function HomeHeroBackground({
                 "oc-scene-frame absolute inset-0",
                 id === activeId
                   ? "translate-y-0 scale-100 opacity-100 blur-0"
-                  : "-translate-y-2 scale-[1.035] opacity-0 blur-md",
+                  : id === renderedIds[1]
+                    ? "translate-y-full scale-[1.02] opacity-95 blur-sm"
+                    : "-translate-y-full scale-[1.035] opacity-0 blur-md",
               )}
             >
               <Scene />

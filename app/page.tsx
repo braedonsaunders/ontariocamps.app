@@ -1,12 +1,21 @@
 import Link from "next/link";
 import { HomeSearch } from "@/components/home-search";
-import { HomeHeroBackground } from "@/components/home-hero-background";
+import { HomeHeroBackground, type HomeHeroBackgroundId } from "@/components/home-hero-background";
 import { sql } from "@/lib/db/client";
 import { MapPin, Database, Calendar } from "lucide-react";
 import { MotionHero, MotionFadeUp, MotionStagger, MotionStaggerItem } from "@/components/motion";
 import { AnimatedNumber } from "@/components/animated-number";
 
 export const dynamic = "force-dynamic";
+
+const homeHeroBackgroundIds: HomeHeroBackgroundId[] = [
+  "algonquin-dusk",
+  "killarney-dawn",
+  "superior-starglow",
+  "georgian-bay-noon",
+  "muskoka-autumn",
+  "bruce-clearwater",
+];
 
 type Totals = {
   operators: number;
@@ -44,11 +53,13 @@ export default async function HomePage() {
   }
 
   const t = totals[0] ?? { operators: 0, parks: 0, sites: 0, available: 0 };
+  const heroSceneId =
+    homeHeroBackgroundIds[Math.floor(Math.random() * homeHeroBackgroundIds.length)] ?? "algonquin-dusk";
 
   return (
     <div>
       <section className="relative isolate overflow-hidden bg-forest-950 text-white">
-        <HomeHeroBackground sceneId="algonquin-dusk" rotate />
+        <HomeHeroBackground sceneId={heroSceneId} rotate />
         <div className="relative z-10 mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-20 sm:py-28">
           <MotionHero className="max-w-3xl">
             <span className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs font-medium ring-1 ring-white/20">
