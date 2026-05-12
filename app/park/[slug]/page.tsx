@@ -257,7 +257,7 @@ export default async function ParkPage({
 
   return (
     <div>
-      <section className="relative h-64 sm:h-80 lg:h-96 bg-gradient-to-br from-forest-700 to-forest-900 overflow-hidden">
+      <section className="relative h-[9.6rem] sm:h-48 lg:h-[14.4rem] bg-gradient-to-br from-forest-700 to-forest-900 overflow-hidden">
         {park.hero_image_url && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
