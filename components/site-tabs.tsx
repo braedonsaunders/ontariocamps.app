@@ -405,7 +405,7 @@ export function SiteTabs(props: Props) {
           {lastChecked && (
             <div className="card p-5 text-sm text-stone-600 leading-relaxed">
               <div className="font-semibold text-stone-900 mb-1.5">Freshness</div>
-              We last checked {operatorName} {timeAgo(lastChecked)}. Per-night status refreshes every 15 minutes during the day.
+              We last checked {operatorName} {timeAgo(lastChecked)}. Background batches run continuously; opening live availability requests a fresh site check.
             </div>
           )}
 

@@ -160,7 +160,7 @@ export function DataTabs({ ops, datasets }: Props) {
           <h2>How we refresh</h2>
           <ul>
             <li><strong>Metadata</strong> — park layouts, amenities, equipment compatibility. Refreshed weekly on Sundays at 03:00 ET.</li>
-            <li><strong>Availability</strong> — per-site, per-night status. Every 15 min during 7am–11pm ET, hourly overnight.</li>
+            <li><strong>Availability</strong> — per-site, per-night status. Background batches run every 5 minutes; individual sites refresh on demand when someone opens live availability.</li>
             <li><strong>Reservation-opening days (Feb–Apr at 7am ET)</strong> — ingest is suspended so we don&apos;t add load during the operators&apos; peak window.</li>
           </ul>
           <h2>What we don&apos;t do</h2>

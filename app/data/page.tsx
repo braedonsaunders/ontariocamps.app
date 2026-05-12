@@ -12,18 +12,33 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function DataPage() {
-  const [ops, totals, info] = await Promise.all([
+  const [ops, totals, info, freshness] = await Promise.all([
     operatorHealth(),
     sql()<Array<{ parks: number; sites: number }>>`SELECT parks, sites FROM analytics_totals`,
     getDataSourceInfo(),
+    sql()<Array<{ median_minutes: number }>>`
+      WITH site_freshness AS (
+        SELECT s.id,
+               max(sa.last_checked_at) AS last_checked_at
+          FROM sites s
+          LEFT JOIN site_availability sa
+                 ON sa.site_id = s.id
+                AND sa.night_date = CURRENT_DATE
+         GROUP BY s.id
+      )
+      SELECT COALESCE(round((
+               percentile_cont(0.5) WITHIN GROUP (
+                 ORDER BY extract(epoch FROM (now() - last_checked_at)) / 60
+               ) FILTER (WHERE last_checked_at IS NOT NULL)
+             )::numeric)::int, 0) AS median_minutes
+        FROM site_freshness
+    `,
   ]);
   const dataSource = info.hasReal ? "real" : "mock";
   const dataSourceGeneratedAt = info.availabilityLastRefreshedAt ?? info.metadataLastRefreshedAt;
   const totalSites = totals[0]?.sites ?? 0;
   const totalParks = totals[0]?.parks ?? 0;
-  const overallMedian = Math.round(
-    ops.reduce((sum, o) => sum + o.median_freshness_minutes, 0) / Math.max(ops.length, 1),
-  );
+  const overallMedian = freshness[0]?.median_minutes ?? 0;
 
   const datasets = [
     {
@@ -88,7 +103,7 @@ export default async function DataPage() {
           <Clock size={18} className="text-forest-700" />
           <div className="text-xs text-stone-500 mt-3 uppercase tracking-wide">Median freshness</div>
           <div className="text-3xl font-semibold mt-1">{overallMedian}m</div>
-          <div className="text-xs text-stone-500 mt-1">Aggregated across all operators</div>
+          <div className="text-xs text-stone-500 mt-1">Current-day campsite status, p50 across indexed sites</div>
         </div>
         <div className="card p-5">
           <Activity size={18} className="text-forest-700" />
