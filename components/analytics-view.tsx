@@ -1294,7 +1294,7 @@ function Leaderboard({
 }) {
   const c = toneClasses(tone);
   return (
-    <section className="flex h-[360px] flex-col rounded-lg bg-white p-4 ring-1 ring-stone-200 shadow-sm">
+    <section className="flex h-[360px] w-full min-w-0 max-w-[calc(100vw-2rem)] flex-col rounded-lg bg-white p-4 ring-1 ring-stone-200 shadow-sm sm:max-w-none">
       <SectionHeader
         eyebrow="Park ranking"
         title={title}
@@ -1375,8 +1375,8 @@ export function AnalyticsView({ snapshot }: { snapshot: AnalyticsSnapshot }) {
   );
 
   return (
-    <div className="bg-stone-50">
-      <div className="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
+    <div className="w-full min-w-0 bg-stone-50">
+      <div className="mx-auto w-full min-w-0 max-w-7xl space-y-6 px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
         <section className="flex flex-wrap items-end justify-between gap-4">
           <div className="max-w-3xl">
             <div className="inline-flex items-center gap-2 text-xs font-medium text-stone-500">
@@ -1480,7 +1480,7 @@ export function AnalyticsView({ snapshot }: { snapshot: AnalyticsSnapshot }) {
           />
         </section>
 
-        <section className="grid gap-4 lg:grid-cols-2">
+        <section className="grid min-w-0 gap-4 lg:grid-cols-2">
           <Leaderboard
             title={`Most available / ${periodLabel.toLowerCase()}`}
             subtitle="Parks with the largest share of bookable sites."

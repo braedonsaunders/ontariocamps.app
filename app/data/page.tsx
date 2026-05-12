@@ -93,7 +93,7 @@ export default async function DataPage() {
   ];
 
   return (
-    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12">
+    <div className="mx-auto w-full min-w-0 max-w-7xl px-4 sm:px-6 lg:px-8 py-12">
       <h1 className="text-3xl font-semibold tracking-tight">Data</h1>
       <p className="text-stone-600 mt-2 max-w-3xl">
         Live ingest health, useful availability freshness, and one-click CSV downloads of public datasets.

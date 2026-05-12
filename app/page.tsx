@@ -38,18 +38,28 @@ export default async function HomePage() {
   let featured: FeaturedPark[] = [];
 
   try {
-    [totals, featured] = await Promise.all([
-      client<Totals[]>`SELECT operators, parks, sites, available FROM analytics_totals`,
-      client<FeaturedPark[]>`
-        SELECT slug, name, description, region, hero_image_url
-          FROM parks
-         WHERE hero_image_url IS NOT NULL
-         ORDER BY random()
-         LIMIT 6
-      `,
-    ]);
+    totals = await client<Totals[]>`SELECT operators, parks, sites, available FROM analytics_totals`;
   } catch (error) {
-    console.error("Unable to load homepage analytics", error);
+    console.error("Unable to load homepage analytics totals", error);
+  }
+
+  try {
+    featured = await client<FeaturedPark[]>`
+      SELECT p.slug,
+             p.name,
+             COALESCE(p.ai_description, p.description, 'Explore campsite availability, park details, and booking links for this Ontario campground.') AS description,
+             COALESCE(p.region, 'Ontario') AS region,
+             COALESCE(p.hero_image_url, o.hero_image_url) AS hero_image_url
+        FROM parks p
+        JOIN operators o ON o.id = p.operator_id
+       ORDER BY
+             CASE WHEN p.available_sites > 0 THEN 0 ELSE 1 END,
+             p.total_sites DESC,
+             p.name
+       LIMIT 6
+    `;
+  } catch (error) {
+    console.error("Unable to load homepage popular parks", error);
   }
 
   const t = totals[0] ?? { operators: 0, parks: 0, sites: 0, available: 0 };
@@ -87,52 +97,59 @@ export default async function HomePage() {
       </section>
 
       <section className="relative z-0 mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-14">
-        <MotionFadeUp whenInView className="flex items-end justify-between mb-6">
+        <MotionFadeUp whenInView className="mb-6 flex flex-wrap items-end justify-between gap-3">
           <div>
             <h2 className="text-2xl font-semibold tracking-tight">Popular parks</h2>
-            <p className="text-stone-600 mt-1">A fresh mix of starting points across the province.</p>
+            <p className="text-stone-600 mt-1">Reliable starting points across the province.</p>
           </div>
           <Link href="/search" className="text-sm font-medium text-forest-700 hover:text-forest-800">
             See everything →
           </Link>
         </MotionFadeUp>
-        <MotionStagger whenInView className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {featured.map((p, index) => {
-            const parkSlug = p.slug ?? `featured-${index}`;
-            const parkName = String(p.name ?? "Ontario park");
-            const parkInitial = parkName.trim().charAt(0) || "O";
-            const parkDescription = String(p.description ?? "Explore campsite availability across Ontario.");
-            const parkRegion = String(p.region ?? "Ontario");
+        {featured.length > 0 ? (
+          <MotionStagger className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {featured.map((p, index) => {
+              const parkSlug = p.slug ?? `featured-${index}`;
+              const parkName = String(p.name ?? "Ontario park");
+              const parkInitial = parkName.trim().charAt(0) || "O";
+              const parkDescription = String(p.description ?? "Explore campsite availability across Ontario.");
+              const parkRegion = String(p.region ?? "Ontario");
 
-            return (
-              <MotionStaggerItem key={parkSlug}>
-                <Link href={`/park/${parkSlug}`} className="card group overflow-hidden transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 block">
-                  <div className="relative h-40 bg-gradient-to-br from-forest-600 to-forest-800 overflow-hidden">
-                    {p.hero_image_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={p.hero_image_url}
-                        alt={parkName}
-                        className="absolute inset-0 h-full w-full object-cover group-hover:scale-[1.03] transition-transform duration-700"
-                      />
-                    ) : (
-                      <div className="absolute inset-0 flex items-center justify-center text-white/30 text-6xl font-bold">
-                        {parkInitial}
-                      </div>
-                    )}
-                    <span className="absolute top-2 left-2 chip bg-white/95 text-stone-700 ring-1 ring-stone-200">
-                      {parkRegion}
-                    </span>
-                  </div>
-                  <div className="p-4">
-                    <div className="font-semibold group-hover:text-forest-700 transition-colors">{parkName}</div>
-                    <p className="text-sm text-stone-600 mt-1 line-clamp-2">{parkDescription}</p>
-                  </div>
-                </Link>
-              </MotionStaggerItem>
-            );
-          })}
-        </MotionStagger>
+              return (
+                <MotionStaggerItem key={parkSlug}>
+                  <Link href={`/park/${parkSlug}`} className="card group block overflow-hidden transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg">
+                    <div className="relative h-40 overflow-hidden bg-gradient-to-br from-forest-600 to-forest-800">
+                      {p.hero_image_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={p.hero_image_url}
+                          alt={parkName}
+                          className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.03]"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="absolute inset-0 flex items-center justify-center text-6xl font-bold text-white/30">
+                          {parkInitial}
+                        </div>
+                      )}
+                      <span className="chip absolute left-2 top-2 bg-white/95 text-stone-700 ring-1 ring-stone-200">
+                        {parkRegion}
+                      </span>
+                    </div>
+                    <div className="p-4">
+                      <div className="font-semibold transition-colors group-hover:text-forest-700">{parkName}</div>
+                      <p className="mt-1 line-clamp-2 text-sm text-stone-600">{parkDescription}</p>
+                    </div>
+                  </Link>
+                </MotionStaggerItem>
+              );
+            })}
+          </MotionStagger>
+        ) : (
+          <div className="card p-6 text-sm text-stone-600">
+            Popular parks are temporarily unavailable here. The full parks directory is still ready.
+          </div>
+        )}
       </section>
 
     </div>

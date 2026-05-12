@@ -170,7 +170,7 @@ export function DataTabs({ ops, datasets, scopes }: Props) {
   const paginatedOps = paginate(sortedOps, currentOperatorPage, OPERATOR_PAGE_SIZE);
 
   return (
-    <div className="mt-10 space-y-12">
+    <div className="mt-10 w-full min-w-0 space-y-12">
       <nav className="border-b border-stone-200 flex items-end gap-1 overflow-x-auto scrollbar-none">
         <a
           href="#refresh-status"
@@ -194,9 +194,11 @@ export function DataTabs({ ops, datasets, scopes }: Props) {
           <h2 className="text-xl font-semibold tracking-tight">Worker cadence</h2>
           <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {scopes.map((scope) => (
-              <div key={scope.scope} className="rounded-lg border border-stone-200 bg-white p-4">
+              <div key={scope.scope} className="min-w-0 rounded-lg border border-stone-200 bg-white p-4">
                 <div className="flex items-center justify-between gap-3">
-                  <div className="font-semibold capitalize text-stone-900">{scope.scope}</div>
+                  <div className="min-w-0 truncate font-semibold text-stone-900" title={scope.scope}>
+                    {scope.scope}
+                  </div>
                   <Activity size={15} className="text-forest-700" />
                 </div>
                 <div className="mt-3 text-2xl font-semibold tabular-nums">{scope.sitesUpdated.toLocaleString()}</div>
@@ -210,8 +212,56 @@ export function DataTabs({ ops, datasets, scopes }: Props) {
 
         <div>
           <h2 className="text-xl font-semibold tracking-tight">Per-operator status</h2>
-          <div className="mt-3 card overflow-hidden">
-            <div className="overflow-x-auto">
+          <div className="card mt-3 w-full min-w-0 overflow-hidden">
+            <div className="divide-y divide-stone-100 sm:hidden">
+              {paginatedOps.map((o) => {
+                const status = statusMeta(o.status);
+                const checkedPct = percentage(o.checkedLastTwoHours, o.sitesIndexed);
+                return (
+                  <div key={o.operator.id} className="bg-white p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate font-semibold text-stone-900">{o.operator.name}</div>
+                        <div className="mt-0.5 font-mono text-xs text-stone-500">{o.operator.vendor}</div>
+                      </div>
+                      <span className={`chip shrink-0 ring-1 ${status.className}`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${status.dot}`} /> {status.label}
+                      </span>
+                    </div>
+                    <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <div className="text-[10px] uppercase tracking-wide text-stone-500">Sites</div>
+                        <div className="mt-0.5 font-semibold tabular-nums text-stone-900">{o.sitesIndexed.toLocaleString()}</div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] uppercase tracking-wide text-stone-500">Open today</div>
+                        <div className="mt-0.5 font-semibold tabular-nums text-emerald-700">{o.availableToday.toLocaleString()}</div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] uppercase tracking-wide text-stone-500">Available p50</div>
+                        <div className="mt-0.5 font-semibold tabular-nums text-stone-900">{formatMinutes(o.availableP50Minutes)}</div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] uppercase tracking-wide text-stone-500">Current p50</div>
+                        <div className="mt-0.5 font-semibold tabular-nums text-stone-900">{formatMinutes(o.currentP50Minutes)}</div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] uppercase tracking-wide text-stone-500">Checked &lt;2h</div>
+                        <div className="mt-0.5 font-semibold tabular-nums text-stone-900">
+                          {o.checkedLastTwoHours.toLocaleString()}
+                          <span className="ml-1 text-xs font-normal text-stone-500">{checkedPct}%</span>
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] uppercase tracking-wide text-stone-500">Hot due</div>
+                        <div className="mt-0.5 font-semibold tabular-nums text-stone-900">{o.hotDueSites.toLocaleString()}</div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="hidden max-w-full overflow-x-auto sm:block">
               <table className="min-w-[1040px] w-full text-sm">
                 <thead className="bg-stone-50 text-stone-500 text-xs uppercase tracking-wide">
                   <tr>
