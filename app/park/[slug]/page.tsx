@@ -11,6 +11,7 @@ import {
   getParkReviewAggregate,
   getRecentSiteReviewsForPark,
   getSiteReviewStatsForPark,
+  getOperatorRuleSource,
 } from "@/lib/data-source";
 import { getSiteAvailabilityForPark } from "@/lib/db/queries";
 import { MapPin } from "lucide-react";
@@ -77,7 +78,7 @@ export default async function ParkPage({
   const park = await getParkBySlug(slug);
   if (!park) notFound();
 
-  const [operator, parkCampMaps, allParkSites, operatorEquipment, perNight, parkReviews, parkReviewAggregate, recentSiteReviews, siteReviewStats] = await Promise.all([
+  const [operator, parkCampMaps, allParkSites, operatorEquipment, perNight, parkReviews, parkReviewAggregate, recentSiteReviews, siteReviewStats, operatorRuleSource] = await Promise.all([
     getOperatorWithStats(park.operator_id),
     getCampMapsForPark(park.id),
     getSitesForPark(park.id),
@@ -87,6 +88,7 @@ export default async function ParkPage({
     getParkReviewAggregate(park.id),
     getRecentSiteReviewsForPark(park.id),
     getSiteReviewStatsForPark(park.id),
+    getOperatorRuleSource(park.operator_id),
   ]);
   if (!operator) notFound();
 
@@ -307,6 +309,7 @@ export default async function ParkPage({
         recentSiteReviews={recentSiteReviews}
         parkId={park.id}
         siteStats={siteStats}
+        operatorRuleSource={operatorRuleSource}
       />
     </div>
   );

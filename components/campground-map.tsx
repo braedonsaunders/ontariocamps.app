@@ -89,6 +89,14 @@ function dotColor(status: SiteStatus): { fill: string; ring: string; label: stri
   }
 }
 
+function ruleToneClass(tone?: string) {
+  if (tone === "emerald") return "bg-emerald-50 text-emerald-700 ring-emerald-200";
+  if (tone === "amber") return "bg-amber-50 text-amber-800 ring-amber-200";
+  if (tone === "red") return "bg-red-50 text-red-700 ring-red-200";
+  if (tone === "lake") return "bg-lake-50 text-lake-800 ring-lake-200";
+  return "bg-stone-100 text-stone-700 ring-stone-200";
+}
+
 export function CampgroundMap({
   campMaps,
   sites,
@@ -535,8 +543,13 @@ function PanZoomViewer({
                   onMouseLeave={() => setHovered((h) => (h === s.site.id ? null : h))}
                   onClick={(e) => {
                     e.stopPropagation();
-                    setSelected((cur) => (cur === s.site.id ? null : s.site.id));
                     setSelectedFeature(null);
+                    if (onOpenSiteDetails) {
+                      setSelected(null);
+                      onOpenSiteDetails(s.site.id);
+                      return;
+                    }
+                    setSelected((cur) => (cur === s.site.id ? null : s.site.id));
                   }}
                   className="absolute -translate-x-1/2 -translate-y-1/2 grid place-items-center bg-transparent border-0 p-0 focus:outline-none"
                   style={{
@@ -777,6 +790,11 @@ function SitePopover({
             {site.site.is_waterfront && (
               <span className="chip bg-lake-50 text-lake-800 ring-1 ring-lake-200">Waterfront</span>
             )}
+            {site.site.rule_summary?.highlights?.slice(0, 3).map((rule) => (
+              <span key={rule.label} className={`chip ring-1 ${ruleToneClass(rule.tone)}`}>
+                {rule.label}
+              </span>
+            ))}
           </div>
         </div>
       </div>

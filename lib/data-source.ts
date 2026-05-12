@@ -19,14 +19,13 @@ import {
   getAllSites,
   getAllEquipmentOptions,
   getRefreshMeta,
-  getLatestRefreshLogPerType,
   getSiteReviews,
   getSiteReviewAggregate,
   getParkReviews,
   getParkReviewAggregate,
   getRecentSiteReviewsForPark,
   getSiteReviewStatsForPark,
-  type RefreshLogRow,
+  getOperatorRuleSource,
 } from "./db/queries";
 import type { Operator, Park, Campground, Site, CampMap, EquipmentOption, SiteReview, ParkReview, SiteReviewAggregate, ParkReviewAggregate } from "./types";
 
@@ -37,6 +36,7 @@ export {
   getParkReviewAggregate,
   getRecentSiteReviewsForPark,
   getSiteReviewStatsForPark,
+  getOperatorRuleSource,
 };
 export type { SiteReview, ParkReview, SiteReviewAggregate, ParkReviewAggregate };
 
@@ -176,21 +176,23 @@ export async function getSitesForPark(parkId: string): Promise<Site[]> {
   const rows = await sql()<Array<{
     id: string; campground_id: string; vendor_site_id: string; name: string;
     site_type: string; site_type_label: string | null; icon_type: number | null;
-    max_party_size: number; max_equipment_length_ft: number | null;
+    min_party_size: number | null; max_party_size: number; max_stay_nights: number | null;
+    max_equipment_length_ft: number | null;
     has_electric: boolean; has_water: boolean; has_sewer: boolean;
     is_pull_through: boolean; is_accessible: boolean;
     is_pet_friendly: boolean; is_waterfront: boolean;
     amenities: string[];
     camp_map_id: string | null; map_x: number | null; map_y: number | null;
     photos: unknown; description: string | null;
+    defined_attributes: unknown; allowed_equipment: unknown; rule_summary: unknown;
   }>>`
     SELECT s.id, s.campground_id, s.vendor_site_id, s.name, s.site_type,
            s.site_type_label, s.icon_type,
-           s.max_party_size, s.max_equipment_length_ft,
+           s.min_party_size, s.max_party_size, s.max_stay_nights, s.max_equipment_length_ft,
            s.has_electric, s.has_water, s.has_sewer, s.is_pull_through,
            s.is_accessible, s.is_pet_friendly, s.is_waterfront,
            s.amenities, s.camp_map_id, s.map_x, s.map_y,
-           s.photos, s.description
+           s.photos, s.description, s.defined_attributes, s.allowed_equipment, s.rule_summary
       FROM sites s
       JOIN campgrounds c ON c.id = s.campground_id
      WHERE c.park_id = ${parkId}
@@ -199,7 +201,8 @@ export async function getSitesForPark(parkId: string): Promise<Site[]> {
     id: r.id, campground_id: r.campground_id, vendor_site_id: r.vendor_site_id,
     name: r.name, site_type: r.site_type as Site["site_type"],
     site_type_label: r.site_type_label, icon_type: r.icon_type,
-    max_party_size: r.max_party_size, max_equipment_length_ft: r.max_equipment_length_ft,
+    min_party_size: r.min_party_size, max_party_size: r.max_party_size,
+    max_stay_nights: r.max_stay_nights, max_equipment_length_ft: r.max_equipment_length_ft,
     has_electric: r.has_electric, has_water: r.has_water, has_sewer: r.has_sewer,
     is_pull_through: r.is_pull_through, is_accessible: r.is_accessible,
     is_pet_friendly: r.is_pet_friendly, is_waterfront: r.is_waterfront,
@@ -207,6 +210,9 @@ export async function getSitesForPark(parkId: string): Promise<Site[]> {
     camp_map_id: r.camp_map_id, map_x: r.map_x, map_y: r.map_y,
     photos: Array.isArray(r.photos) ? (r.photos as Site["photos"]) : [],
     description: r.description,
+    defined_attributes: Array.isArray(r.defined_attributes) ? (r.defined_attributes as Site["defined_attributes"]) : [],
+    allowed_equipment: Array.isArray(r.allowed_equipment) ? (r.allowed_equipment as Site["allowed_equipment"]) : [],
+    rule_summary: r.rule_summary && typeof r.rule_summary === "object" ? (r.rule_summary as Site["rule_summary"]) : null,
   }));
 }
 
@@ -217,21 +223,23 @@ export async function getSiteByPark(
   const rows = await sql()<Array<{
     id: string; campground_id: string; vendor_site_id: string; name: string;
     site_type: string; site_type_label: string | null; icon_type: number | null;
-    max_party_size: number; max_equipment_length_ft: number | null;
+    min_party_size: number | null; max_party_size: number; max_stay_nights: number | null;
+    max_equipment_length_ft: number | null;
     has_electric: boolean; has_water: boolean; has_sewer: boolean;
     is_pull_through: boolean; is_accessible: boolean;
     is_pet_friendly: boolean; is_waterfront: boolean;
     amenities: string[];
     camp_map_id: string | null; map_x: number | null; map_y: number | null;
     photos: unknown; description: string | null;
+    defined_attributes: unknown; allowed_equipment: unknown; rule_summary: unknown;
   }>>`
     SELECT s.id, s.campground_id, s.vendor_site_id, s.name, s.site_type,
            s.site_type_label, s.icon_type,
-           s.max_party_size, s.max_equipment_length_ft,
+           s.min_party_size, s.max_party_size, s.max_stay_nights, s.max_equipment_length_ft,
            s.has_electric, s.has_water, s.has_sewer, s.is_pull_through,
            s.is_accessible, s.is_pet_friendly, s.is_waterfront,
            s.amenities, s.camp_map_id, s.map_x, s.map_y,
-           s.photos, s.description
+           s.photos, s.description, s.defined_attributes, s.allowed_equipment, s.rule_summary
       FROM sites s
       JOIN campgrounds c ON c.id = s.campground_id
      WHERE c.park_id = ${parkId}
@@ -244,7 +252,8 @@ export async function getSiteByPark(
     id: r.id, campground_id: r.campground_id, vendor_site_id: r.vendor_site_id,
     name: r.name, site_type: r.site_type as Site["site_type"],
     site_type_label: r.site_type_label, icon_type: r.icon_type,
-    max_party_size: r.max_party_size, max_equipment_length_ft: r.max_equipment_length_ft,
+    min_party_size: r.min_party_size, max_party_size: r.max_party_size,
+    max_stay_nights: r.max_stay_nights, max_equipment_length_ft: r.max_equipment_length_ft,
     has_electric: r.has_electric, has_water: r.has_water, has_sewer: r.has_sewer,
     is_pull_through: r.is_pull_through, is_accessible: r.is_accessible,
     is_pet_friendly: r.is_pet_friendly, is_waterfront: r.is_waterfront,
@@ -252,6 +261,9 @@ export async function getSiteByPark(
     camp_map_id: r.camp_map_id, map_x: r.map_x, map_y: r.map_y,
     photos: Array.isArray(r.photos) ? (r.photos as Site["photos"]) : [],
     description: r.description,
+    defined_attributes: Array.isArray(r.defined_attributes) ? (r.defined_attributes as Site["defined_attributes"]) : [],
+    allowed_equipment: Array.isArray(r.allowed_equipment) ? (r.allowed_equipment as Site["allowed_equipment"]) : [],
+    rule_summary: r.rule_summary && typeof r.rule_summary === "object" ? (r.rule_summary as Site["rule_summary"]) : null,
   };
 }
 
@@ -320,25 +332,22 @@ export type DataSourceInfo = {
   hasReal: boolean;
   metadataLastRefreshedAt: string | null;
   availabilityLastRefreshedAt: string | null;
-  refreshRuns: RefreshLogRow[];
 };
 
 export async function getDataSourceInfo(): Promise<DataSourceInfo> {
   try {
-    const [meta, runs] = await Promise.all([getRefreshMeta(), getLatestRefreshLogPerType()]);
+    const meta = await getRefreshMeta();
     const find = (t: string) => meta.find((m) => m.refresh_type === t)?.last_success_at ?? null;
     return {
-      hasReal: meta.length > 0 || runs.length > 0,
+      hasReal: meta.length > 0,
       metadataLastRefreshedAt: find("metadata"),
       availabilityLastRefreshedAt: find("availability"),
-      refreshRuns: runs,
     };
   } catch {
     return {
       hasReal: false,
       metadataLastRefreshedAt: null,
       availabilityLastRefreshedAt: null,
-      refreshRuns: [],
     };
   }
 }

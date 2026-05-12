@@ -13,6 +13,7 @@ import {
   Flame,
   MessageSquare,
   PawPrint,
+  ShieldCheck,
   Star,
   Tent,
   TreePine,
@@ -26,10 +27,11 @@ import type { Site, SiteReview } from "@/lib/types";
 import type { CalendarRow } from "@/components/availability-calendar";
 import type { SiteStatsEntry } from "@/components/site-field-notes";
 import { PhotoGallery } from "@/components/photo-gallery";
+import { SiteRulesCard } from "@/components/rules-panel";
 import { timeAgo } from "@/lib/utils";
 
 type Status = "available" | "reserved" | "closed" | "unknown";
-type Tab = "photos" | "availability" | "field-notes" | "reviews";
+type Tab = "photos" | "availability" | "field-notes" | "rules" | "reviews";
 
 export type SiteFlyoutDetails = {
   site: Site;
@@ -147,6 +149,7 @@ export function SiteDetailFlyout({ details, onClose }: Props) {
     { id: "photos", label: "Photos", icon: Camera, count: details?.site.photos?.filter((p) => p.url || p.avifUrl).length ?? 0 },
     { id: "availability", label: "Availability", icon: Calendar, count: openNights },
     { id: "field-notes", label: "Field Notes", icon: TreePine },
+    { id: "rules", label: "Rules", icon: ShieldCheck, count: details?.site.rule_summary?.highlights?.length ?? 0 },
     { id: "reviews", label: "Reviews", icon: MessageSquare, count: details?.stats?.reviewCount ?? details?.recentReviews.length ?? 0 },
   ];
 
@@ -478,6 +481,19 @@ export function SiteDetailFlyout({ details, onClose }: Props) {
                         </article>
                       ))
                     )}
+                  </motion.div>
+                )}
+
+                {activeTab === "rules" && (
+                  <motion.div
+                    key="rules"
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    transition={{ duration: 0.18 }}
+                    className="space-y-4"
+                  >
+                    <SiteRulesCard site={details.site} operatorName={details.operatorName} />
                   </motion.div>
                 )}
               </AnimatePresence>

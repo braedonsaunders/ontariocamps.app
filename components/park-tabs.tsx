@@ -3,14 +3,15 @@
 import { useCallback, useState, useMemo } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "motion/react";
-import type { Site, CampMap, EquipmentOption, ParkReview, SiteReviewAggregate, ParkReviewAggregate } from "@/lib/types";
+import type { Site, CampMap, EquipmentOption, ParkReview, SiteReviewAggregate, ParkReviewAggregate, OperatorRuleSource } from "@/lib/types";
 import { AvailabilityCalendar, type CalendarRow } from "@/components/availability-calendar";
 import { CampgroundMap } from "@/components/campground-map";
 import { ParkReviewAggregateDisplay, ParkReviewList, ParkReviewForm } from "@/components/reviews";
 import { SiteFieldNotes, type SiteStatsEntry } from "@/components/site-field-notes";
 import { SiteDetailFlyout, type SiteFlyoutDetails } from "@/components/site-detail-flyout";
+import { RulesPanel } from "@/components/rules-panel";
 import { timeAgo } from "@/lib/utils";
-import { Info, Map as MapIcon, Calendar, Tent, ArrowUpRight, CalendarRange, MessageSquare, TreePine } from "lucide-react";
+import { Info, Map as MapIcon, Calendar, Tent, ArrowUpRight, CalendarRange, MessageSquare, TreePine, ShieldCheck } from "lucide-react";
 
 type SiteAvailability = {
   status: "available" | "reserved" | "closed" | "unknown";
@@ -53,9 +54,10 @@ type Props = {
   recentSiteReviews: Array<import("@/lib/types").SiteReview & { site_name: string }>;
   parkId: string;
   siteStats: SiteStatsEntry[];
+  operatorRuleSource: OperatorRuleSource | null;
 };
 
-type Tab = "overview" | "sites" | "calendar" | "reviews";
+type Tab = "overview" | "sites" | "calendar" | "rules" | "reviews";
 type SitesSubTab = "map" | "field-notes";
 
 function formatDate(iso: string): string {
@@ -128,6 +130,7 @@ export function ParkTabs(props: Props) {
     recentSiteReviews,
     parkId,
     siteStats,
+    operatorRuleSource,
   } = props;
 
   const [activeTab, setActiveTab] = useState<Tab>("overview");
@@ -166,6 +169,7 @@ export function ParkTabs(props: Props) {
     { id: "overview", label: "Overview", icon: Info },
     { id: "sites", label: "Sites", icon: Tent },
     { id: "calendar", label: "Calendar", icon: Calendar },
+    { id: "rules", label: "Rules", icon: ShieldCheck },
     { id: "reviews", label: "Reviews", icon: MessageSquare },
   ];
 
@@ -444,6 +448,27 @@ export function ParkTabs(props: Props) {
                 <ParkReviewAggregateDisplay aggregate={parkReviewAggregate} />
                 <ParkReviewList reviews={parkReviews} siteReviews={recentSiteReviews} />
                 <ParkReviewForm parkId={parkId} />
+              </motion.div>
+            )}
+
+            {activeTab === "rules" && (
+              <motion.div
+                key="rules"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={{ duration: 0.25 }}
+              >
+                <RulesPanel
+                  parkName={parkName}
+                  operatorName={operatorName}
+                  operatorRuleSource={operatorRuleSource}
+                  sites={sites}
+                  totalSites={totalSites}
+                  vendorUrl={vendorUrl}
+                  lastCheckedAt={calendarLastChecked}
+                  onOpenSiteDetails={openSiteFlyout}
+                />
               </motion.div>
             )}
           </AnimatePresence>

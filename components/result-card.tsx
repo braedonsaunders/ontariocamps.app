@@ -18,6 +18,14 @@ function AmenityIcon({ code }: { code: string }) {
   return null;
 }
 
+function ruleToneClass(tone?: string) {
+  if (tone === "emerald") return "bg-emerald-50 text-emerald-700 ring-emerald-200";
+  if (tone === "amber") return "bg-amber-50 text-amber-800 ring-amber-200";
+  if (tone === "red") return "bg-red-50 text-red-700 ring-red-200";
+  if (tone === "lake") return "bg-lake-50 text-lake-800 ring-lake-200";
+  return "bg-stone-100 text-stone-700 ring-stone-200";
+}
+
 export function ResultCard({ result }: { result: SearchResult }) {
   const operatorClass =
     result.park.operator_id === "ontario_parks"
@@ -51,6 +59,7 @@ export function ResultCard({ result }: { result: SearchResult }) {
             {result.campground.name} ·{" "}
             <span className="inline-flex items-center gap-1">
               <SiteIcon type={result.site.site_type} /> Site {result.site.name}
+              {result.site.site_type_label ? ` · ${result.site.site_type_label}` : ""}
             </span>
           </div>
         </div>
@@ -72,6 +81,11 @@ export function ResultCard({ result }: { result: SearchResult }) {
       )}
 
       <div className="mt-3 flex flex-wrap gap-1.5">
+        {result.site.rule_highlights?.slice(0, 4).map((rule) => (
+          <span key={rule.label} className={`chip ring-1 ${ruleToneClass(rule.tone)}`}>
+            {rule.label}
+          </span>
+        ))}
         {result.site.amenities.slice(0, 6).map((code) => (
           <span key={code} className="chip bg-stone-100 text-stone-700">
             <AmenityIcon code={code} />

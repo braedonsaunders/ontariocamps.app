@@ -7,6 +7,7 @@ import type { Site, EquipmentOption, SiteReview, SiteReviewAggregate } from "@/l
 import type { GalleryPhoto } from "@/components/photo-gallery";
 import { PhotoGallery } from "@/components/photo-gallery";
 import { SiteReviewAggregateDisplay, SiteReviewList, SiteReviewForm } from "@/components/reviews";
+import { SiteRulesCard } from "@/components/rules-panel";
 import { timeAgo } from "@/lib/utils";
 import {
   Camera,
@@ -22,6 +23,7 @@ import {
   Tent,
   Star,
   Flame,
+  ShieldCheck,
 } from "lucide-react";
 
 type MonthCalendar = {
@@ -49,13 +51,21 @@ type Props = {
   bookableNights: number;
 };
 
-type Tab = "photos" | "calendar" | "reviews";
+type Tab = "photos" | "calendar" | "rules" | "reviews";
 
 function statusBadge(status: string) {
   if (status === "available") return { cls: "bg-emerald-50 text-emerald-700 ring-emerald-200", label: "Available" };
   if (status === "reserved") return { cls: "bg-red-50 text-red-700 ring-red-200", label: "Booked" };
   if (status === "closed") return { cls: "bg-stone-200 text-stone-700 ring-stone-300", label: "Closed" };
   return { cls: "bg-stone-100 text-stone-500 ring-stone-200", label: "Unknown" };
+}
+
+function ruleToneClass(tone?: string) {
+  if (tone === "emerald") return "bg-emerald-50 text-emerald-700 ring-emerald-200";
+  if (tone === "amber") return "bg-amber-50 text-amber-800 ring-amber-200";
+  if (tone === "red") return "bg-red-50 text-red-700 ring-red-200";
+  if (tone === "lake") return "bg-lake-50 text-lake-800 ring-lake-200";
+  return "bg-stone-100 text-stone-700 ring-stone-200";
 }
 
 export function SiteTabs(props: Props) {
@@ -83,6 +93,7 @@ export function SiteTabs(props: Props) {
   const TABS: Array<{ id: Tab; label: string; icon: typeof Camera }> = [
     { id: "photos", label: "Photos", icon: Camera },
     { id: "calendar", label: "Calendar", icon: Calendar },
+    { id: "rules", label: "Rules", icon: ShieldCheck },
     { id: "reviews", label: "Reviews", icon: MessageSquare },
   ];
 
@@ -230,6 +241,23 @@ export function SiteTabs(props: Props) {
                 <SiteReviewForm siteId={site.id} />
               </motion.div>
             )}
+
+            {activeTab === "rules" && (
+              <motion.div
+                key="rules"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={{ duration: 0.25 }}
+                className="space-y-4"
+              >
+                <div className="flex items-baseline justify-between flex-wrap gap-2">
+                  <h2 className="text-xl font-semibold tracking-tight">Rules and site notes</h2>
+                  <span className="text-xs text-stone-500">Decoded from {operatorName}&apos;s booking data</span>
+                </div>
+                <SiteRulesCard site={site} operatorName={operatorName} />
+              </motion.div>
+            )}
           </AnimatePresence>
         </div>
 
@@ -264,6 +292,11 @@ export function SiteTabs(props: Props) {
             </dl>
 
             <div className="mt-4 flex flex-wrap gap-1.5">
+              {site.rule_summary?.highlights?.slice(0, 4).map((rule) => (
+                <span key={rule.label} className={`chip ring-1 ${ruleToneClass(rule.tone)}`}>
+                  {rule.label}
+                </span>
+              ))}
               {site.has_electric && (
                 <span className="chip bg-amber-50 text-amber-800 ring-1 ring-amber-200"><Zap size={10} /> Electric</span>
               )}
