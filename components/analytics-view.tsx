@@ -19,13 +19,18 @@ import {
 import {
   Activity,
   ArrowUpRight,
+  BadgeCheck,
+  BarChart3,
   Calendar,
   CalendarDays,
   Compass,
   Database,
   Flame,
+  Gauge,
+  Info,
   MapPinned,
   Moon,
+  Search,
   Tent,
   TrendingDown,
   TrendingUp,
@@ -34,6 +39,13 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { AnalyticsSnapshot, ParkNightSeries } from "@/lib/analytics";
+
+const STATUS_COLORS: Record<string, string> = {
+  available: "#10b981",
+  reserved: "#ef4444",
+  closed: "#57534e",
+  unknown: "#a8a29e",
+};
 
 const INVENTORY_PALETTE = [
   "#37562e",
@@ -110,6 +122,13 @@ function median(values: number[]): number {
   return sorted.length % 2 === 0 ? Math.round((sorted[mid - 1] + sorted[mid]) / 2) : sorted[mid];
 }
 
+function quantile(values: number[], q: number): number {
+  if (values.length === 0) return 0;
+  const sorted = values.slice().sort((a, b) => a - b);
+  const idx = Math.min(sorted.length - 1, Math.max(0, Math.round((sorted.length - 1) * q)));
+  return sorted[idx];
+}
+
 function rangeLabel(start: string, end: string): string {
   return start === end ? fmtDate(start) : `${fmtDate(start)} - ${fmtDate(end)}`;
 }
@@ -178,6 +197,12 @@ function indexRangeForPeriod(dates: string[], key: PeriodKey): { from: number; t
   return null;
 }
 
+function sumRange(arr: number[], from: number, to: number): number {
+  let s = 0;
+  for (let i = from; i <= to; i++) s += arr[i] ?? 0;
+  return s;
+}
+
 function medianRange(arr: number[], from: number, to: number): number {
   if (from > to) return 0;
   return median(arr.slice(from, to + 1));
@@ -220,6 +245,25 @@ type LeaderRow = {
   availability_pct: number;
 };
 
+type HeatmapBucket = {
+  label: string;
+  range: string;
+  from: number;
+  to: number;
+  days: number;
+};
+
+type HeatmapRow = {
+  region: string;
+  totalSites: number;
+  cells: Array<{
+    label: string;
+    pct: number;
+    available: number;
+    totalSites: number;
+  }>;
+};
+
 type PeriodAggregates = {
   series: NightPoint[];
   nightSums: { available: number; reserved: number; closed: number; total: number };
@@ -234,14 +278,84 @@ type PeriodAggregates = {
     pressurePct: number;
   }>;
   regions: Array<{ name: string; Available: number; Booked: number; totalSites: number; pct: number }>;
+  statusMix: Array<{ name: string; value: number }>;
   mostAvailable: LeaderRow[];
   mostBooked: LeaderRow[];
   rangeLabel: string;
   daysInWindow: number;
+  fromIndex: number;
+  toIndex: number;
   medianAvailable: number;
   medianReserved: number;
-  distribution: { soldOutParks: number };
+  bestNight: NightPoint | null;
+  hardestNight: NightPoint | null;
+  heatmap: { buckets: HeatmapBucket[]; rows: HeatmapRow[] };
+  distribution: {
+    parksAnalyzed: number;
+    medianParkPct: number;
+    openParks: number;
+    tightParks: number;
+    soldOutParks: number;
+    p10Night: number;
+    p90Night: number;
+  };
 };
+
+function buildHeatmap(pns: ParkNightSeries, from: number, to: number): { buckets: HeatmapBucket[]; rows: HeatmapRow[] } {
+  const nights = to - from + 1;
+  const bucketSize = nights <= 10 ? 1 : nights <= 45 ? 3 : 7;
+  const buckets: HeatmapBucket[] = [];
+
+  for (let start = from; start <= to; start += bucketSize) {
+    const end = Math.min(to, start + bucketSize - 1);
+    buckets.push({
+      label: start === end ? fmtDate(pns.dates[start]) : fmtDate(pns.dates[start]),
+      range: rangeLabel(pns.dates[start], pns.dates[end]),
+      from: start,
+      to: end,
+      days: end - start + 1,
+    });
+  }
+
+  const byRegion = new Map<
+    string,
+    { totalSites: number; available: number[]; sampled: number[] }
+  >();
+
+  for (const p of pns.parks) {
+    const region = p.region?.trim() || "Unknown";
+    let acc = byRegion.get(region);
+    if (!acc) {
+      acc = {
+        totalSites: 0,
+        available: new Array(buckets.length).fill(0),
+        sampled: new Array(buckets.length).fill(0),
+      };
+      byRegion.set(region, acc);
+    }
+    acc.totalSites += p.total_sites;
+    buckets.forEach((b, bucketIndex) => {
+      acc!.available[bucketIndex] += sumRange(p.available, b.from, b.to);
+      acc!.sampled[bucketIndex] += p.total_sites * b.days;
+    });
+  }
+
+  const rows = Array.from(byRegion.entries())
+    .map(([region, acc]) => ({
+      region,
+      totalSites: acc.totalSites,
+      cells: buckets.map((b, i) => ({
+        label: b.range,
+        pct: pct(acc.available[i], acc.sampled[i]),
+        available: Math.round(acc.available[i] / Math.max(1, b.days)),
+        totalSites: acc.totalSites,
+      })),
+    }))
+    .sort((a, b) => b.totalSites - a.totalSites)
+    .slice(0, 10);
+
+  return { buckets, rows };
+}
 
 function buildPeriodAggregates(pns: ParkNightSeries, period: PeriodKey): PeriodAggregates {
   const range = indexRangeForPeriod(pns.dates, period);
@@ -251,13 +365,27 @@ function buildPeriodAggregates(pns: ParkNightSeries, period: PeriodKey): PeriodA
       nightSums: { available: 0, reserved: 0, closed: 0, total: 0 },
       operators: [],
       regions: [],
+      statusMix: [],
       mostAvailable: [],
       mostBooked: [],
       rangeLabel: "no data",
       daysInWindow: 0,
+      fromIndex: 0,
+      toIndex: -1,
       medianAvailable: 0,
       medianReserved: 0,
-      distribution: { soldOutParks: 0 },
+      bestNight: null,
+      hardestNight: null,
+      heatmap: { buckets: [], rows: [] },
+      distribution: {
+        parksAnalyzed: 0,
+        medianParkPct: 0,
+        openParks: 0,
+        tightParks: 0,
+        soldOutParks: 0,
+        p10Night: 0,
+        p90Night: 0,
+      },
     };
   }
 
@@ -356,6 +484,12 @@ function buildPeriodAggregates(pns: ParkNightSeries, period: PeriodKey): PeriodA
     })
     .sort((a, b) => b.pct - a.pct || b.Available - a.Available);
 
+  const statusMix = [
+    { name: "available", value: nightSums.available },
+    { name: "reserved", value: nightSums.reserved },
+    { name: "closed", value: nightSums.closed },
+  ];
+
   const parkRanks: LeaderRow[] = pns.parks
     .filter((p) => p.total_sites >= 5)
     .map((p) => {
@@ -381,19 +515,36 @@ function buildPeriodAggregates(pns: ParkNightSeries, period: PeriodKey): PeriodA
     .slice(0, 12);
 
   const nightAvailability = series.map((p) => p.available);
+  const parkPctValues = parkRanks.map((p) => p.availability_pct);
+  const bestNight = series.length ? series.reduce((best, p) => (p.available > best.available ? p : best), series[0]) : null;
+  const hardestNight = series.length ? series.reduce((hardest, p) => (p.available < hardest.available ? p : hardest), series[0]) : null;
 
   return {
     series,
     nightSums,
     operators,
     regions,
+    statusMix,
     mostAvailable,
     mostBooked,
     rangeLabel: series.length ? rangeLabel(series[0].night_date, series[series.length - 1].night_date) : "no data",
     daysInWindow,
+    fromIndex: from,
+    toIndex: to,
     medianAvailable: median(nightAvailability),
     medianReserved: median(series.map((p) => p.reserved)),
-    distribution: { soldOutParks: parkRanks.filter((p) => p.available === 0).length },
+    bestNight,
+    hardestNight,
+    heatmap: buildHeatmap(pns, from, to),
+    distribution: {
+      parksAnalyzed: parkRanks.length,
+      medianParkPct: median(parkPctValues),
+      openParks: parkRanks.filter((p) => p.availability_pct >= 50).length,
+      tightParks: parkRanks.filter((p) => p.availability_pct <= 10).length,
+      soldOutParks: parkRanks.filter((p) => p.available === 0).length,
+      p10Night: quantile(nightAvailability, 0.1),
+      p90Night: quantile(nightAvailability, 0.9),
+    },
   };
 }
 
@@ -409,6 +560,14 @@ function pressureLabel(pressurePct: number): string {
   if (pressurePct >= 74) return "Busy";
   if (pressurePct >= 55) return "Competitive";
   return "Roomy";
+}
+
+function heatColor(value: number): string {
+  if (value >= 55) return "#047857";
+  if (value >= 35) return "#10b981";
+  if (value >= 20) return "#f59e0b";
+  if (value >= 10) return "#ef4444";
+  return "#7f1d1d";
 }
 
 function toneClasses(tone: Tone): {
@@ -619,6 +778,36 @@ function SectionHeader({
   );
 }
 
+function TonightSnapshot({ agg }: { agg: PeriodAggregates }) {
+  const items = [
+    { label: "Available", value: agg.nightSums.available, tone: "emerald" as Tone },
+    { label: "Reserved", value: agg.nightSums.reserved, tone: "red" as Tone },
+    { label: "Closed", value: agg.nightSums.closed, tone: "stone" as Tone },
+  ];
+
+  return (
+    <section className="rounded-lg bg-white p-5 ring-1 ring-stone-200 shadow-sm">
+      <SectionHeader
+        eyebrow="Single night"
+        title="Tonight at a glance"
+        body={`A live snapshot for ${agg.rangeLabel}. Switch windows for the night-by-night pressure curve.`}
+      />
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        {items.map((item) => {
+          const c = toneClasses(item.tone);
+          return (
+            <div key={item.label} className={`rounded-lg p-4 ring-1 ${c.shell}`}>
+              <div className={`text-[10px] font-semibold uppercase tracking-wide ${c.text}`}>{item.label}</div>
+              <div className="mt-1 text-3xl font-semibold tabular-nums text-stone-950">{fmt(item.value)}</div>
+              <div className="mt-1 text-xs text-stone-500">{pct(item.value, agg.nightSums.total)}% of tonight&apos;s sampled sites</div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function PressureOverviewChart({ series }: { series: NightPoint[] }) {
   if (series.length === 0) return null;
   const sums = series.reduce(
@@ -716,6 +905,122 @@ function PressureOverviewChart({ series }: { series: NightPoint[] }) {
   );
 }
 
+function AvailabilityChart({ agg, periodLabel }: { agg: PeriodAggregates; periodLabel: string }) {
+  return (
+    <section className="rounded-lg bg-white p-5 ring-1 ring-stone-200 shadow-sm">
+      <SectionHeader
+        eyebrow="Date pressure"
+        title="Sites by night"
+        body={`Every indexed site split by status across ${periodLabel.toLowerCase()} (${agg.rangeLabel}).`}
+        action={
+          <div className="rounded-md bg-stone-100 px-2.5 py-1.5 text-xs font-medium text-stone-700 ring-1 ring-stone-200">
+            {pct(agg.nightSums.available, agg.nightSums.total)}% open site-nights
+          </div>
+        }
+      />
+      <div className="mt-4 h-80 min-w-0 -ml-2">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={agg.series} margin={{ top: 8, right: 12, left: 0, bottom: 4 }}>
+            <defs>
+              <linearGradient id="analytics-available" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#10b981" stopOpacity={0.9} />
+                <stop offset="100%" stopColor="#10b981" stopOpacity={0.45} />
+              </linearGradient>
+              <linearGradient id="analytics-reserved" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#ef4444" stopOpacity={0.85} />
+                <stop offset="100%" stopColor="#ef4444" stopOpacity={0.48} />
+              </linearGradient>
+              <linearGradient id="analytics-closed" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#78716c" stopOpacity={0.8} />
+                <stop offset="100%" stopColor="#78716c" stopOpacity={0.38} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e7e5e4" />
+            <XAxis
+              dataKey="night_date"
+              interval={Math.max(0, Math.floor(agg.series.length / 8))}
+              tick={{ fontSize: 10, fill: "#78716c" }}
+              tickFormatter={(v) => fmtDate(v)}
+            />
+            <YAxis tick={{ fontSize: 11, fill: "#78716c" }} tickFormatter={(v) => fmtCompact(Number(v))} />
+            <Tooltip content={<ChartTooltip />} />
+            <Legend iconType="circle" wrapperStyle={{ fontSize: 12, paddingTop: 6 }} />
+            <Area
+              type="monotone"
+              stackId="1"
+              dataKey="available"
+              name="Available"
+              stroke="#059669"
+              strokeWidth={1}
+              fill="url(#analytics-available)"
+              isAnimationActive={false}
+            />
+            <Area
+              type="monotone"
+              stackId="1"
+              dataKey="reserved"
+              name="Reserved"
+              stroke="#b91c1c"
+              strokeWidth={1}
+              fill="url(#analytics-reserved)"
+              isAnimationActive={false}
+            />
+            <Area
+              type="monotone"
+              stackId="1"
+              dataKey="closed"
+              name="Closed"
+              stroke="#57534e"
+              strokeWidth={1}
+              fill="url(#analytics-closed)"
+              isAnimationActive={false}
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+    </section>
+  );
+}
+
+function NerdPanel({ agg }: { agg: PeriodAggregates }) {
+  const spread = Math.max(0, agg.distribution.p90Night - agg.distribution.p10Night);
+  return (
+    <section className="rounded-lg bg-white p-4 ring-1 ring-stone-200 shadow-sm">
+      <SectionHeader
+        eyebrow="Distribution"
+        title="Data nerd readout"
+        body="Median, tails, and park-level scarcity using per-park nightly rollups."
+      />
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <NerdRow icon={Gauge} label="Median park availability" value={`${agg.distribution.medianParkPct}%`} />
+        <NerdRow icon={BadgeCheck} label="Parks at 50%+ availability" value={fmt(agg.distribution.openParks)} />
+        <NerdRow icon={Flame} label="Parks at 10% or lower" value={fmt(agg.distribution.tightParks)} />
+        <NerdRow icon={BarChart3} label="P10-P90 nightly spread" value={fmt(spread)} />
+      </div>
+      <div className="mt-3 rounded-lg bg-stone-50 p-3 ring-1 ring-stone-200">
+        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-stone-500">
+          <Info size={13} /> Typical means median
+        </div>
+        <p className="mt-2 text-xs leading-relaxed text-stone-600">
+          Multi-day windows use median nightly availability so one strange night does not dominate the story.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function NerdRow({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
+  return (
+    <div className="rounded-lg bg-stone-50 p-3 ring-1 ring-stone-200">
+      <div className="flex items-center gap-2 text-xs text-stone-500">
+        <Icon size={13} />
+        {label}
+      </div>
+      <div className="mt-1 text-2xl font-semibold tabular-nums text-stone-950">{value}</div>
+    </div>
+  );
+}
+
 function NetworkChart({ agg, periodLabel }: { agg: PeriodAggregates; periodLabel: string }) {
   return (
     <section className="rounded-lg bg-white p-5 ring-1 ring-stone-200 shadow-sm">
@@ -790,6 +1095,101 @@ function RegionBoard({ regions }: { regions: PeriodAggregates["regions"] }) {
           );
         })}
       </div>
+    </section>
+  );
+}
+
+function AvailabilityHeatmap({ agg }: { agg: PeriodAggregates }) {
+  if (agg.heatmap.rows.length === 0) return null;
+
+  return (
+    <section className="rounded-lg bg-white p-5 ring-1 ring-stone-200 shadow-sm">
+      <SectionHeader
+        eyebrow="Region x date"
+        title="Availability heatmap"
+        body="Darker green means more openings; red means the region is tight for that bucket."
+      />
+      <div className="mt-4 overflow-x-auto pb-1">
+        <div
+          className="grid min-w-[760px] gap-1"
+          style={{
+            gridTemplateColumns: `minmax(150px, 1.4fr) repeat(${agg.heatmap.buckets.length}, minmax(38px, 1fr))`,
+          }}
+        >
+          <div className="sticky left-0 z-10 bg-white pr-2 text-xs font-semibold uppercase tracking-wide text-stone-500">
+            Region
+          </div>
+          {agg.heatmap.buckets.map((b) => (
+            <div key={`${b.from}-${b.to}`} className="text-center text-[10px] font-medium leading-tight text-stone-500" title={b.range}>
+              {b.label}
+            </div>
+          ))}
+          {agg.heatmap.rows.map((row) => (
+            <HeatmapRowView key={row.region} row={row} />
+          ))}
+        </div>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-stone-500">
+        <span className="font-medium text-stone-700">Open share</span>
+        {[5, 15, 30, 45, 60].map((v) => (
+          <span key={v} className="inline-flex items-center gap-1.5">
+            <span className="h-2.5 w-5 rounded-sm" style={{ backgroundColor: heatColor(v) }} />
+            {v}%
+          </span>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function HeatmapRowView({ row }: { row: HeatmapRow }) {
+  return (
+    <>
+      <div className="sticky left-0 z-10 min-w-0 bg-white py-1.5 pr-2">
+        <div className="truncate text-sm font-medium text-stone-900">{row.region}</div>
+        <div className="text-[10px] text-stone-500">{fmt(row.totalSites)} sites</div>
+      </div>
+      {row.cells.map((cell, i) => (
+        <div
+          key={`${row.region}-${i}`}
+          className="grid h-9 place-items-center rounded-md text-[11px] font-semibold text-white shadow-sm"
+          title={`${row.region} / ${cell.label}: ${cell.pct}% open (${fmt(cell.available)} typical sites)`}
+          style={{ backgroundColor: heatColor(cell.pct) }}
+        >
+          {cell.pct}
+        </div>
+      ))}
+    </>
+  );
+}
+
+function StatusMix({ agg, periodLabel }: { agg: PeriodAggregates; periodLabel: string }) {
+  return (
+    <section className="rounded-lg bg-white p-5 ring-1 ring-stone-200 shadow-sm">
+      <SectionHeader
+        eyebrow="Window mix"
+        title="Site-night status"
+        body={`All sampled site-nights across ${periodLabel.toLowerCase()}.`}
+      />
+      <div className="mt-4 h-64">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie data={agg.statusMix} dataKey="value" innerRadius="58%" outerRadius="86%" paddingAngle={2} isAnimationActive={false}>
+              {agg.statusMix.map((s) => (
+                <Cell key={s.name} fill={STATUS_COLORS[s.name] ?? "#a8a29e"} />
+              ))}
+            </Pie>
+            <Tooltip content={<ChartTooltip />} />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+      <LegendList
+        rows={agg.statusMix.map((s) => ({
+          label: s.name,
+          value: fmt(s.value),
+          color: STATUS_COLORS[s.name] ?? "#a8a29e",
+        }))}
+      />
     </section>
   );
 }
