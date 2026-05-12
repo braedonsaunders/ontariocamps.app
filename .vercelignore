@@ -1,5 +1,5 @@
 # Local artifacts that don't need to ship to Vercel
-data/
+/data/
 .secrets/
 .env
 .env.*
