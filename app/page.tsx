@@ -62,16 +62,9 @@ export default async function HomePage() {
         <HomeHeroBackground sceneId={heroSceneId} rotate />
         <div className="relative z-10 mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-20 sm:py-28">
           <MotionHero className="max-w-3xl">
-            <span className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs font-medium ring-1 ring-white/20">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" /> Live index across {t.operators} operators
-            </span>
-            <h1 className="mt-4 text-4xl sm:text-5xl font-semibold tracking-tight leading-tight">
+            <h1 className="text-4xl sm:text-5xl font-semibold tracking-tight leading-tight">
               Find an available campsite,<br />across every Ontario operator.
             </h1>
-            <p className="mt-4 text-lg text-white/85 max-w-2xl">
-              Search Ontario Parks, Parks Canada, and Conservation Authorities in one place.
-              We index availability in near-real-time and send you to the operator&apos;s site to book.
-            </p>
           </MotionHero>
           <MotionFadeUp delay={0.15} className="mt-8">
             <HomeSearch />
