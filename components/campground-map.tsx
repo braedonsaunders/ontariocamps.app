@@ -535,8 +535,13 @@ function PanZoomViewer({
                   onMouseLeave={() => setHovered((h) => (h === s.site.id ? null : h))}
                   onClick={(e) => {
                     e.stopPropagation();
-                    setSelected((cur) => (cur === s.site.id ? null : s.site.id));
                     setSelectedFeature(null);
+                    if (onOpenSiteDetails) {
+                      setSelected(null);
+                      onOpenSiteDetails(s.site.id);
+                      return;
+                    }
+                    setSelected((cur) => (cur === s.site.id ? null : s.site.id));
                   }}
                   className="absolute -translate-x-1/2 -translate-y-1/2 grid place-items-center bg-transparent border-0 p-0 focus:outline-none"
                   style={{
