@@ -20,7 +20,7 @@ export default async function OperatorPage({ params }: { params: Promise<{ id: s
   const minutes = freshnessMinutes(operator.last_availability_at);
 
   return (
-    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10">
+    <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 py-10">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <Link href="/parks" className="text-xs text-stone-500 hover:text-forest-700">← Parks</Link>
