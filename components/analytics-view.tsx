@@ -10,6 +10,7 @@ import {
   Legend,
   Pie,
   PieChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -207,6 +208,23 @@ function medianRange(arr: number[], from: number, to: number): number {
   return median(arr.slice(from, to + 1));
 }
 
+function buildLookaheadSeries(pns: ParkNightSeries, days = 31): NightPoint[] {
+  if (pns.dates.length === 0) return [];
+  const to = Math.min(pns.dates.length - 1, days - 1);
+  return pns.dates.slice(0, to + 1).map((d, i) => {
+    let available = 0;
+    let reserved = 0;
+    let closed = 0;
+    for (const p of pns.parks) {
+      available += p.available[i] ?? 0;
+      reserved += p.reserved[i] ?? 0;
+      closed += p.closed[i] ?? 0;
+    }
+    const total = available + reserved + closed;
+    return { night_date: d, available, reserved, closed, total, openness_pct: pct(available, total) };
+  });
+}
+
 type NightPoint = {
   night_date: string;
   available: number;
@@ -257,6 +275,7 @@ type PeriodAggregates = {
     Closed: number;
     total: number;
     pct: number;
+    pressurePct: number;
   }>;
   regions: Array<{ name: string; Available: number; Booked: number; totalSites: number; pct: number }>;
   statusMix: Array<{ name: string; value: number }>;
@@ -426,6 +445,7 @@ function buildPeriodAggregates(pns: ParkNightSeries, period: PeriodKey): PeriodA
       const Reserved = medianRange(agg.reserved, 0, daysInWindow - 1);
       const Closed = medianRange(agg.closed, 0, daysInWindow - 1);
       const total = Available + Reserved + Closed;
+      const pressurePct = pct(Reserved, Available + Reserved);
       return {
         operator_id,
         name: compactOperatorName(agg.name),
@@ -434,9 +454,10 @@ function buildPeriodAggregates(pns: ParkNightSeries, period: PeriodKey): PeriodA
         Closed,
         total,
         pct: pct(Available, total),
+        pressurePct,
       };
     })
-    .sort((a, b) => b.total - a.total);
+    .sort((a, b) => b.pressurePct - a.pressurePct || b.total - a.total);
 
   const regionMap = new Map<string, { totalSites: number; available: number[] }>();
   for (const p of pns.parks) {
@@ -630,7 +651,7 @@ function ChartTooltip({
 
 function PeriodTabs({ value, onChange }: { value: PeriodKey; onChange: (k: PeriodKey) => void }) {
   return (
-    <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+    <div className="flex flex-wrap gap-2">
       {PERIODS.map((p) => {
         const Icon = p.icon;
         const active = value === p.key;
@@ -639,23 +660,14 @@ function PeriodTabs({ value, onChange }: { value: PeriodKey; onChange: (k: Perio
             key={p.key}
             type="button"
             onClick={() => onChange(p.key)}
-            className={`min-h-[76px] rounded-lg px-3 py-3 text-left ring-1 transition-all ${
+            className={`inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-medium ring-1 transition-colors ${
               active
-                ? "bg-white text-stone-950 shadow-sm ring-white"
-                : "bg-white/8 text-white/78 ring-white/15 hover:bg-white/12 hover:text-white"
+                ? "bg-forest-700 text-white shadow-sm ring-forest-700"
+                : "bg-white text-stone-700 ring-stone-200 hover:bg-stone-50 hover:text-stone-950"
             }`}
           >
-            <div className="flex items-center gap-2">
-              <span
-                className={`grid h-8 w-8 place-items-center rounded-md ring-1 ${
-                  active ? "bg-forest-50 text-forest-700 ring-forest-100" : "bg-white/10 text-white ring-white/15"
-                }`}
-              >
-                <Icon size={16} />
-              </span>
-              <span className="text-sm font-semibold">{p.label}</span>
-            </div>
-            <div className={`mt-2 text-[11px] ${active ? "text-stone-500" : "text-white/55"}`}>{p.eyebrow}</div>
+            <Icon size={14} />
+            {p.label}
           </button>
         );
       })}
@@ -678,18 +690,18 @@ function MetricCard({
 }) {
   const c = toneClasses(tone);
   return (
-    <div className={`relative overflow-hidden rounded-lg p-4 ring-1 ${c.shell}`}>
-      <div className={`absolute inset-x-0 top-0 h-1 ${c.bar}`} />
+    <div className={`relative overflow-hidden rounded-lg p-3 ring-1 ${c.shell}`}>
+      <div className={`absolute inset-x-0 top-0 h-0.5 ${c.bar}`} />
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="text-[10px] font-semibold uppercase tracking-wide text-stone-500">{label}</div>
-          <div className="mt-1 text-3xl font-semibold tabular-nums tracking-tight text-stone-950">{value}</div>
+          <div className="mt-1 text-2xl font-semibold tabular-nums tracking-tight text-stone-950">{value}</div>
         </div>
-        <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-md ring-1 ${c.icon}`}>
-          <Icon size={16} />
+        <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-md ring-1 ${c.icon}`}>
+          <Icon size={14} />
         </span>
       </div>
-      <div className="mt-2 text-xs leading-relaxed text-stone-600">{sub}</div>
+      <div className="mt-1.5 text-xs leading-snug text-stone-600">{sub}</div>
     </div>
   );
 }
@@ -714,19 +726,19 @@ function InsightCard({
   const c = toneClasses(tone);
   const content = (
     <>
-      <div className="flex items-start gap-3">
-        <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-md ring-1 ${c.icon}`}>
-          <Icon size={17} />
+      <div className="flex items-start gap-2.5">
+        <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-md ring-1 ${c.icon}`}>
+          <Icon size={15} />
         </span>
         <div className="min-w-0">
           <div className="text-[10px] font-semibold uppercase tracking-wide text-stone-500">{label}</div>
-          <h3 className="mt-1 text-base font-semibold leading-snug text-stone-950">{title}</h3>
+          <h3 className="mt-0.5 text-sm font-semibold leading-snug text-stone-950">{title}</h3>
         </div>
       </div>
-      <p className="mt-3 text-sm leading-relaxed text-stone-600">{body}</p>
+      <p className="mt-2 text-xs leading-relaxed text-stone-600">{body}</p>
       {href && cta && (
-        <div className={`mt-4 inline-flex items-center gap-1.5 text-sm font-semibold ${c.text}`}>
-          {cta} <ArrowUpRight size={14} />
+        <div className={`mt-2 inline-flex items-center gap-1.5 text-xs font-semibold ${c.text}`}>
+          {cta} <ArrowUpRight size={12} />
         </div>
       )}
     </>
@@ -734,13 +746,13 @@ function InsightCard({
 
   if (href) {
     return (
-      <Link href={href} className={`block rounded-lg p-4 ring-1 transition-all hover:-translate-y-0.5 hover:shadow-md ${c.shell}`}>
+      <Link href={href} className={`block rounded-lg p-3 ring-1 transition-all hover:-translate-y-0.5 hover:shadow-md ${c.shell}`}>
         {content}
       </Link>
     );
   }
 
-  return <div className={`rounded-lg p-4 ring-1 ${c.shell}`}>{content}</div>;
+  return <div className={`rounded-lg p-3 ring-1 ${c.shell}`}>{content}</div>;
 }
 
 function SectionHeader({
@@ -791,6 +803,103 @@ function TonightSnapshot({ agg }: { agg: PeriodAggregates }) {
             </div>
           );
         })}
+      </div>
+    </section>
+  );
+}
+
+function PressureOverviewChart({ series }: { series: NightPoint[] }) {
+  if (series.length === 0) return null;
+  const sums = series.reduce(
+    (acc, p) => {
+      acc.available += p.available;
+      acc.reserved += p.reserved;
+      acc.closed += p.closed;
+      acc.total += p.total;
+      return acc;
+    },
+    { available: 0, reserved: 0, closed: 0, total: 0 },
+  );
+  const today = series[0].night_date;
+  const label = rangeLabel(series[0].night_date, series[series.length - 1].night_date);
+
+  return (
+    <section className="border-y border-stone-200 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-stone-500">Date pressure</div>
+          <h2 className="text-base font-semibold tracking-tight text-stone-950">Next 31 nights</h2>
+          <span className="text-xs text-stone-500">{label}</span>
+        </div>
+        <div className="rounded-md bg-white px-2.5 py-1.5 text-xs font-medium text-stone-700 ring-1 ring-stone-200">
+          {pct(sums.available, sums.total)}% open site-nights
+        </div>
+      </div>
+      <div className="mt-2 h-48 min-w-0 -ml-2 sm:h-52">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={series} margin={{ top: 12, right: 12, left: 0, bottom: 0 }}>
+            <defs>
+              <linearGradient id="pressure-available" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#10b981" stopOpacity={0.72} />
+                <stop offset="100%" stopColor="#10b981" stopOpacity={0.28} />
+              </linearGradient>
+              <linearGradient id="pressure-reserved" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#ef4444" stopOpacity={0.66} />
+                <stop offset="100%" stopColor="#ef4444" stopOpacity={0.28} />
+              </linearGradient>
+              <linearGradient id="pressure-closed" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#78716c" stopOpacity={0.62} />
+                <stop offset="100%" stopColor="#78716c" stopOpacity={0.24} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e7e5e4" />
+            <XAxis
+              dataKey="night_date"
+              interval={Math.max(0, Math.floor(series.length / 7))}
+              tick={{ fontSize: 10, fill: "#78716c" }}
+              tickFormatter={(v) => fmtDate(v)}
+            />
+            <YAxis tick={{ fontSize: 10, fill: "#78716c" }} tickFormatter={(v) => fmtCompact(Number(v))} width={34} />
+            <Tooltip content={<ChartTooltip />} />
+            <ReferenceLine
+              x={today}
+              stroke="#37562e"
+              strokeDasharray="4 3"
+              strokeWidth={1.5}
+              label={{ value: "Today", position: "insideTopLeft", fill: "#37562e", fontSize: 11 }}
+            />
+            <Area
+              type="monotone"
+              stackId="1"
+              dataKey="available"
+              name="Available"
+              stroke="#059669"
+              strokeWidth={1}
+              fill="url(#pressure-available)"
+              isAnimationActive={false}
+            />
+            <Area
+              type="monotone"
+              stackId="1"
+              dataKey="reserved"
+              name="Reserved"
+              stroke="#b91c1c"
+              strokeWidth={1}
+              fill="url(#pressure-reserved)"
+              isAnimationActive={false}
+            />
+            <Area
+              type="monotone"
+              stackId="1"
+              dataKey="closed"
+              name="Closed"
+              stroke="#57534e"
+              strokeWidth={1}
+              fill="url(#pressure-closed)"
+              isAnimationActive={false}
+            />
+          </AreaChart>
+        </ResponsiveContainer>
       </div>
     </section>
   );
@@ -876,23 +985,23 @@ function AvailabilityChart({ agg, periodLabel }: { agg: PeriodAggregates; period
 function NerdPanel({ agg }: { agg: PeriodAggregates }) {
   const spread = Math.max(0, agg.distribution.p90Night - agg.distribution.p10Night);
   return (
-    <section className="rounded-lg bg-stone-950 p-5 text-white ring-1 ring-stone-900 shadow-sm">
+    <section className="rounded-lg bg-white p-4 ring-1 ring-stone-200 shadow-sm">
       <SectionHeader
         eyebrow="Distribution"
         title="Data nerd readout"
         body="Median, tails, and park-level scarcity using per-park nightly rollups."
       />
-      <div className="mt-5 grid gap-3 sm:grid-cols-2">
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <NerdRow icon={Gauge} label="Median park availability" value={`${agg.distribution.medianParkPct}%`} />
         <NerdRow icon={BadgeCheck} label="Parks at 50%+ availability" value={fmt(agg.distribution.openParks)} />
         <NerdRow icon={Flame} label="Parks at 10% or lower" value={fmt(agg.distribution.tightParks)} />
         <NerdRow icon={BarChart3} label="P10-P90 nightly spread" value={fmt(spread)} />
       </div>
-      <div className="mt-5 rounded-lg bg-white/8 p-3 ring-1 ring-white/10">
-        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-white/55">
+      <div className="mt-3 rounded-lg bg-stone-50 p-3 ring-1 ring-stone-200">
+        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-stone-500">
           <Info size={13} /> Typical means median
         </div>
-        <p className="mt-2 text-sm leading-relaxed text-white/72">
+        <p className="mt-2 text-xs leading-relaxed text-stone-600">
           Multi-day windows use median nightly availability so one strange night does not dominate the story.
         </p>
       </div>
@@ -902,12 +1011,12 @@ function NerdPanel({ agg }: { agg: PeriodAggregates }) {
 
 function NerdRow({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
   return (
-    <div className="rounded-lg bg-white/8 p-3 ring-1 ring-white/10">
-      <div className="flex items-center gap-2 text-xs text-white/55">
+    <div className="rounded-lg bg-stone-50 p-3 ring-1 ring-stone-200">
+      <div className="flex items-center gap-2 text-xs text-stone-500">
         <Icon size={13} />
         {label}
       </div>
-      <div className="mt-1 text-2xl font-semibold tabular-nums text-white">{value}</div>
+      <div className="mt-1 text-2xl font-semibold tabular-nums text-stone-950">{value}</div>
     </div>
   );
 }
@@ -936,7 +1045,7 @@ function NetworkChart({ agg, periodLabel }: { agg: PeriodAggregates; periodLabel
                   <div className="truncate text-sm font-semibold text-stone-950">{op.name}</div>
                   <div className="mt-0.5 text-xs text-stone-500">{fmt(op.total)} typical sampled sites</div>
                 </div>
-                <div className="text-sm font-semibold tabular-nums text-emerald-700">{op.pct}% open</div>
+                <div className="text-sm font-semibold tabular-nums text-red-700">{op.pressurePct}% pressure</div>
               </div>
               <div className="mt-2 flex h-2.5 overflow-hidden rounded-full bg-stone-100">
                 <span className="bg-emerald-500" style={{ width: `${availablePct}%` }} />
@@ -1185,7 +1294,7 @@ function Leaderboard({
 }) {
   const c = toneClasses(tone);
   return (
-    <section className="rounded-lg bg-white p-5 ring-1 ring-stone-200 shadow-sm">
+    <section className="flex h-[360px] flex-col rounded-lg bg-white p-4 ring-1 ring-stone-200 shadow-sm">
       <SectionHeader
         eyebrow="Park ranking"
         title={title}
@@ -1196,12 +1305,12 @@ function Leaderboard({
           </span>
         }
       />
-      <ol className="mt-4 space-y-2">
+      <ol className="mt-3 flex-1 space-y-2 overflow-y-auto pr-1">
         {rows.length === 0 ? (
           <li className="text-sm text-stone-500">No parks in this window.</li>
         ) : (
           rows.map((r, i) => (
-            <li key={r.slug} className="rounded-lg border border-stone-200 p-3 transition-colors hover:bg-stone-50">
+            <li key={r.slug} className="rounded-lg border border-stone-200 p-2.5 transition-colors hover:bg-stone-50">
               <div className="flex items-start gap-3">
                 <span className="mt-0.5 w-5 shrink-0 text-xs tabular-nums text-stone-400">{i + 1}</span>
                 <div className="min-w-0 flex-1">
@@ -1216,7 +1325,7 @@ function Leaderboard({
                     <span>/</span>
                     <span>{fmt(r.available)} of {fmt(r.total_sites)} sites</span>
                   </div>
-                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-stone-100">
+                  <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-stone-100">
                     <div className={`h-full rounded-full ${c.bar}`} style={{ width: `${Math.min(100, Math.max(0, r.availability_pct))}%` }} />
                   </div>
                 </div>
@@ -1234,6 +1343,7 @@ export function AnalyticsView({ snapshot }: { snapshot: AnalyticsSnapshot }) {
   const [period, setPeriod] = useState<PeriodKey>("tonight");
 
   const agg = useMemo(() => buildPeriodAggregates(parkNightSeries, period), [parkNightSeries, period]);
+  const pressureSeries = useMemo(() => buildLookaheadSeries(parkNightSeries), [parkNightSeries]);
   const periodLabel = PERIODS.find((p) => p.key === period)?.label ?? "Selected window";
   const searchUrl = useMemo(() => searchUrlForSeries(agg.series), [agg.series]);
 
@@ -1267,47 +1377,38 @@ export function AnalyticsView({ snapshot }: { snapshot: AnalyticsSnapshot }) {
   return (
     <div className="bg-stone-50">
       <div className="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
-        <section className="relative overflow-hidden rounded-lg bg-stone-950 text-white ring-1 ring-stone-900 shadow-sm">
-          <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(55,86,46,0.9),rgba(43,93,114,0.74)_48%,rgba(28,25,23,0.96))]" />
-          <div className="absolute inset-0 opacity-25 [background-image:linear-gradient(rgba(255,255,255,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.08)_1px,transparent_1px)] [background-size:42px_42px]" />
-          <div className="relative grid gap-6 p-5 sm:p-7 lg:grid-cols-[1.1fr_0.9fr] lg:items-end">
-            <div className="max-w-3xl">
-              <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white/85 ring-1 ring-white/15">
-                <Activity size={13} /> Updated {formatRelative(snapshot.generated_at)}
-              </div>
-              <h1 className="mt-4 text-3xl font-semibold tracking-tight sm:text-4xl">
-                Ontario camping availability
-              </h1>
-              <p className="mt-3 max-w-2xl text-sm leading-relaxed text-white/72 sm:text-base">
-                Four planning windows for campers, with the raw pressure signals close enough for anyone who wants to poke the data.
-              </p>
-              <div className="mt-5 flex flex-wrap gap-2">
-                <Link href={searchUrl} className="btn-primary bg-white text-stone-950 hover:bg-stone-100">
-                  <Search size={15} /> Search this window
-                </Link>
-                <Link href="/data" className="btn-secondary bg-white/10 text-white ring-white/20 hover:bg-white/15">
-                  Data freshness <ArrowUpRight size={14} />
-                </Link>
-              </div>
+        <section className="flex flex-wrap items-end justify-between gap-4">
+          <div className="max-w-3xl">
+            <div className="inline-flex items-center gap-2 text-xs font-medium text-stone-500">
+              <Activity size={13} /> Updated {formatRelative(snapshot.generated_at)}
             </div>
-
-            <div className="rounded-lg bg-white/10 p-3 ring-1 ring-white/15 backdrop-blur">
-              <div className="mb-3 flex items-center justify-between gap-3 px-1">
-                <div>
-                  <div className="text-[10px] font-semibold uppercase tracking-wide text-white/55">Planning window</div>
-                  <div className="mt-0.5 text-sm font-medium text-white">{agg.rangeLabel}</div>
-                </div>
-                <div className="rounded-md bg-white/10 px-2.5 py-1.5 text-right ring-1 ring-white/15">
-                  <div className="text-[10px] uppercase tracking-wide text-white/45">Days</div>
-                  <div className="text-sm font-semibold tabular-nums text-white">{agg.daysInWindow}</div>
-                </div>
-              </div>
-              <PeriodTabs value={period} onChange={setPeriod} />
-            </div>
+            <h1 className="mt-2 text-3xl font-semibold tracking-tight text-stone-950">Analytics</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-stone-600">
+              Ontario campsite availability by planning window, with the broader pressure curve kept in view.
+            </p>
           </div>
         </section>
 
-        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <section className="grid items-end gap-3 lg:grid-cols-[1fr_auto]">
+          <div>
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-stone-500">Selected range</div>
+                <div className="mt-0.5 text-sm font-medium text-stone-900">
+                  {periodLabel} / {agg.rangeLabel}
+                </div>
+              </div>
+              <div className="rounded-md bg-white px-2.5 py-1.5 text-xs text-stone-600 ring-1 ring-stone-200">
+                {agg.daysInWindow} {agg.daysInWindow === 1 ? "day" : "days"}
+              </div>
+            </div>
+            <PeriodTabs value={period} onChange={setPeriod} />
+          </div>
+        </section>
+
+        <PressureOverviewChart series={pressureSeries} />
+
+        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <MetricCard
             icon={Database}
             label="Sites indexed"
@@ -1379,33 +1480,7 @@ export function AnalyticsView({ snapshot }: { snapshot: AnalyticsSnapshot }) {
           />
         </section>
 
-        {agg.series.length > 1 ? (
-          <section className="grid items-start gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(380px,0.75fr)]">
-            <AvailabilityChart agg={agg} periodLabel={periodLabel} />
-            <NerdPanel agg={agg} />
-          </section>
-        ) : (
-          <section className="grid items-start gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(380px,0.75fr)]">
-            <TonightSnapshot agg={agg} />
-            <NerdPanel agg={agg} />
-          </section>
-        )}
-
-        <section className="grid items-start gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
-          <NetworkChart agg={agg} periodLabel={periodLabel} />
-          <RegionBoard regions={agg.regions} />
-        </section>
-
-        <AvailabilityHeatmap agg={agg} />
-
-        <section className="grid gap-6 lg:grid-cols-3">
-          <div className="lg:col-span-2">
-            <InventoryCharts siteTypePieData={siteTypePieData} electricPieData={electricPieData} />
-          </div>
-          <StatusMix agg={agg} periodLabel={periodLabel} />
-        </section>
-
-        <section className="grid gap-6 lg:grid-cols-2">
+        <section className="grid gap-4 lg:grid-cols-2">
           <Leaderboard
             title={`Most available / ${periodLabel.toLowerCase()}`}
             subtitle="Parks with the largest share of bookable sites."
@@ -1414,13 +1489,20 @@ export function AnalyticsView({ snapshot }: { snapshot: AnalyticsSnapshot }) {
             rows={agg.mostAvailable}
           />
           <Leaderboard
-            title={`Most booked / ${periodLabel.toLowerCase()}`}
-            subtitle="Parks where the window is already under pressure."
+            title={`Least available / ${periodLabel.toLowerCase()}`}
+            subtitle="Parks where the selected window is already tight."
             icon={TrendingDown}
             tone="red"
             rows={agg.mostBooked}
           />
         </section>
+
+        <section className="grid gap-4 lg:grid-cols-2">
+          <NetworkChart agg={agg} periodLabel={periodLabel} />
+          <RegionBoard regions={agg.regions} />
+        </section>
+
+        <InventoryCharts siteTypePieData={siteTypePieData} electricPieData={electricPieData} />
 
         <p className="text-xs leading-relaxed text-stone-500">
           Sources: Ontario Parks, Parks Canada, and GoingToCamp-backed Conservation Authorities, polled live for this
