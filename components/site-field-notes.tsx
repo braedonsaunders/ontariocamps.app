@@ -287,47 +287,47 @@ export function SiteFieldNotes({
           </p>
           <div className="space-y-3">
             {recentSiteReviews.map((r) => (
-                <div key={r.id} className="card p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {onOpenSiteDetails ? (
-                          <button
-                            type="button"
-                            onClick={() => onOpenSiteDetails(r.site_id)}
-                            className="text-left text-sm font-semibold text-stone-900 hover:text-forest-700 transition-colors"
-                          >
-                            {r.site_name}
-                          </button>
-                        ) : (
-                          <span className="text-sm font-semibold text-stone-900">
-                            {r.site_name}
-                          </span>
-                        )}
-                        <StarRating rating={r.overall} />
-                      </div>
-                      {r.title && (
-                        <div className="text-sm font-medium text-stone-700 mt-1">
-                          {r.title}
-                        </div>
+              <div key={r.id} className="card p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {onOpenSiteDetails ? (
+                        <button
+                          type="button"
+                          onClick={() => onOpenSiteDetails(r.site_id)}
+                          className="text-left text-sm font-semibold text-stone-900 hover:text-forest-700 transition-colors"
+                        >
+                          {r.site_name}
+                        </button>
+                      ) : (
+                        <span className="text-sm font-semibold text-stone-900">
+                          {r.site_name}
+                        </span>
                       )}
-                      <p className="text-sm text-stone-600 mt-1 line-clamp-2">
-                        {r.body}
-                      </p>
+                      <StarRating rating={r.overall} />
                     </div>
-                    {onOpenSiteDetails && (
-                      <button
-                        type="button"
-                        onClick={() => onOpenSiteDetails(r.site_id)}
-                        className="text-stone-400 hover:text-forest-700 shrink-0 transition-colors"
-                        aria-label={`Open site ${r.site_name}`}
-                      >
-                        <ArrowUpRight size={14} />
-                      </button>
+                    {r.title && (
+                      <div className="text-sm font-medium text-stone-700 mt-1">
+                        {r.title}
+                      </div>
                     )}
+                    <p className="text-sm text-stone-600 mt-1 line-clamp-2">
+                      {r.body}
+                    </p>
                   </div>
+                  {onOpenSiteDetails && (
+                    <button
+                      type="button"
+                      onClick={() => onOpenSiteDetails(r.site_id)}
+                      className="text-stone-400 hover:text-forest-700 shrink-0 transition-colors"
+                      aria-label={`Open site ${r.site_name}`}
+                    >
+                      <ArrowUpRight size={14} />
+                    </button>
+                  )}
                 </div>
-              ))}
+              </div>
+            ))}
           </div>
         </div>
       )}

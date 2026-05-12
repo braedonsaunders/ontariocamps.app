@@ -50,11 +50,15 @@ type Props = {
   bookingRate: number | null;
   reservedNights: number;
   bookableNights: number;
+  checkingLive?: boolean;
 };
 
 type Tab = "photos" | "calendar" | "rules" | "reviews";
 
-function statusBadge(status: string) {
+function statusBadge(status: string, checkingLive = false) {
+  if (status === "available" && checkingLive) {
+    return { cls: "bg-amber-50 text-amber-900 ring-amber-200", label: "Last seen open" };
+  }
   if (status === "available") return { cls: "bg-emerald-50 text-emerald-700 ring-emerald-200", label: "Available" };
   if (status === "reserved") return { cls: "bg-red-50 text-red-700 ring-red-200", label: "Booked" };
   if (status === "closed") return { cls: "bg-stone-200 text-stone-700 ring-stone-300", label: "Closed" };
@@ -87,6 +91,7 @@ export function SiteTabs(props: Props) {
     bookingRate,
     reservedNights,
     bookableNights,
+    checkingLive = false,
   } = props;
 
   const [activeTab, setActiveTab] = useState<Tab>("photos");
@@ -181,13 +186,18 @@ export function SiteTabs(props: Props) {
                   </div>
                 ) : (
                   <div className="space-y-4">
+                    {checkingLive && (
+                      <div className="rounded-md bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900 ring-1 ring-amber-200">
+                        Checking live status. Open nights shown here are last-seen open until the check finishes.
+                      </div>
+                    )}
                     {months.map((m) => (
                       <div key={m.key} className="card p-4">
                         <div className="text-sm font-semibold text-stone-900 mb-2">{m.label}</div>
                         <div className="grid grid-cols-7 gap-1 text-[10px]">
                           {m.nights.map((n) => {
                             const day = Number(n.night_date.slice(-2));
-                            const b = statusBadge(n.status);
+                            const b = statusBadge(n.status, checkingLive);
                             const isAvailable = n.status === "available";
                             const inner = (
                               <div
@@ -197,7 +207,7 @@ export function SiteTabs(props: Props) {
                                 {day}
                               </div>
                             );
-                            if (isAvailable) {
+                            if (isAvailable && !checkingLive) {
                               return (
                                 <a
                                   key={n.night_date}
@@ -318,14 +328,20 @@ export function SiteTabs(props: Props) {
               )}
             </div>
 
-            <a
-              href={bookingUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn-primary mt-5 w-full justify-center"
-            >
-              Book on {operatorName} <ArrowUpRight size={14} />
-            </a>
+            {checkingLive ? (
+              <button type="button" disabled className="btn-primary mt-5 w-full cursor-not-allowed justify-center opacity-60">
+                Checking live status
+              </button>
+            ) : (
+              <a
+                href={bookingUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-primary mt-5 w-full justify-center"
+              >
+                Book on {operatorName} <ArrowUpRight size={14} />
+              </a>
+            )}
           </div>
 
           {(bookingRate !== null || reviewAggregate.review_count > 0) && (

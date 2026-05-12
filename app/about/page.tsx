@@ -28,9 +28,9 @@ export default function AboutPage() {
       </ul>
       <h2>Honest about freshness</h2>
       <p>
-        Every result card shows when we last checked that site. Median freshness across the index is
-        under ten minutes during daytime hours. See the <Link href="/data">data freshness page</Link>{" "}
-        for live numbers.
+        Every result card shows when we last checked that site. The refresh system prioritizes near-term
+        and bookable inventory, while far-future or closed inventory refreshes more slowly. See the{" "}
+        <Link href="/data">data freshness page</Link> for live numbers.
       </p>
       <h2>Affiliation</h2>
       <p>

@@ -44,6 +44,8 @@ type Props = {
   onOpenSiteDetails?: (siteId: string) => void;
   /** ID of the section tab to show first; defaults to the first map. */
   initialMapId?: string;
+  /** True while live availability is being refreshed; book links are withheld. */
+  checkingLive?: boolean;
 };
 
 const MIN_SCALE = 1;
@@ -103,6 +105,7 @@ export function CampgroundMap({
   equipmentOptions,
   onOpenSiteDetails,
   initialMapId,
+  checkingLive = false,
 }: Props) {
   const [activeMapId, setActiveMapId] = useState<string>(
     initialMapId && campMaps.some((m) => m.id === initialMapId)
@@ -217,11 +220,12 @@ export function CampgroundMap({
         operatorName={operatorName}
         equipmentOptions={equipmentOptions}
         onOpenSiteDetails={onOpenSiteDetails}
+        checkingLive={checkingLive}
       />
       <div className="flex items-center gap-x-4 gap-y-1.5 px-4 py-2.5 border-t border-stone-100 text-xs text-stone-600 flex-wrap">
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-full ring-2 ring-white" style={{ backgroundColor: "#10b981" }} />
-          <span className="text-stone-700">{availableCount} available</span>
+          <span className="text-stone-700">{availableCount} {checkingLive ? "last seen open" : "available"}</span>
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-full ring-2 ring-white" style={{ backgroundColor: "#ef4444" }} />
@@ -284,6 +288,7 @@ function PanZoomViewer({
   operatorName,
   equipmentOptions,
   onOpenSiteDetails,
+  checkingLive,
 }: {
   campMap: CampMap;
   sites: SiteOnMap[];
@@ -291,6 +296,7 @@ function PanZoomViewer({
   operatorName?: string;
   equipmentOptions?: EquipmentOption[];
   onOpenSiteDetails?: (siteId: string) => void;
+  checkingLive?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   // Tracks a potential drag — only escalated to "actually dragging" once the
@@ -662,6 +668,7 @@ function PanZoomViewer({
           operatorName={operatorName}
           equipmentOptions={equipmentOptions}
           onOpenSiteDetails={onOpenSiteDetails}
+          checkingLive={checkingLive}
           onClose={() => setSelected(null)}
         />
       )}
@@ -676,6 +683,7 @@ function SitePopover({
   operatorName,
   equipmentOptions,
   onOpenSiteDetails,
+  checkingLive,
   onClose,
 }: {
   site: SiteOnMap;
@@ -684,6 +692,7 @@ function SitePopover({
   operatorName?: string;
   equipmentOptions?: EquipmentOption[];
   onOpenSiteDetails?: (siteId: string) => void;
+  checkingLive?: boolean;
   onClose: () => void;
 }) {
   const c = dotColor(site.status);
@@ -770,7 +779,7 @@ function SitePopover({
               }`}
             >
               <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: c.fill }} />
-              {c.label}
+              {checkingLive && site.status === "available" ? "Last seen open" : c.label}
             </span>
             {site.site.has_electric && (
               <span className="chip bg-amber-50 text-amber-800 ring-1 ring-amber-200">
@@ -830,14 +839,20 @@ function SitePopover({
           </button>
         )}
         {bookingUrl && (
-          <a
-            href={bookingUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn-primary flex-1 text-xs justify-center"
-          >
-            Book <ExternalLink size={12} />
-          </a>
+          checkingLive ? (
+            <button type="button" disabled className="btn-primary flex-1 cursor-not-allowed justify-center text-xs opacity-60">
+              Checking live
+            </button>
+          ) : (
+            <a
+              href={bookingUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-primary flex-1 text-xs justify-center"
+            >
+              Book <ExternalLink size={12} />
+            </a>
+          )
         )}
       </div>
     </div>

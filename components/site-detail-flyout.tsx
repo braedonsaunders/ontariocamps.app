@@ -39,6 +39,7 @@ export type SiteFlyoutDetails = {
 type Props = {
   details: SiteFlyoutDetails | null;
   onClose: () => void;
+  checkingLive?: boolean;
 };
 
 const EMPTY_REVIEW_AGGREGATE: SiteReviewAggregate = {
@@ -83,7 +84,7 @@ function fallbackAggregate(stats?: SiteStatsEntry | null): SiteReviewAggregate {
   };
 }
 
-export function SiteDetailFlyout({ details, onClose }: Props) {
+export function SiteDetailFlyout({ details, onClose, checkingLive = false }: Props) {
   const [reviewPayload, setReviewPayload] = useState<ReviewPayload | null>(null);
 
   useEffect(() => {
@@ -195,14 +196,20 @@ export function SiteDetailFlyout({ details, onClose }: Props) {
 
                   <div className="flex shrink-0 items-center gap-2">
                     {details.bookingUrl && (
-                      <a
-                        href={details.bookingUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="btn-primary hidden sm:inline-flex"
-                      >
-                        Book on {details.operatorName} <ArrowUpRight size={14} />
-                      </a>
+                      checkingLive ? (
+                        <button type="button" disabled className="btn-primary hidden cursor-not-allowed opacity-60 sm:inline-flex">
+                          Checking live status
+                        </button>
+                      ) : (
+                        <a
+                          href={details.bookingUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="btn-primary hidden sm:inline-flex"
+                        >
+                          Book on {details.operatorName} <ArrowUpRight size={14} />
+                        </a>
+                      )
                     )}
                     <button
                       type="button"
@@ -235,6 +242,7 @@ export function SiteDetailFlyout({ details, onClose }: Props) {
                 bookingRate={bookingRate}
                 reservedNights={reservedNights}
                 bookableNights={bookableNights}
+                checkingLive={checkingLive}
               />
             </div>
           </motion.aside>

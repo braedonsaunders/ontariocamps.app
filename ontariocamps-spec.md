@@ -314,7 +314,7 @@ Known characteristics:
 2. Stagger requests across the day; back off aggressively on 429/403.
 3. Identify with `User-Agent: ontariocamps.app/1.0 (contact: braedon@…)`.
 4. During reservation-opening windows, suspend ingest entirely — those days are not safe to crawl on.
-5. Refresh metadata weekly, availability every 15 min during shoulder hours, every hour otherwise.
+5. Refresh static metadata only when structure changes; refresh availability with tiered priority for near-term and bookable inventory.
 
 If endpoints prove unworkable, fall back to Playwright running on a separate scheduled job (Cloudflare Browser Rendering or Browserless). Costs more but is resilient to frontend changes.
 
@@ -332,7 +332,7 @@ select cron.schedule('metadata-gtc-all',     '0 3 * * 0',  $$ select call_ingest
 select cron.schedule('metadata-ontario',     '15 3 * * 0', $$ select call_ingest('ontario_parks',  'metadata') $$);
 select cron.schedule('metadata-parkscanada', '30 3 * * 0', $$ select call_ingest('parks_canada',   'metadata') $$);
 
--- Availability refresh: every 15 min during day, every hour overnight
+-- Availability refresh: tiered near-term/bookable priority, plus on-demand site refresh
 select cron.schedule('avail-daytime',  '*/15 11-3 * * *', $$ select call_ingest_all('*', 'availability') $$);
 select cron.schedule('avail-overnight', '0 4-10 * * *',   $$ select call_ingest_all('*', 'availability') $$);
 ```

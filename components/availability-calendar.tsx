@@ -34,6 +34,8 @@ type Props = {
   vendorUrl?: string;
   /** Opens a site detail flyout in the parent park page. */
   onOpenSiteDetails?: (siteId: string) => void;
+  /** True while live availability is being refreshed; book links are withheld. */
+  checkingLive?: boolean;
 };
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -59,7 +61,16 @@ function fmt(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-export function AvailabilityCalendar({ rows, totalSites, lastCheckedAt, vendorSiteIds, bookingUrls, vendorUrl, onOpenSiteDetails }: Props) {
+export function AvailabilityCalendar({
+  rows,
+  totalSites,
+  lastCheckedAt,
+  vendorSiteIds,
+  bookingUrls,
+  vendorUrl,
+  onOpenSiteDetails,
+  checkingLive = false,
+}: Props) {
   // Compose the operator booking URL for one (site, night) cell client-side.
   // (Server-rendered components can't pass functions across the boundary.)
   const buildBookingUrl = (siteId: string, night: string): string | null => {
@@ -157,6 +168,11 @@ export function AvailabilityCalendar({ rows, totalSites, lastCheckedAt, vendorSi
     <div className="card overflow-hidden">
       {/* Controls bar */}
       <div className="px-4 py-3 border-b border-stone-100 flex items-center gap-2 flex-wrap">
+        {checkingLive && (
+          <div className="w-full rounded-md bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900 ring-1 ring-amber-200">
+            Checking live status. Green cells are last-seen open until this finishes, so booking links are temporarily disabled.
+          </div>
+        )}
         <div className="flex items-center gap-1 rounded-md ring-1 ring-stone-200 p-0.5">
           <button
             onClick={() => setWeekOffset((o) => Math.max(0, o - 1))}
@@ -282,7 +298,7 @@ export function AvailabilityCalendar({ rows, totalSites, lastCheckedAt, vendorSi
                   </td>
                   {visibleDates.map((d) => {
                     const status = row.nights[d] ?? "unknown";
-                    const url = status === "available" && buildBookingUrl ? buildBookingUrl(row.site.id, d) : null;
+                    const url = status === "available" && !checkingLive && buildBookingUrl ? buildBookingUrl(row.site.id, d) : null;
                     const cellBg = STATUS_BG[status];
                     const cell = (
                       <span
@@ -318,7 +334,7 @@ export function AvailabilityCalendar({ rows, totalSites, lastCheckedAt, vendorSi
       {/* Legend + disclosure footer */}
       <div className="px-4 py-2.5 border-t border-stone-100 flex items-center flex-wrap gap-3 text-xs text-stone-600">
         <span className="inline-flex items-center gap-1.5">
-          <span className="h-3 w-3 rounded-sm bg-emerald-500" /> Available
+          <span className="h-3 w-3 rounded-sm bg-emerald-500" /> {checkingLive ? "Last seen open" : "Available"}
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span className="h-3 w-3 rounded-sm bg-red-400" /> Reserved
@@ -330,7 +346,7 @@ export function AvailabilityCalendar({ rows, totalSites, lastCheckedAt, vendorSi
           <span className="h-3 w-3 rounded-sm bg-stone-200" /> Unknown
         </span>
         <span className="ml-auto text-stone-500">
-          Click any green cell to book that night
+          {checkingLive ? "Live check in progress" : "Click any green cell to book that night"}
           {rows.length < totalSites && (
             <> · showing {rows.length} of {totalSites} sites <ExternalLink size={10} className="inline" /></>
           )}

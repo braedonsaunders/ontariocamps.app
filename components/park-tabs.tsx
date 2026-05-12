@@ -139,9 +139,13 @@ export function ParkTabs(props: Props) {
   const [selectedSection, setSelectedSection] = useState<string | undefined>(undefined);
   const [selectedSiteFlyoutId, setSelectedSiteFlyoutId] = useState<string | null>(null);
   const [refreshingAvailability, setRefreshingAvailability] = useState(false);
+  const [refreshingSiteId, setRefreshingSiteId] = useState<string | null>(null);
   const router = useRouter();
+  const checkingParkLive = refreshingAvailability && refreshingSiteId === null;
 
   const refreshLiveAvailability = useCallback(async (payload: { siteId?: string; park?: boolean }) => {
+    const scopedSiteId = payload.siteId ?? null;
+    setRefreshingSiteId(scopedSiteId);
     setRefreshingAvailability(true);
     try {
       await fetch("/api/availability/refresh", {
@@ -163,7 +167,10 @@ export function ParkTabs(props: Props) {
     } catch {
       // Freshening availability is opportunistic; stale cached data is still usable.
     } finally {
-      setRefreshingAvailability(false);
+      window.setTimeout(() => {
+        setRefreshingAvailability(false);
+        setRefreshingSiteId(null);
+      }, 1500);
     }
   }, [dateContext, parkId, parkSlug, router]);
 
@@ -415,6 +422,7 @@ export function ParkTabs(props: Props) {
                           equipmentOptions={equipmentOptions}
                           initialMapId={selectedSection}
                           onOpenSiteDetails={openSiteFlyout}
+                          checkingLive={checkingParkLive}
                         />
                       </>
                     )}
@@ -452,7 +460,9 @@ export function ParkTabs(props: Props) {
                 <div className="flex items-baseline justify-between mb-3 flex-wrap gap-2">
                   <h2 className="text-xl font-semibold tracking-tight">Availability calendar</h2>
                   <span className="text-xs text-stone-500">
-                    Real per-night status from {operatorName} · click a green cell to book
+                    {checkingParkLive
+                      ? `Checking ${operatorName} live status before enabling booking links`
+                      : `Real per-night status from ${operatorName} · click a green cell to book`}
                   </span>
                 </div>
                 <AvailabilityCalendar
@@ -463,6 +473,7 @@ export function ParkTabs(props: Props) {
                   bookingUrls={bookingUrls}
                   vendorUrl={vendorUrl}
                   onOpenSiteDetails={openSiteFlyout}
+                  checkingLive={checkingParkLive}
                 />
               </motion.div>
             )}
@@ -592,7 +603,11 @@ export function ParkTabs(props: Props) {
         </aside>
       </div>
 
-      <SiteDetailFlyout details={selectedSiteDetails} onClose={closeSiteFlyout} />
+      <SiteDetailFlyout
+        details={selectedSiteDetails}
+        onClose={closeSiteFlyout}
+        checkingLive={Boolean(selectedSiteDetails && refreshingSiteId === selectedSiteDetails.site.id)}
+      />
     </section>
   );
 }
