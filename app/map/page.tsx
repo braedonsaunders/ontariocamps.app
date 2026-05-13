@@ -5,6 +5,9 @@ import { sql } from "@/lib/db/client";
 export const metadata: Metadata = {
   title: "Map of every park",
   description: "Every campsite operator's parks on a single map of Ontario.",
+  alternates: {
+    canonical: "/map",
+  },
 };
 
 export const dynamic = "force-dynamic";

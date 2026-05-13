@@ -4,7 +4,10 @@ import { AnalyticsView } from "@/components/analytics-view";
 
 export const metadata: Metadata = {
   title: "Analytics",
-  description: "Live data on Ontario campsite availability — booking pressure, type breakdowns, busiest parks.",
+  description: "Live data on Ontario campsite availability, booking pressure, site type breakdowns, and busiest parks.",
+  alternates: {
+    canonical: "/analytics",
+  },
 };
 
 export const dynamic = "force-dynamic";

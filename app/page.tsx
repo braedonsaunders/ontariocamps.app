@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { HomeSearch } from "@/components/home-search";
 import { HomeHeroBackground, type HomeHeroBackgroundId } from "@/components/home-hero-background";
 import { sql } from "@/lib/db/client";
@@ -7,6 +8,12 @@ import { MotionHero, MotionFadeUp, MotionStagger, MotionStaggerItem } from "@/co
 import { AnimatedNumber } from "@/components/animated-number";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = {
+  alternates: {
+    canonical: "/",
+  },
+};
 
 const homeHeroBackgroundIds: HomeHeroBackgroundId[] = [
   "algonquin-dusk",

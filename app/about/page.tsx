@@ -4,6 +4,9 @@ import Link from "next/link";
 export const metadata: Metadata = {
   title: "About",
   description: "What ontariocamps.app is, and what it isn't.",
+  alternates: {
+    canonical: "/about",
+  },
 };
 
 export default function AboutPage() {

@@ -7,6 +7,9 @@ import { DataTabs } from "@/components/data-tabs";
 export const metadata: Metadata = {
   title: "Data",
   description: "Data freshness status and downloadable datasets from ontariocamps.app.",
+  alternates: {
+    canonical: "/data",
+  },
 };
 export const dynamic = "force-dynamic";
 

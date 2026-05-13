@@ -1,14 +1,44 @@
 import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import Link from "next/link";
 import { getOperatorWithStats, getParksForOperator } from "@/lib/data-source";
 import { normalizeBookingUrlPath } from "@/lib/booking-url";
 import { ArrowUpRight, MapPin } from "lucide-react";
+import { toMetaDescription } from "@/lib/seo";
 
 export const dynamic = "force-dynamic";
 
 function freshnessMinutes(last: string | null): number {
   if (!last) return 0;
   return Math.max(0, Math.floor((Date.now() - new Date(last).getTime()) / 60000));
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  const operator = await getOperatorWithStats(id);
+  if (!operator) return { title: "Operator not found" };
+
+  const description = toMetaDescription(
+    null,
+    `Browse ${operator.name} parks, indexed campsites, and current availability on ontariocamps.app.`,
+  );
+
+  return {
+    title: `${operator.name} campsites`,
+    description,
+    alternates: {
+      canonical: `/operator/${operator.id}`,
+    },
+    openGraph: {
+      title: `${operator.name} campsites`,
+      description,
+      url: `/operator/${operator.id}`,
+    },
+  };
 }
 
 export default async function OperatorPage({ params }: { params: Promise<{ id: string }> }) {

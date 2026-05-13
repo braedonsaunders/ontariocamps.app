@@ -4,7 +4,10 @@ import { ParksDirectory } from "@/components/parks-directory";
 
 export const metadata: Metadata = {
   title: "Parks",
-  description: "Every park and park network we index — search and browse Ontario campsites by operator or by park.",
+  description: "Browse every Ontario park and campground network indexed by ontariocamps.app.",
+  alternates: {
+    canonical: "/parks",
+  },
 };
 export const dynamic = "force-dynamic";
 

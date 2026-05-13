@@ -21,6 +21,7 @@ import { ParkTabs, type DateContext } from "@/components/park-tabs";
 import type { SiteStatsEntry } from "@/components/site-field-notes";
 import { buildBookingUrl, normalizeBookingUrlPath } from "@/lib/booking-url";
 import { appDate } from "@/lib/app-time";
+import { SITE_NAME, absoluteUrl, toMetaDescription } from "@/lib/seo";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +33,40 @@ export async function generateMetadata({
   const { slug } = await params;
   const park = await getParkBySlug(slug);
   if (!park) return { title: "Park not found" };
-  return { title: park.name, description: park.description };
+
+  const title = `${park.name} campsites`;
+  const description = toMetaDescription(
+    park.description,
+    `Find campsite availability, maps, reviews, and booking links for ${park.name} in ${park.region || "Ontario"}.`,
+  );
+
+  return {
+    title,
+    description,
+    alternates: {
+      canonical: `/park/${park.slug}`,
+    },
+    openGraph: {
+      title,
+      description,
+      url: `/park/${park.slug}`,
+      type: "website",
+      images: park.hero_image_url
+        ? [
+            {
+              url: park.hero_image_url,
+              alt: park.name,
+            },
+          ]
+        : undefined,
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: park.hero_image_url ? [park.hero_image_url] : undefined,
+    },
+  };
 }
 
 function isValidDate(s: string | undefined | null): s is string {
@@ -89,6 +123,61 @@ export default async function ParkPage({
     getOperatorRuleSource(park.operator_id),
   ]);
   if (!operator) notFound();
+
+  const canonicalUrl = absoluteUrl(`/park/${park.slug}`);
+  const jsonLdDescription = toMetaDescription(
+    park.description,
+    `Find campsite availability, maps, reviews, and booking links for ${park.name} in ${park.region || "Ontario"}.`,
+    300,
+  );
+  const parkJsonLd = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "BreadcrumbList",
+        "@id": `${canonicalUrl}#breadcrumbs`,
+        itemListElement: [
+          {
+            "@type": "ListItem",
+            position: 1,
+            name: SITE_NAME,
+            item: absoluteUrl("/"),
+          },
+          {
+            "@type": "ListItem",
+            position: 2,
+            name: "Parks",
+            item: absoluteUrl("/parks"),
+          },
+          {
+            "@type": "ListItem",
+            position: 3,
+            name: park.name,
+            item: canonicalUrl,
+          },
+        ],
+      },
+      {
+        "@type": "Campground",
+        "@id": `${canonicalUrl}#campground`,
+        name: park.name,
+        description: jsonLdDescription,
+        url: canonicalUrl,
+        image: park.hero_image_url,
+        address: park.address || park.region || "Ontario, Canada",
+        geo: {
+          "@type": "GeoCoordinates",
+          latitude: park.location.lat,
+          longitude: park.location.lng,
+        },
+        provider: {
+          "@type": "Organization",
+          name: operator.name,
+          url: operator.base_url,
+        },
+      },
+    ],
+  };
 
   // Map: site_id → all (date, status, last_checked_at) rows for fast filtering.
   const nightsBySite = new Map<string, Array<{ night_date: string; status: string; last_checked_at: string }>>();
@@ -254,6 +343,10 @@ export default async function ParkPage({
 
   return (
     <div>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(parkJsonLd).replace(/</g, "\\u003c") }}
+      />
       <section className="relative h-[9.6rem] sm:h-48 lg:h-[14.4rem] bg-gradient-to-br from-forest-700 to-forest-900 overflow-hidden">
         {park.hero_image_url && (
           // eslint-disable-next-line @next/next/no-img-element
