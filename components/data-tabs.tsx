@@ -371,13 +371,6 @@ export function DataTabs({ ops, datasets, scopes }: Props) {
             We are not affiliated with any operator. Data is provided as-is with no warranty. A link back to{" "}
             <a href="https://ontariocamps.app" className="text-forest-700 hover:underline">ontariocamps.app</a> is appreciated but not required.
           </p>
-          <p className="mt-2">
-            Need bulk access or a different format? The full dataset lives in our{" "}
-            <a href="https://github.com/braedonsaunders/ontariocamps.app" className="text-forest-700 hover:underline" target="_blank" rel="noopener noreferrer">
-              open-source repo
-            </a>{" "}
-            and can be self-hosted via the Supabase schema.
-          </p>
         </div>
       </section>
     </div>
