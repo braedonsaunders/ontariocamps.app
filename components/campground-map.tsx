@@ -4,6 +4,7 @@ import type { CampMap, Site, EquipmentOption } from "@/lib/types";
 import { Minus, Plus, RotateCcw, Move, X, ExternalLink, Zap, Tent as TentIcon, Users, Tent, MapPin, CircleDot, Accessibility, Anchor, Bike, BookOpen, Bus, Church, CigaretteOff, Cross, Dog, DollarSign, DoorOpen, Droplet, Droplets, Dumbbell, Eye, Fish, Flag, Flame, Footprints, Heart, House, Info, Landmark, Lightbulb, Lock, Mountain, ParkingCircle, Phone, PlugZap, Radio, Recycle, Sailboat, Ship, ShoppingBag, ShowerHead, Snowflake, Store, TentTree, Theater, TreePine, Trophy, Umbrella, UtensilsCrossed, Volleyball, WashingMachine, Waves, Wifi, Wrench, type LucideIcon } from "lucide-react";
 import { legendTypeLabel, legendTypeIcon } from "@/lib/legend-types";
 import { mapImageUrl } from "@/lib/map-image";
+import { imageProxyUrl } from "@/lib/image-proxy";
 
 const LEGEND_ICONS: Record<string, LucideIcon> = {
   Accessibility, Anchor, Bike, BookOpen, Bus, Church, CigaretteOff, Cross, Dog, DollarSign, DoorOpen, Droplet, Droplets, Dumbbell, Eye, Fish, Flag, Flame, Footprints, Heart, House, Info, Landmark, Lightbulb, Lock, Mountain, ParkingCircle, Phone, PlugZap, Radio, Recycle, Sailboat, Ship, ShoppingBag, ShowerHead, Snowflake, Store, Tent, TentTree, Theater, TreePine, Trophy, Umbrella, UtensilsCrossed, Volleyball, WashingMachine, Waves, Wifi, Wrench,
@@ -725,17 +726,18 @@ function SitePopover({
   const bgX = `${THUMB / 2 - (site.site.map_x ?? 0) * K}px`;
   const bgY = `${THUMB / 2 - (site.site.map_y ?? 0) * K}px`;
   const photos = (site.site.photos ?? []).filter((p) => p.url || p.avifUrl);
+  const photoUrl = imageProxyUrl(photos[0]?.url ?? photos[0]?.avifUrl, "thumb") ?? photos[0]?.url ?? photos[0]?.avifUrl ?? "";
   const description = site.site.description?.trim();
   return (
     <div className="absolute left-3 bottom-3 right-3 sm:right-auto sm:w-80 card p-0 shadow-xl ring-stone-300/70 z-40 overflow-hidden">
-      {photos.length > 0 && (
+      {photoUrl && (
         <div className="relative aspect-[16/10] bg-stone-200 overflow-hidden w-full">
           {/* Show only the first photo at popover width; the full gallery
            *  lives on the dedicated /site detail page. Avoids horizontal
            *  scroll inside a 320 px popover where it just feels broken. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={photos[0].url ?? photos[0].avifUrl ?? ""}
+            src={photoUrl}
             alt={`Site ${site.site.name}`}
             className="absolute inset-0 h-full w-full object-cover"
             loading="lazy"

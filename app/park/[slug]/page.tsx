@@ -20,6 +20,7 @@ import { ParkTabs, type DateContext } from "@/components/park-tabs";
 import type { SiteStatsEntry } from "@/components/site-field-notes";
 import { buildBookingUrl, normalizeBookingUrlPath } from "@/lib/booking-url";
 import { appDate } from "@/lib/app-time";
+import { imageProxyUrl } from "@/lib/image-proxy";
 import { SITE_NAME, absoluteUrl, toMetaDescription } from "@/lib/seo";
 
 export const dynamic = "force-dynamic";
@@ -177,6 +178,7 @@ export default async function ParkPage({
       },
     ],
   };
+  const parkHeroImageUrl = imageProxyUrl(park.hero_image_url, "hero") ?? park.hero_image_url;
 
   // Map: site_id → all (date, status, last_checked_at) rows for fast filtering.
   const nightsBySite = new Map<string, Array<{ night_date: string; status: string; last_checked_at: string }>>();
@@ -323,10 +325,10 @@ export default async function ParkPage({
         dangerouslySetInnerHTML={{ __html: JSON.stringify(parkJsonLd).replace(/</g, "\\u003c") }}
       />
       <section className="relative h-[9.6rem] sm:h-48 lg:h-[14.4rem] bg-gradient-to-br from-forest-700 to-forest-900 overflow-hidden">
-        {park.hero_image_url && (
+        {parkHeroImageUrl && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={park.hero_image_url}
+            src={parkHeroImageUrl}
             alt={park.name}
             className="absolute inset-0 h-full w-full object-cover opacity-75 animate-heroZoom origin-center"
           />

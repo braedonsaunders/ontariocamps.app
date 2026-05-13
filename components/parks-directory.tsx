@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { motion } from "motion/react";
 import { Search, Tent, MapPin, Activity, ExternalLink, X } from "lucide-react";
+import { imageProxyUrl } from "@/lib/image-proxy";
 
 type OperatorRow = {
   id: string;
@@ -210,6 +211,7 @@ function NetworksGrid({ operators }: { operators: OperatorRow[] }) {
         const minutes = minutesSince(o.last_availability_at);
         const accent = o.accent_color ?? "#1F6E3D";
         const pct = o.total_sites > 0 ? Math.round((100 * o.available_sites) / o.total_sites) : 0;
+        const operatorImageUrl = imageProxyUrl(o.hero_image_url, "strip") ?? o.hero_image_url;
         return (
           <Link
             key={o.id}
@@ -218,10 +220,10 @@ function NetworksGrid({ operators }: { operators: OperatorRow[] }) {
             style={{ boxShadow: `0 1px 0 ${accent}1a inset` }}
           >
             <div className="relative h-32 overflow-hidden" style={{ backgroundColor: accent }}>
-              {o.hero_image_url ? (
+              {operatorImageUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={o.hero_image_url}
+                  src={operatorImageUrl}
                   alt=""
                   className="absolute inset-0 h-full w-full object-cover opacity-90 group-hover:scale-[1.02] transition-transform duration-500"
                 />
@@ -335,6 +337,7 @@ function ParksGrid({ parks }: { parks: ParkRow[] }) {
         const accent = p.accent_color ?? "#1F6E3D";
         const pct = p.availability_pct;
         const pctColor = pct >= 50 ? "text-emerald-700" : pct >= 15 ? "text-amber-700" : "text-red-700";
+        const parkImageUrl = imageProxyUrl(p.hero_image_url, "card") ?? p.hero_image_url;
         return (
           <Link
             key={p.slug}
@@ -342,10 +345,10 @@ function ParksGrid({ parks }: { parks: ParkRow[] }) {
             className="group card overflow-hidden transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 block"
           >
             <div className="relative h-36 bg-stone-200 overflow-hidden" style={{ backgroundColor: accent }}>
-              {p.hero_image_url && (
+              {parkImageUrl && (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={p.hero_image_url}
+                  src={parkImageUrl}
                   alt={p.name}
                   className="absolute inset-0 h-full w-full object-cover opacity-95 group-hover:scale-[1.03] transition-transform duration-500"
                   loading="lazy"

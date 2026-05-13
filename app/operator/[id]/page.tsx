@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getOperatorWithStats, getParksForOperator } from "@/lib/data-source";
 import { normalizeBookingUrlPath } from "@/lib/booking-url";
+import { imageProxyUrl } from "@/lib/image-proxy";
 import { ArrowUpRight, MapPin } from "lucide-react";
 import { toMetaDescription } from "@/lib/seo";
 
@@ -89,17 +90,19 @@ export default async function OperatorPage({ params }: { params: Promise<{ id: s
 
       <h2 className="mt-10 text-xl font-semibold tracking-tight">Parks</h2>
       <div className="mt-3 grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {parks.map((p) => (
+        {parks.map((p) => {
+          const parkImageUrl = imageProxyUrl(p.hero_image_url, "card") ?? p.hero_image_url;
+          return (
           <Link
             key={p.id}
             href={`/park/${p.slug}`}
             className="card overflow-hidden group transition hover:shadow-md"
           >
             <div className="relative h-32 bg-gradient-to-br from-forest-600 to-forest-800 overflow-hidden">
-              {p.hero_image_url ? (
+              {parkImageUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={p.hero_image_url}
+                  src={parkImageUrl}
                   alt={p.name}
                   className="absolute inset-0 h-full w-full object-cover group-hover:scale-[1.02] transition-transform duration-500"
                 />
@@ -121,7 +124,8 @@ export default async function OperatorPage({ params }: { params: Promise<{ id: s
               </div>
             </div>
           </Link>
-        ))}
+        );
+        })}
       </div>
     </div>
   );

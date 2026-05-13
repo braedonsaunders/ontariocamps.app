@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { HomeSearch } from "@/components/home-search";
 import { HomeHeroBackground, type HomeHeroBackgroundId } from "@/components/home-hero-background";
 import { sql } from "@/lib/db/client";
+import { imageProxyUrl } from "@/lib/image-proxy";
 import { MapPin, Database, Calendar } from "lucide-react";
 import { MotionHero, MotionFadeUp, MotionStagger, MotionStaggerItem } from "@/components/motion";
 import { AnimatedNumber } from "@/components/animated-number";
@@ -22,6 +23,21 @@ const homeHeroBackgroundIds: HomeHeroBackgroundId[] = [
   "georgian-bay-noon",
   "muskoka-autumn",
   "bruce-clearwater",
+];
+
+const popularParksCopy = [
+  {
+    heading: "Popular parks",
+    description: "Reliable starting points across the province.",
+  },
+  {
+    heading: "Parks to start with",
+    description: "A few dependable picks for planning your next trip.",
+  },
+  {
+    heading: "Campgrounds people check first",
+    description: "Familiar Ontario options with campsite details ready.",
+  },
 ];
 
 type Totals = {
@@ -52,6 +68,7 @@ export default async function HomePage() {
 
   try {
     featured = await client<FeaturedPark[]>`
+      WITH popular_pool AS (
       SELECT p.slug,
              p.name,
              COALESCE(p.ai_description, p.description, 'Explore campsite availability, park details, and booking links for this Ontario campground.') AS description,
@@ -63,6 +80,11 @@ export default async function HomePage() {
              CASE WHEN p.available_sites > 0 THEN 0 ELSE 1 END,
              p.total_sites DESC,
              p.name
+       LIMIT 24
+      )
+      SELECT slug, name, description, region, hero_image_url
+        FROM popular_pool
+       ORDER BY random()
        LIMIT 6
     `;
   } catch (error) {
@@ -72,6 +94,8 @@ export default async function HomePage() {
   const t = totals[0] ?? { operators: 0, parks: 0, sites: 0, available: 0 };
   const heroSceneId =
     homeHeroBackgroundIds[Math.floor(Math.random() * homeHeroBackgroundIds.length)] ?? "algonquin-dusk";
+  const popularParkCopy =
+    popularParksCopy[Math.floor(Math.random() * popularParksCopy.length)] ?? popularParksCopy[0];
 
   return (
     <div>
@@ -106,10 +130,10 @@ export default async function HomePage() {
       <section className="relative z-0 mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-14">
         <MotionFadeUp whenInView className="mb-6 flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 className="text-2xl font-semibold tracking-tight">Popular parks</h2>
-            <p className="text-stone-600 mt-1">Reliable starting points across the province.</p>
+            <h2 className="text-2xl font-semibold tracking-tight">{popularParkCopy.heading}</h2>
+            <p className="text-stone-600 mt-1">{popularParkCopy.description}</p>
           </div>
-          <Link href="/search" className="text-sm font-medium text-forest-700 hover:text-forest-800">
+          <Link href="/parks" className="text-sm font-medium text-forest-700 hover:text-forest-800">
             See everything →
           </Link>
         </MotionFadeUp>
@@ -121,15 +145,16 @@ export default async function HomePage() {
               const parkInitial = parkName.trim().charAt(0) || "O";
               const parkDescription = String(p.description ?? "Explore campsite availability across Ontario.");
               const parkRegion = String(p.region ?? "Ontario");
+              const parkImageUrl = imageProxyUrl(p.hero_image_url, "card") ?? p.hero_image_url;
 
               return (
                 <MotionStaggerItem key={parkSlug}>
                   <Link href={`/park/${parkSlug}`} className="card group block overflow-hidden transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg">
                     <div className="relative h-40 overflow-hidden bg-gradient-to-br from-forest-600 to-forest-800">
-                      {p.hero_image_url ? (
+                      {parkImageUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
-                          src={p.hero_image_url}
+                          src={parkImageUrl}
                           alt={parkName}
                           className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.03]"
                           loading="lazy"

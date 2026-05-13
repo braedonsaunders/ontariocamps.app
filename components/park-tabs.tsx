@@ -13,7 +13,8 @@ import { SiteDetailFlyout, type SiteFlyoutDetails } from "@/components/site-deta
 import { RulesPanel } from "@/components/rules-panel";
 import { timeAgo } from "@/lib/utils";
 import { mapImageUrl } from "@/lib/map-image";
-import { Info, Map as MapIcon, Calendar, Tent, ArrowUpRight, CalendarRange, MessageSquare, TreePine, ShieldCheck, Loader2, X } from "lucide-react";
+import { imageProxyUrl } from "@/lib/image-proxy";
+import { Info, Map as MapIcon, Calendar, Tent, ArrowUpRight, CalendarRange, MessageSquare, TreePine, ShieldCheck, Loader2, X, ChevronDown } from "lucide-react";
 
 type SiteAvailability = {
   status: "available" | "reserved" | "closed" | "unknown";
@@ -133,6 +134,7 @@ function DateFilter({ ctx }: { ctx: DateContext }) {
   const [fromDate, setFromDate] = useState(activeFrom);
   const [toDate, setToDate] = useState(activeTo);
   const [rangeError, setRangeError] = useState<string | null>(null);
+  const [mobileExpanded, setMobileExpanded] = useState(false);
 
   useEffect(() => {
     setFromDate(activeFrom);
@@ -176,53 +178,70 @@ function DateFilter({ ctx }: { ctx: DateContext }) {
     pushParams(nextParams);
   }
 
+  const dateControls = (className: string) => (
+    <form onSubmit={applyRange} className={className}>
+      <label className="flex h-8 min-w-0 items-center gap-2 rounded-md bg-stone-50 px-2.5 ring-1 ring-stone-200 transition focus-within:bg-white focus-within:ring-forest-600 md:w-40">
+        <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-stone-500 md:text-[11px]">First</span>
+        <input
+          type="date"
+          aria-label="First night"
+          className="h-full min-w-0 flex-1 bg-transparent text-xs font-semibold text-stone-950 outline-none"
+          value={fromDate}
+          onChange={(event) => setFromDate(event.target.value)}
+        />
+      </label>
+      <label className="flex h-8 min-w-0 items-center gap-2 rounded-md bg-stone-50 px-2.5 ring-1 ring-stone-200 transition focus-within:bg-white focus-within:ring-forest-600 md:w-40">
+        <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-stone-500 md:text-[11px]">Last</span>
+        <input
+          type="date"
+          aria-label="Last night"
+          className="h-full min-w-0 flex-1 bg-transparent text-xs font-semibold text-stone-950 outline-none"
+          min={fromDate || undefined}
+          value={toDate}
+          onChange={(event) => setToDate(event.target.value)}
+        />
+      </label>
+      <button type="submit" className="btn-primary h-8 px-3 text-xs">
+        <CalendarRange size={13} />
+        Show
+      </button>
+      <button
+        type="button"
+        onClick={clearRange}
+        disabled={ctx.mode !== "range" && !fromDate && !toDate}
+        className="btn-secondary h-8 px-3 text-xs"
+      >
+        <X size={13} />
+        Clear
+      </button>
+    </form>
+  );
+
   return (
-    <div className="rounded-lg bg-white p-3 shadow-sm ring-1 ring-stone-200">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className={`flex min-w-0 items-center gap-2 text-sm ${ctx.mode === "range" ? "text-forest-900" : "text-stone-700"}`}>
-          <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-md ring-1 ${
+    <div className="rounded-lg bg-white px-2.5 py-1 shadow-sm ring-1 ring-stone-200 md:px-3">
+      <div className="flex min-h-8 items-center gap-2 md:justify-between">
+        <div className={`flex min-w-0 flex-1 items-center gap-2 text-xs md:text-sm ${ctx.mode === "range" ? "text-forest-900" : "text-stone-700"}`}>
+          <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-md ring-1 md:h-7 md:w-7 ${
             ctx.mode === "range" ? "bg-forest-50 text-forest-700 ring-forest-200" : "bg-stone-100 text-stone-500 ring-stone-200"
           }`}>
-            <CalendarRange size={15} />
+            <CalendarRange size={13} />
           </span>
-          <span className="min-w-0">{rangeStatusText(ctx)}</span>
+          <span className="min-w-0 truncate">{rangeStatusText(ctx)}</span>
         </div>
 
-        <form onSubmit={applyRange} className="grid grid-cols-2 gap-2 sm:flex sm:items-end">
-          <label className="rounded-md bg-stone-50 px-3 py-2 ring-1 ring-stone-200 transition focus-within:bg-white focus-within:ring-forest-600 sm:w-36">
-            <span className="mb-0.5 block text-[11px] font-semibold uppercase tracking-wide text-stone-500">First night</span>
-            <input
-              type="date"
-              className="w-full min-w-0 bg-transparent text-sm font-semibold text-stone-950 outline-none"
-              value={fromDate}
-              onChange={(event) => setFromDate(event.target.value)}
-            />
-          </label>
-          <label className="rounded-md bg-stone-50 px-3 py-2 ring-1 ring-stone-200 transition focus-within:bg-white focus-within:ring-forest-600 sm:w-36">
-            <span className="mb-0.5 block text-[11px] font-semibold uppercase tracking-wide text-stone-500">Last night</span>
-            <input
-              type="date"
-              className="w-full min-w-0 bg-transparent text-sm font-semibold text-stone-950 outline-none"
-              min={fromDate || undefined}
-              value={toDate}
-              onChange={(event) => setToDate(event.target.value)}
-            />
-          </label>
-          <button type="submit" className="btn-primary min-h-11 px-3 text-xs">
-            <CalendarRange size={13} />
-            Show dates
-          </button>
-          <button
-            type="button"
-            onClick={clearRange}
-            disabled={ctx.mode !== "range" && !fromDate && !toDate}
-            className="btn-secondary min-h-11 px-3 text-xs"
-          >
-            <X size={13} />
-            Clear
-          </button>
-        </form>
+        {dateControls("hidden shrink-0 items-center gap-2 md:flex")}
+
+        <button
+          type="button"
+          onClick={() => setMobileExpanded((expanded) => !expanded)}
+          className="btn-secondary h-8 shrink-0 px-2.5 text-xs md:hidden"
+          aria-expanded={mobileExpanded}
+        >
+          Dates
+          <ChevronDown size={13} className={`transition-transform ${mobileExpanded ? "rotate-180" : ""}`} />
+        </button>
       </div>
+      {mobileExpanded && dateControls("mt-2 grid grid-cols-2 gap-2 md:hidden")}
       {rangeError && <div className="mt-2 text-xs font-semibold text-amber-700">{rangeError}</div>}
     </div>
   );
@@ -267,13 +286,14 @@ function SiteDirectoryFallback({
         {visibleSites.map((site) => {
           const status = availabilitySummary[site.id]?.status ?? "unknown";
           const photo = (site.photos ?? []).find((p) => p.url || p.avifUrl);
+          const photoUrl = imageProxyUrl(photo?.url ?? photo?.avifUrl, "thumb") ?? photo?.url ?? photo?.avifUrl ?? "";
           return (
             <div key={site.id} className="flex min-w-0 gap-3 rounded-lg bg-stone-50 p-2.5 ring-1 ring-stone-200">
               <div className="relative h-16 w-20 shrink-0 overflow-hidden rounded-md bg-stone-200">
-                {photo ? (
+                {photoUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={photo.url ?? photo.avifUrl ?? ""}
+                    src={photoUrl}
                     alt={`Site ${site.name}`}
                     className="absolute inset-0 h-full w-full object-cover"
                     loading="lazy"

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { X, ChevronLeft, ChevronRight } from "lucide-react";
+import { imageProxyUrl, type ImageProxyPreset } from "@/lib/image-proxy";
 
 export type GalleryPhoto = {
   url: string | null;
@@ -24,6 +25,8 @@ type Props = {
 export function PhotoGallery({ photos, alt }: Props) {
   const valid = photos.filter((p) => p.url || p.avifUrl);
   const [lightboxIdx, setLightboxIdx] = useState<number | null>(null);
+  const photoUrl = (photo: GalleryPhoto, preset: ImageProxyPreset) =>
+    imageProxyUrl(photo.url ?? photo.avifUrl, preset) ?? photo.url ?? photo.avifUrl ?? "";
 
   useEffect(() => {
     if (lightboxIdx === null) return;
@@ -64,7 +67,7 @@ export function PhotoGallery({ photos, alt }: Props) {
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={valid[0].url ?? valid[0].avifUrl ?? ""}
+            src={photoUrl(valid[0], "hero")}
             alt={alt}
             className="absolute inset-0 h-full w-full object-cover group-hover:scale-[1.02] transition-transform duration-500"
             loading="eager"
@@ -79,7 +82,7 @@ export function PhotoGallery({ photos, alt }: Props) {
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={p.url ?? p.avifUrl ?? ""}
+              src={photoUrl(p, "thumb")}
               alt={`${alt} ${i + 2}`}
               className="absolute inset-0 h-full w-full object-cover group-hover:scale-[1.04] transition-transform duration-500"
               loading="lazy"
@@ -141,7 +144,7 @@ export function PhotoGallery({ photos, alt }: Props) {
               initial={{ opacity: 0, scale: 0.96 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.2 }}
-              src={valid[lightboxIdx].url ?? valid[lightboxIdx].avifUrl ?? ""}
+              src={photoUrl(valid[lightboxIdx], "hero")}
               alt={`${alt} ${lightboxIdx + 1}`}
               className="max-h-[88vh] max-w-[92vw] object-contain rounded-md"
               onClick={(e) => e.stopPropagation()}

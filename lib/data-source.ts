@@ -183,8 +183,7 @@ export async function getSitesForPark(parkId: string): Promise<Site[]> {
     is_pet_friendly: boolean; is_waterfront: boolean;
     amenities: string[];
     camp_map_id: string | null; map_x: number | null; map_y: number | null;
-    photos: unknown; description: string | null;
-    defined_attributes: unknown; allowed_equipment: unknown; rule_summary: unknown;
+    rule_summary: unknown;
   }>>`
     SELECT s.id, s.campground_id, s.vendor_site_id, s.name, s.site_type,
            s.site_type_label, s.icon_type,
@@ -192,7 +191,7 @@ export async function getSitesForPark(parkId: string): Promise<Site[]> {
            s.has_electric, s.has_water, s.has_sewer, s.is_pull_through,
            s.is_accessible, s.is_pet_friendly, s.is_waterfront,
            s.amenities, s.camp_map_id, s.map_x, s.map_y,
-           s.photos, s.description, s.defined_attributes, s.allowed_equipment, s.rule_summary
+           s.rule_summary
       FROM sites s
       JOIN campgrounds c ON c.id = s.campground_id
      WHERE c.park_id = ${parkId}
@@ -208,10 +207,6 @@ export async function getSitesForPark(parkId: string): Promise<Site[]> {
     is_pet_friendly: r.is_pet_friendly, is_waterfront: r.is_waterfront,
     amenities: Array.isArray(r.amenities) ? r.amenities : [],
     camp_map_id: r.camp_map_id, map_x: r.map_x, map_y: r.map_y,
-    photos: Array.isArray(r.photos) ? (r.photos as Site["photos"]) : [],
-    description: r.description,
-    defined_attributes: Array.isArray(r.defined_attributes) ? (r.defined_attributes as Site["defined_attributes"]) : [],
-    allowed_equipment: Array.isArray(r.allowed_equipment) ? (r.allowed_equipment as Site["allowed_equipment"]) : [],
     rule_summary: r.rule_summary && typeof r.rule_summary === "object" ? (r.rule_summary as Site["rule_summary"]) : null,
   }));
 }
