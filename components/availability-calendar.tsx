@@ -47,6 +47,7 @@ type Props = {
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const VISIBLE_DAYS = 14;
+const DAY_MS = 86_400_000;
 const STATUS_BG: Record<Status, string> = {
   available: "bg-emerald-500 hover:bg-emerald-600",
   reserved: "bg-red-400 hover:bg-red-500",
@@ -79,11 +80,23 @@ function fmt(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-function visibleOffsetForDate(earliest: string, initialDate: string): number {
-  const start = Date.parse(`${earliest}T00:00:00Z`);
-  const target = Date.parse(`${initialDate}T00:00:00Z`);
-  if (!Number.isFinite(start) || !Number.isFinite(target) || target <= start) return 0;
-  return Math.floor((target - start) / (86_400_000 * VISIBLE_DAYS));
+function parseIsoDate(iso: string | null | undefined): number | null {
+  if (!iso) return null;
+  const parsed = Date.parse(`${iso}T00:00:00Z`);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function addDaysToIso(iso: string, days: number): string {
+  return fmt(addDays(new Date(`${iso}T00:00:00Z`), days));
+}
+
+function clampVisibleStart(earliest: string, requested: string | null | undefined): string {
+  const earliestTime = parseIsoDate(earliest);
+  const requestedTime = parseIsoDate(requested);
+  if (earliestTime === null) return earliest;
+  if (requestedTime === null) return earliest;
+  if (requestedTime < earliestTime) return earliest;
+  return requested!;
 }
 
 function eachDateInclusive(from: string, to: string): string[] {
@@ -91,7 +104,7 @@ function eachDateInclusive(from: string, to: string): string[] {
   const end = Date.parse(`${to}T00:00:00Z`);
   if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return [];
   const dates: string[] = [];
-  for (let t = start; t <= end; t += 86_400_000) {
+  for (let t = start; t <= end; t += DAY_MS) {
     dates.push(new Date(t).toISOString().slice(0, 10));
   }
   return dates;
@@ -141,20 +154,20 @@ export function AvailabilityCalendar({
   }, [rows]);
 
   const [showAvailableOnly, setShowAvailableOnly] = useState(false);
-  const [weekOffset, setWeekOffset] = useState(0);
+  const [visibleStartDate, setVisibleStartDate] = useState<string | null>(null);
   const [siteTypeFilter, setSiteTypeFilter] = useState<string | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
     if (!window.earliest || !initialDate) return;
-    setWeekOffset(visibleOffsetForDate(window.earliest, initialDate));
+    setVisibleStartDate(clampVisibleStart(window.earliest, initialDate));
   }, [initialDate, window.earliest]);
 
   // Start date for the visible window
   const visibleStart = useMemo(() => {
     if (!window.earliest) return new Date();
-    return addDays(new Date(window.earliest + "T00:00:00Z"), weekOffset * 14);
-  }, [window.earliest, weekOffset]);
+    return new Date(`${visibleStartDate ?? window.earliest}T00:00:00Z`);
+  }, [visibleStartDate, window.earliest]);
 
   const visibleDates = useMemo(
     () => Array.from({ length: VISIBLE_DAYS }, (_, i) => fmt(addDays(visibleStart, i))),
@@ -165,11 +178,22 @@ export function AvailabilityCalendar({
     [selectedRange, visibleDates],
   );
   const hasSelectedRange = Boolean(selectedRange && focusDates.length > 0);
-  const canGoBack = weekOffset > 0;
+  const canGoBack = Boolean(window.earliest && visibleDates[0] > window.earliest);
   const canGoForward = useMemo(() => {
     if (!window.latest) return false;
     return fmt(addDays(visibleStart, VISIBLE_DAYS)) <= window.latest;
   }, [window.latest, visibleStart]);
+
+  function moveVisibleWindow(days: number) {
+    setVisibleStartDate((current) => {
+      if (!window.earliest) return current;
+      const base = current ?? window.earliest;
+      const next = addDaysToIso(base, days);
+      if (next < window.earliest) return window.earliest;
+      if (window.latest && next > window.latest) return current;
+      return next;
+    });
+  }
 
   const siteTypes = useMemo(() => {
     const types = new Map<string, number>();
@@ -303,7 +327,7 @@ export function AvailabilityCalendar({
         )}
         <div className="flex items-center gap-1 rounded-md ring-1 ring-stone-200 p-0.5">
           <button
-            onClick={() => setWeekOffset((o) => Math.max(0, o - 1))}
+            onClick={() => moveVisibleWindow(-VISIBLE_DAYS)}
             disabled={!canGoBack}
             className="h-7 w-7 grid place-items-center rounded text-stone-600 hover:bg-stone-100 disabled:opacity-30 disabled:cursor-not-allowed"
             aria-label="Previous fortnight"
@@ -314,7 +338,7 @@ export function AvailabilityCalendar({
             {fmtRange(visibleDates[0], visibleDates[VISIBLE_DAYS - 1])}
           </span>
           <button
-            onClick={() => setWeekOffset((o) => o + 1)}
+            onClick={() => moveVisibleWindow(VISIBLE_DAYS)}
             disabled={!canGoForward}
             className="h-7 w-7 grid place-items-center rounded text-stone-600 hover:bg-stone-100 disabled:opacity-30 disabled:cursor-not-allowed"
             aria-label="Next fortnight"

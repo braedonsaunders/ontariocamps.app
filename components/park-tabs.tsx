@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
@@ -395,6 +395,8 @@ export function ParkTabs(props: Props) {
   const [calendarLoadStatus, setCalendarLoadStatus] = useState<CalendarLoadStatus>(
     calendarRows.length > 0 ? "ready" : "idle",
   );
+  const calendarDataUrlRef = useRef(calendarDataUrl ?? null);
+  const calendarLoadStatusRef = useRef<CalendarLoadStatus>(calendarRows.length > 0 ? "ready" : "idle");
   const router = useRouter();
 
   const dateWindowKey = useMemo(() => (
@@ -414,19 +416,34 @@ export function ParkTabs(props: Props) {
     : bookingUrls;
 
   useEffect(() => {
+    calendarLoadStatusRef.current = calendarLoadStatus;
+  }, [calendarLoadStatus]);
+
+  useEffect(() => {
+    const nextUrl = calendarDataUrl ?? null;
+    const urlChanged = calendarDataUrlRef.current !== nextUrl;
+    if (!urlChanged && calendarRows.length === 0) return;
+    calendarDataUrlRef.current = nextUrl;
     setCalendarData({
       calendarRows,
       calendarLastChecked,
       vendorSiteIds,
       bookingUrls,
     });
-    setCalendarLoadStatus(calendarRows.length > 0 ? "ready" : "idle");
+    const nextStatus = calendarRows.length > 0 ? "ready" : "idle";
+    calendarLoadStatusRef.current = nextStatus;
+    setCalendarLoadStatus(nextStatus);
   }, [bookingUrls, calendarDataUrl, calendarLastChecked, calendarRows, vendorSiteIds]);
 
-  const loadCalendarData = useCallback(async () => {
+  const loadCalendarData = useCallback(async ({ force = false }: { force?: boolean } = {}) => {
     if (!calendarDataUrl) return;
-    if (calendarLoadStatus === "loading" || calendarLoadStatus === "ready") return;
-    setCalendarLoadStatus("loading");
+    const currentStatus = calendarLoadStatusRef.current;
+    if (currentStatus === "loading" || (!force && currentStatus === "ready")) return;
+    const keepReadyVisible = currentStatus === "ready";
+    calendarLoadStatusRef.current = "loading";
+    if (!keepReadyVisible) {
+      setCalendarLoadStatus("loading");
+    }
     try {
       const response = await fetch(calendarDataUrl);
       if (!response.ok) throw new Error("Unable to load park calendar");
@@ -437,11 +454,17 @@ export function ParkTabs(props: Props) {
         vendorSiteIds: payload.vendorSiteIds ?? {},
         bookingUrls: { ...bookingUrls, ...(payload.bookingUrls ?? {}) },
       });
+      calendarLoadStatusRef.current = "ready";
       setCalendarLoadStatus("ready");
     } catch {
-      setCalendarLoadStatus("error");
+      if (keepReadyVisible) {
+        calendarLoadStatusRef.current = "ready";
+      } else {
+        calendarLoadStatusRef.current = "error";
+        setCalendarLoadStatus("error");
+      }
     }
-  }, [bookingUrls, calendarDataUrl, calendarLoadStatus]);
+  }, [bookingUrls, calendarDataUrl]);
 
   const refreshLiveAvailability = useCallback(async (payload: { siteId?: string; park?: boolean }) => {
     const scopedSiteId = payload.siteId ?? null;
@@ -485,8 +508,7 @@ export function ParkTabs(props: Props) {
       });
       if (response.ok) {
         if (!scopedSiteId) {
-          setCalendarLoadStatus("idle");
-          setCalendarData((current) => ({ ...current, calendarRows: [] }));
+          void loadCalendarData({ force: true });
         }
         router.refresh();
       }
@@ -505,7 +527,7 @@ export function ParkTabs(props: Props) {
 
     availabilityRefreshesInFlight.set(refreshKey, refreshPromise);
     await refreshPromise;
-  }, [activeCalendarLastChecked, availabilitySummary, dateContext, dateWindowKey, parkId, parkRefreshKey, parkSlug, router]);
+  }, [activeCalendarLastChecked, availabilitySummary, dateContext, dateWindowKey, loadCalendarData, parkId, parkRefreshKey, parkSlug, router]);
 
   useEffect(() => {
     if (activeTab === "sites" || activeTab === "calendar") {
