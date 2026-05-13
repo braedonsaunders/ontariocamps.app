@@ -18,24 +18,19 @@ import {
 } from "recharts";
 import {
   Activity,
-  ArrowUpRight,
   BadgeCheck,
   BarChart3,
   Calendar,
   CalendarDays,
-  Compass,
   Database,
   Flame,
   Gauge,
   Info,
-  MapPinned,
   Moon,
-  Search,
   Tent,
   TrendingDown,
   TrendingUp,
   Trees,
-  Zap,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { AnalyticsSnapshot, ParkNightSeries } from "@/lib/analytics";
@@ -109,12 +104,6 @@ function fmtDate(iso: string): string {
   });
 }
 
-function addDaysIso(iso: string, days: number): string {
-  const d = new Date(iso + "T00:00:00Z");
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().slice(0, 10);
-}
-
 function median(values: number[]): number {
   if (values.length === 0) return 0;
   const sorted = values.slice().sort((a, b) => a - b);
@@ -131,19 +120,6 @@ function quantile(values: number[], q: number): number {
 
 function rangeLabel(start: string, end: string): string {
   return start === end ? fmtDate(start) : `${fmtDate(start)} - ${fmtDate(end)}`;
-}
-
-function searchUrlForSeries(series: NightPoint[]): string {
-  if (series.length === 0) return "/search";
-  const start = series[0].night_date;
-  const end = addDaysIso(series[series.length - 1].night_date, 1);
-  const sp = new URLSearchParams({
-    start_date: start,
-    end_date: end,
-    flexible: "true",
-    sort: "freshness",
-  });
-  return `/search?${sp.toString()}`;
 }
 
 function compactOperatorName(name: string): string {
@@ -704,55 +680,6 @@ function MetricCard({
       <div className="mt-1.5 text-xs leading-snug text-stone-600">{sub}</div>
     </div>
   );
-}
-
-function InsightCard({
-  icon: Icon,
-  label,
-  title,
-  body,
-  href,
-  cta,
-  tone = "stone",
-}: {
-  icon: LucideIcon;
-  label: string;
-  title: string;
-  body: string;
-  href?: string;
-  cta?: string;
-  tone?: Tone;
-}) {
-  const c = toneClasses(tone);
-  const content = (
-    <>
-      <div className="flex items-start gap-2.5">
-        <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-md ring-1 ${c.icon}`}>
-          <Icon size={15} />
-        </span>
-        <div className="min-w-0">
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-stone-500">{label}</div>
-          <h3 className="mt-0.5 text-sm font-semibold leading-snug text-stone-950">{title}</h3>
-        </div>
-      </div>
-      <p className="mt-2 text-xs leading-relaxed text-stone-600">{body}</p>
-      {href && cta && (
-        <div className={`mt-2 inline-flex items-center gap-1.5 text-xs font-semibold ${c.text}`}>
-          {cta} <ArrowUpRight size={12} />
-        </div>
-      )}
-    </>
-  );
-
-  if (href) {
-    return (
-      <Link href={href} className={`block rounded-lg p-3 ring-1 transition-all hover:-translate-y-0.5 hover:shadow-md ${c.shell}`}>
-        {content}
-      </Link>
-    );
-  }
-
-  return <div className={`rounded-lg p-3 ring-1 ${c.shell}`}>{content}</div>;
 }
 
 function SectionHeader({
@@ -1345,7 +1272,6 @@ export function AnalyticsView({ snapshot }: { snapshot: AnalyticsSnapshot }) {
   const agg = useMemo(() => buildPeriodAggregates(parkNightSeries, period), [parkNightSeries, period]);
   const pressureSeries = useMemo(() => buildLookaheadSeries(parkNightSeries), [parkNightSeries]);
   const periodLabel = PERIODS.find((p) => p.key === period)?.label ?? "Selected window";
-  const searchUrl = useMemo(() => searchUrlForSeries(agg.series), [agg.series]);
 
   const inMarketSiteNights = agg.nightSums.available + agg.nightSums.reserved;
   const pressure = pct(agg.nightSums.reserved, inMarketSiteNights);
@@ -1353,9 +1279,6 @@ export function AnalyticsView({ snapshot }: { snapshot: AnalyticsSnapshot }) {
   const pressureCopy = pressureLabel(pressure);
   const availablePct = pct(agg.medianAvailable, totals.sites);
   const reservedPct = pct(agg.medianReserved, totals.sites);
-  const bestRegion = agg.regions[0];
-  const bestPark = agg.mostAvailable[0];
-  const hardestPark = agg.mostBooked[0];
 
   const siteTypePieData = useMemo(() => {
     const top = siteTypes.slice(0, 10);
@@ -1435,48 +1358,6 @@ export function AnalyticsView({ snapshot }: { snapshot: AnalyticsSnapshot }) {
             value={fmt(agg.nightSums.available)}
             sub={`${fmt(agg.nightSums.total)} sampled site-nights in this window`}
             tone="lake"
-          />
-        </section>
-
-        <section className="grid gap-4 lg:grid-cols-3">
-          <InsightCard
-            icon={Compass}
-            label="Best odds"
-            title={bestRegion ? `${bestRegion.name} is leading` : "No region data yet"}
-            body={
-              bestRegion
-                ? `${fmt(bestRegion.Available)} typical sites are open there, about ${bestRegion.pct}% of indexed regional capacity.`
-                : "Availability has not been sampled for this window yet."
-            }
-            href={searchUrl}
-            cta="Search openings"
-            tone="emerald"
-          />
-          <InsightCard
-            icon={MapPinned}
-            label="Park to try"
-            title={bestPark ? bestPark.name : "No park ranking yet"}
-            body={
-              bestPark
-                ? `${bestPark.availability_pct}% typical availability, with ${fmt(bestPark.available)} of ${fmt(bestPark.total_sites)} sites open.`
-                : "Park rankings appear once this window has sampled availability."
-            }
-            href={bestPark ? `/park/${bestPark.slug}` : undefined}
-            cta="Open park"
-            tone="lake"
-          />
-          <InsightCard
-            icon={TrendingDown}
-            label="Move fast"
-            title={hardestPark ? `${hardestPark.name} is tight` : "No scarcity signal yet"}
-            body={
-              hardestPark
-                ? `${hardestPark.availability_pct}% typical availability. ${fmt(agg.distribution.soldOutParks)} parks show zero typical openings in this window.`
-                : "Scarcity ranking appears once this window has sampled availability."
-            }
-            href={hardestPark ? `/park/${hardestPark.slug}` : undefined}
-            cta="Inspect pressure"
-            tone={pressureToneName}
           />
         </section>
 
