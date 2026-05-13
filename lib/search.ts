@@ -85,6 +85,13 @@ type SearchRow = {
   site_amenities: string[];
   site_rule_summary: unknown;
   site_allowed_equipment: unknown;
+  site_has_electric: boolean;
+  site_has_water: boolean;
+  site_has_sewer: boolean;
+  site_is_pull_through: boolean;
+  site_is_accessible: boolean;
+  site_is_pet_friendly: boolean;
+  site_is_waterfront: boolean;
   site_photos: unknown;
   campground_id: string;
   campground_name: string;
@@ -152,8 +159,57 @@ function haversineKm(
   return 2 * earthKm * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
+function ruleSetup(raw: unknown): {
+  electricalService?: unknown;
+  serviceType?: unknown;
+  pullThrough?: unknown;
+} {
+  if (!raw || typeof raw !== "object") return {};
+  return ((raw as { setup?: object }).setup ?? {}) as {
+    electricalService?: unknown;
+    serviceType?: unknown;
+    pullThrough?: unknown;
+  };
+}
+
+function hasAmp(text: string, amp: 15 | 30 | 50): boolean {
+  return new RegExp(`\\b${amp}\\b`, "i").test(text) && /\b(?:a|amp|amps|hydro|electric)/i.test(text);
+}
+
+function deriveAmenities(row: SearchRow): string[] {
+  const raw = Array.isArray(row.site_amenities) ? row.site_amenities.filter(Boolean) : [];
+  const setup = ruleSetup(row.site_rule_summary);
+  const text = [
+    row.site_type_label,
+    ...raw,
+    typeof setup.electricalService === "string" ? setup.electricalService : null,
+    typeof setup.serviceType === "string" ? setup.serviceType : null,
+  ].filter(Boolean).join(" ");
+  const electricText = !/\b(?:unserviced|non[-\s]?electric)\b/i.test(text) && /\b(?:serviced|electric|hydro)\b/i.test(text);
+  const hasElectric = row.site_has_electric || electricText;
+  const out = new Set<string>();
+
+  if (hasElectric) {
+    if (hasAmp(text, 15)) out.add("electric_15a");
+    if (hasAmp(text, 30)) out.add("electric_30a");
+    if (hasAmp(text, 50)) out.add("electric_50a");
+    if (!out.has("electric_15a") && !out.has("electric_30a") && !out.has("electric_50a")) out.add("electric_30a");
+  }
+  if (row.site_has_water || /\bwater(?:\s+hook[-\s]?up|\s+hookup)?\b/i.test(text)) out.add("water");
+  if (row.site_has_sewer || /\bsewer\b/i.test(text)) out.add("sewer");
+  if (row.site_is_pull_through || setup.pullThrough === true || /\bpull[-\s]?through\b/i.test(text)) out.add("pull_through");
+  if (row.site_is_accessible || /\baccessible\b/i.test(text)) out.add("accessible");
+  if (row.site_is_pet_friendly || /\bpet[-\s]?friendly\b/i.test(text)) out.add("pet_friendly");
+  if (row.site_is_waterfront || /\bwaterfront\b/i.test(text)) out.add("waterfront");
+  if (/\bbeach\b/i.test(text)) out.add("beach");
+  if (/\bswim(?:ming)?\b/i.test(text)) out.add("lake_swim");
+
+  for (const amenity of raw) out.add(amenity);
+  return Array.from(out);
+}
+
 function prepareRow(r: SearchRow, params: SearchParams): PreparedRow {
-  const amenities = Array.isArray(r.site_amenities) ? r.site_amenities : [];
+  const amenities = deriveAmenities(r);
   const ruleSummary =
     r.site_rule_summary && typeof r.site_rule_summary === "object"
       ? (r.site_rule_summary as { highlights?: SearchResult["site"]["rule_highlights"] })
@@ -596,6 +652,13 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
         s.amenities AS site_amenities,
         s.rule_summary AS site_rule_summary,
         s.allowed_equipment AS site_allowed_equipment,
+        s.has_electric AS site_has_electric,
+        s.has_water AS site_has_water,
+        s.has_sewer AS site_has_sewer,
+        s.is_pull_through AS site_is_pull_through,
+        s.is_accessible AS site_is_accessible,
+        s.is_pet_friendly AS site_is_pet_friendly,
+        s.is_waterfront AS site_is_waterfront,
         s.photos AS site_photos,
         s.campground_id,
         c.name AS campground_name,
@@ -621,9 +684,6 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
         ${params.equipment === "tent"
           ? client`AND COALESCE((s.rule_summary->'policies'->>'noTents')::boolean, false) IS NOT TRUE`
           : client``}
-        ${params.equipment_length_ft && params.equipment_length_ft > 0
-          ? client`AND (s.max_equipment_length_ft IS NULL OR s.max_equipment_length_ft >= ${params.equipment_length_ft})`
-          : client``}
       GROUP BY
         p.id,
         p.slug,
@@ -642,6 +702,13 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
         s.amenities,
         s.rule_summary,
         s.allowed_equipment,
+        s.has_electric,
+        s.has_water,
+        s.has_sewer,
+        s.is_pull_through,
+        s.is_accessible,
+        s.is_pet_friendly,
+        s.is_waterfront,
         s.photos,
         s.campground_id,
         c.name

@@ -8,6 +8,7 @@ type Scenario = {
   name: string;
   params: SearchParams;
   expectEmpty?: boolean;
+  expectNonEmpty?: boolean;
 };
 
 type SiteFact = {
@@ -19,6 +20,13 @@ type SiteFact = {
   amenities: string[];
   allowed_equipment: unknown;
   rule_summary: unknown;
+  has_electric: boolean;
+  has_water: boolean;
+  has_sewer: boolean;
+  is_pull_through: boolean;
+  is_accessible: boolean;
+  is_pet_friendly: boolean;
+  is_waterfront: boolean;
   operator_id: string;
   park_slug: string;
 };
@@ -95,6 +103,43 @@ function ruleSiteLengthFt(raw: unknown): number | null {
   const setup = (raw as { setup?: { siteLengthM?: unknown } }).setup;
   const metres = setup?.siteLengthM;
   return typeof metres === "number" && Number.isFinite(metres) ? Math.round(metres * 3.28084) : null;
+}
+
+function setupValue(raw: unknown, key: "electricalService" | "serviceType" | "pullThrough"): unknown {
+  return raw && typeof raw === "object" ? (raw as { setup?: Record<string, unknown> }).setup?.[key] : null;
+}
+
+function factText(fact: SiteFact): string {
+  return [
+    fact.site_type_label,
+    ...fact.amenities,
+    setupValue(fact.rule_summary, "electricalService"),
+    setupValue(fact.rule_summary, "serviceType"),
+  ].filter(Boolean).join(" ");
+}
+
+function factHasAmp(fact: SiteFact, amp: 15 | 30 | 50): boolean {
+  const text = factText(fact);
+  return new RegExp(`\\b${amp}\\b`, "i").test(text) && /\b(?:a|amp|amps|hydro|electric)/i.test(text);
+}
+
+function factMatchesAmenity(fact: SiteFact, amenity: string): boolean {
+  if (fact.amenities.includes(amenity)) return true;
+  const text = factText(fact);
+  const electricText = !/\b(?:unserviced|non[-\s]?electric)\b/i.test(text) && /\b(?:serviced|electric|hydro)\b/i.test(text);
+  const hasElectric = fact.has_electric || electricText;
+  if (amenity === "electric_15a") return hasElectric && factHasAmp(fact, 15);
+  if (amenity === "electric_30a") return hasElectric && (factHasAmp(fact, 30) || (!factHasAmp(fact, 15) && !factHasAmp(fact, 50)));
+  if (amenity === "electric_50a") return hasElectric && factHasAmp(fact, 50);
+  if (amenity === "water") return fact.has_water || /\bwater(?:\s+hook[-\s]?up|\s+hookup)?\b/i.test(text);
+  if (amenity === "sewer") return fact.has_sewer || /\bsewer\b/i.test(text);
+  if (amenity === "pull_through") return fact.is_pull_through || setupValue(fact.rule_summary, "pullThrough") === true || /\bpull[-\s]?through\b/i.test(text);
+  if (amenity === "accessible") return fact.is_accessible || /\baccessible\b/i.test(text);
+  if (amenity === "pet_friendly") return fact.is_pet_friendly || /\bpet[-\s]?friendly\b/i.test(text);
+  if (amenity === "waterfront") return fact.is_waterfront || /\bwaterfront\b/i.test(text);
+  if (amenity === "beach") return /\bbeach\b/i.test(text);
+  if (amenity === "lake_swim") return /\bswim(?:ming)?\b/i.test(text);
+  return false;
 }
 
 function scenarioList(): Scenario[] {
@@ -207,9 +252,11 @@ function scenarioList(): Scenario[] {
         party_size: 2,
         site_types: ["rv"],
         amenities: ["electric_30a"],
+        equipment: "rv",
         equipment_length_ft: 32,
         limit: RESULT_LIMIT,
       },
+      expectNonEmpty: true,
     },
     {
       name: "Ontario Parks operator filter",
@@ -268,6 +315,13 @@ async function validateAgainstDatabase(scenario: Scenario, results: SearchResult
       s.amenities,
       s.allowed_equipment,
       s.rule_summary,
+      s.has_electric,
+      s.has_water,
+      s.has_sewer,
+      s.is_pull_through,
+      s.is_accessible,
+      s.is_pet_friendly,
+      s.is_waterfront,
       p.operator_id,
       p.slug AS park_slug
     FROM sites s
@@ -317,7 +371,7 @@ async function validateAgainstDatabase(scenario: Scenario, results: SearchResult
       assert(scenario.params.operators.includes(fact.operator_id), `${scenario.name}: operator filter leaked ${fact.operator_id}`);
     }
     for (const amenity of scenario.params.amenities ?? []) {
-      assert(fact.amenities.includes(amenity), `${scenario.name}: amenity filter leaked ${segment.site.id} without ${amenity}`);
+      assert(factMatchesAmenity(fact, amenity), `${scenario.name}: amenity filter leaked ${segment.site.id} without ${amenity}`);
     }
     for (const night of segment.availability.nights) {
       assert(available.has(`${segment.site.id}|${night}`), `${scenario.name}: ${segment.site.id} is not available on ${night}`);
@@ -401,6 +455,9 @@ async function validateScenario(scenario: Scenario) {
   if (scenario.expectEmpty) {
     assert(response.total === 0 && response.results.length === 0, `${scenario.name}: expected no results`);
     return { total: response.total, returned: response.results.length };
+  }
+  if (scenario.expectNonEmpty) {
+    assert(response.total > 0 && response.results.length > 0, `${scenario.name}: expected at least one result`);
   }
 
   for (const result of response.results) validateResultShape(scenario, result);
