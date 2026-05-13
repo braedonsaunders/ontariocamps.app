@@ -16,6 +16,7 @@
 
 import { CamisClient } from "./camis-client";
 import { CampspotClient, decodeCampspotStatus, type CampspotAvailabilityRow } from "./campspot-client";
+import { CamplifeClient, decodeCamplifeStatus, type CamplifeAvailabilityResponse } from "./camplife-client";
 import { LetsCampClient, type LetsCampCamp, type LetsCampSearchResponse } from "./letscamp-client";
 import { appDate } from "../app-time";
 import { addDays } from "./provider-utils";
@@ -210,8 +211,10 @@ export async function refreshAvailability(
   let cursor = 0;
   const clients = new Map<string, CamisClient>();
   const campspotClients = new Map<string, CampspotClient>();
+  const camplifeClients = new Map<string, CamplifeClient>();
   const letsCampClients = new Map<string, LetsCampClient>();
   const campspotAvailabilityCache = new Map<string, Promise<CampspotAvailabilityRow[]>>();
+  const camplifeAvailabilityCache = new Map<string, Promise<CamplifeAvailabilityResponse>>();
   const letsCampCampCache = new Map<string, Promise<LetsCampCamp>>();
   const letsCampAvailabilityCache = new Map<string, Promise<LetsCampSearchResponse[]>>();
 
@@ -227,6 +230,13 @@ export async function refreshAvailability(
     if (c) return c;
     const fresh = new CampspotClient(base_url);
     campspotClients.set(operator_id, fresh);
+    return fresh;
+  }
+  function camplifeClientFor(operator_id: string, base_url: string): CamplifeClient {
+    const c = camplifeClients.get(operator_id);
+    if (c) return c;
+    const fresh = new CamplifeClient(base_url);
+    camplifeClients.set(operator_id, fresh);
     return fresh;
   }
   function letsCampClientFor(operator_id: string, base_url: string): LetsCampClient {
@@ -285,6 +295,27 @@ export async function refreshAvailability(
           site_id: t.site_id,
           night_date: night,
           status: letsCampStatusForSite(t.vendor_site_id, responses),
+          last_checked_at: nowIso,
+        });
+      }
+      return out;
+    }
+
+    if (t.operator_vendor === "camplife") {
+      const client = camplifeClientFor(t.operator_id, t.operator_base_url);
+      const out: SiteNight[] = [];
+      for (let night = startStr; night < endStr; night = addDays(night, 1)) {
+        const cacheKey = `${t.operator_id}:${t.vendor_park_id}:${night}`;
+        let promise = camplifeAvailabilityCache.get(cacheKey);
+        if (!promise) {
+          promise = client.getAvailability({ campgroundId: t.vendor_park_id, startDate: night });
+          camplifeAvailabilityCache.set(cacheKey, promise);
+        }
+        const response = await promise;
+        out.push({
+          site_id: t.site_id,
+          night_date: night,
+          status: decodeCamplifeStatus(t.vendor_site_id, response),
           last_checked_at: nowIso,
         });
       }

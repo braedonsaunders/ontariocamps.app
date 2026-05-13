@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 const ALLOWED_HOSTS = new Set([
   "campspot-production.s3.amazonaws.com",
+  "www.camplife.com",
 ]);
 
 const MAX_BYTES = 5 * 1024 * 1024;

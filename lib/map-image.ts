@@ -1,5 +1,6 @@
 const MAP_IMAGE_PROXY_HOSTS = new Set([
   "campspot-production.s3.amazonaws.com",
+  "www.camplife.com",
 ]);
 
 export function mapImageUrl(src: string): string {

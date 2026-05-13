@@ -23,24 +23,18 @@ import {
   type SearchEquipmentId,
 } from "@/lib/search-equipment";
 import {
+  fetchPlaceSuggestions,
+  localLocationSuggestions,
+  mergeLocationSuggestions,
+  type LocationSuggestion,
+  type ParkSuggestionSource,
+} from "@/lib/location-suggestions";
+import {
   DEFAULT_SEARCH_RADIUS_KM,
   MAX_SEARCH_RADIUS_KM,
   MIN_SEARCH_RADIUS_KM,
   normalizeSearchRadiusKm,
 } from "@/lib/search-radius";
-
-type PlaceSuggestion = {
-  id: string;
-  label: string;
-  detail: string;
-  lat: number;
-  lng: number;
-  type: string;
-};
-
-type GeocodeResponse = {
-  suggestions?: PlaceSuggestion[];
-};
 
 const EQUIPMENT_ICONS: Record<SearchEquipmentId, LucideIcon> = {
   any: Navigation,
@@ -57,18 +51,12 @@ function todayPlus(days: number) {
   return d.toISOString().slice(0, 10);
 }
 
-async function geocode(query: string, signal?: AbortSignal) {
-  const response = await fetch(`/api/geocode?q=${encodeURIComponent(query)}`, { signal });
-  if (!response.ok) return [];
-  const data = (await response.json()) as GeocodeResponse;
-  return data.suggestions ?? [];
-}
-
 export function HomeSearch() {
   const router = useRouter();
   const [locationQuery, setLocationQuery] = useState("");
-  const [selectedPlace, setSelectedPlace] = useState<PlaceSuggestion | null>(null);
-  const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
+  const [selectedPlace, setSelectedPlace] = useState<LocationSuggestion | null>(null);
+  const [suggestions, setSuggestions] = useState<LocationSuggestion[]>([]);
+  const [parks, setParks] = useState<ParkSuggestionSource[]>([]);
   const [placeOpen, setPlaceOpen] = useState(false);
   const [placeLoading, setPlaceLoading] = useState(false);
   const [placeMessage, setPlaceMessage] = useState<string | null>(null);
@@ -83,12 +71,25 @@ export function HomeSearch() {
   const EquipmentIcon = EQUIPMENT_ICONS[selectedEquipment.id];
 
   useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/parks/summary", { signal: controller.signal })
+      .then((response) => response.json())
+      .then((data) => setParks(data.parks ?? []))
+      .catch((error) => {
+        if ((error as Error).name !== "AbortError") console.error(error);
+      });
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
     const query = locationQuery.trim();
     setPlaceMessage(null);
 
     if (selectedPlace && query === selectedPlace.label) return;
-    if (query.length < 3) {
-      setSuggestions([]);
+    const localSuggestions = localLocationSuggestions(query, parks);
+    setSuggestions(localSuggestions);
+
+    if (query.length < 2) {
       setPlaceLoading(false);
       return;
     }
@@ -97,24 +98,24 @@ export function HomeSearch() {
     const timer = window.setTimeout(async () => {
       setPlaceLoading(true);
       try {
-        const nextSuggestions = await geocode(query, controller.signal);
-        setSuggestions(nextSuggestions);
+        const placeSuggestions = await fetchPlaceSuggestions(query, controller.signal);
+        setSuggestions(mergeLocationSuggestions([...localSuggestions, ...placeSuggestions]).slice(0, 8));
       } catch (error) {
         if ((error as Error).name !== "AbortError") {
-          setSuggestions([]);
+          setSuggestions(localSuggestions);
         }
       } finally {
         setPlaceLoading(false);
       }
-    }, 280);
+    }, 240);
 
     return () => {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [locationQuery, selectedPlace]);
+  }, [locationQuery, parks, selectedPlace]);
 
-  function selectPlace(place: PlaceSuggestion) {
+  function selectPlace(place: LocationSuggestion) {
     setSelectedPlace(place);
     setLocationQuery(place.label);
     setSuggestions([]);
@@ -139,6 +140,7 @@ export function HomeSearch() {
           lat: position.coords.latitude,
           lng: position.coords.longitude,
           type: "device",
+          source: "device",
         });
         setLocating(false);
       },
@@ -157,10 +159,16 @@ export function HomeSearch() {
     }
     if (!query) return null;
 
+    const localMatch = localLocationSuggestions(query, parks, 1)[0];
+    if (localMatch) {
+      selectPlace(localMatch);
+      return localMatch;
+    }
+
     setPlaceLoading(true);
-    let matches: PlaceSuggestion[] = [];
+    let matches: LocationSuggestion[] = [];
     try {
-      matches = await geocode(query);
+      matches = await fetchPlaceSuggestions(query);
     } catch {
       setPlaceMessage("Place lookup is unavailable.");
       setPlaceOpen(true);
@@ -190,6 +198,9 @@ export function HomeSearch() {
       sp.set("lat", String(place.lat));
       sp.set("lng", String(place.lng));
       sp.set("loc", place.label);
+      if (place.source === "park" && place.slug) {
+        sp.set("park_slugs", place.slug);
+      }
     }
 
     sp.set("radius_km", String(normalizeSearchRadiusKm(radius)));
@@ -261,7 +272,7 @@ export function HomeSearch() {
                   className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left transition hover:bg-forest-50"
                 >
                   <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-forest-100 text-forest-700">
-                    <MapPin size={15} />
+                    {place.source === "park" ? <Tent size={15} /> : <MapPin size={15} />}
                   </span>
                   <span className="min-w-0">
                     <span className="block truncate text-sm font-semibold text-stone-900">{place.label}</span>

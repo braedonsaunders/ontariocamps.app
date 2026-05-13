@@ -33,7 +33,7 @@ type CloudflareFetchInit = RequestInit & {
 };
 
 type AvailabilityCode = "available" | "reserved" | "closed" | "unknown";
-type Vendor = "camis5" | "goingtocamp" | "pcrs" | "campspot" | "letscamp";
+type Vendor = "camis5" | "goingtocamp" | "pcrs" | "campspot" | "letscamp" | "camplife";
 type RefreshMode = "hot" | "near" | "planning" | "deep" | "ondemand";
 type RefreshWindow = Exclude<RefreshMode, "ondemand">;
 
@@ -87,10 +87,18 @@ type LetsCampSearchResponse = {
   };
 };
 
+type CamplifeAvailabilityResponse = {
+  sites?: Array<{ id: number; isFiltered?: boolean }>;
+  errors?: { general?: Array<{ message?: string }> };
+  warnings?: { general?: Array<{ message?: string }> };
+  closed?: boolean;
+};
+
 type ProviderCaches = {
   campspotAvailability: Map<string, Promise<CampspotAvailabilityRow[]>>;
   letsCampCamp: Map<string, Promise<LetsCampCamp>>;
   letsCampAvailability: Map<string, Promise<LetsCampSearchResponse[]>>;
+  camplifeAvailability: Map<string, Promise<CamplifeAvailabilityResponse>>;
 };
 
 type RefreshOptions = {
@@ -153,6 +161,7 @@ const IMAGE_ALLOWED_HOSTS = new Set([
   "hcareservations.ca",
   "images.campspot.com",
   "res.cloudinary.com",
+  "s3.amazonaws.com",
   "ontarioconservationareas.ca",
   "mvca.on.ca",
 ]);
@@ -283,6 +292,30 @@ function letsCampStatusForSite(siteId: string, responses: LetsCampSearchResponse
   if (available.has(siteId)) return "available";
   if (blocked.has(siteId)) return "reserved";
   return "reserved";
+}
+
+function camplifeHeaders(campgroundId: string): HeadersInit {
+  return {
+    Accept: "application/json, text/plain, */*",
+    "Accept-Language": "en-CA,en;q=0.9",
+    "Content-Type": "application/json",
+    Origin: "https://www.camplife.com",
+    Referer: `https://www.camplife.com/${campgroundId}/reservation/step1`,
+    "User-Agent": DEFAULT_USER_AGENT,
+  };
+}
+
+function camplifeClosedAvailability(data: CamplifeAvailabilityResponse): boolean {
+  const messages = [
+    ...(data.errors?.general ?? []),
+    ...(data.warnings?.general ?? []),
+  ].map((m) => m.message ?? "").join(" ").toLowerCase();
+  return /\b(closed|not open|choose different dates|outside|not available|no availability|not accepting)\b/.test(messages);
+}
+
+function decodeCamplifeStatus(siteId: string, response: CamplifeAvailabilityResponse): AvailabilityCode {
+  if (response.closed) return "closed";
+  return (response.sites ?? []).some((site) => String(site.id) === siteId) ? "available" : "reserved";
 }
 
 function json(body: unknown, init: ResponseInit = {}): Response {
@@ -578,7 +611,7 @@ function dueAt(window: RefreshWindow, checkedAt: string, rows: SiteNight[]): str
 }
 
 function failureBackoffDueAt(window: RefreshWindow, vendor: Vendor): string {
-  const hoursByWindow: Record<RefreshWindow, number> = vendor === "campspot"
+  const hoursByWindow: Record<RefreshWindow, number> = vendor === "campspot" || vendor === "camplife"
     ? { hot: 2, near: 4, planning: 12, deep: 24 }
     : { hot: 1, near: 2, planning: 6, deep: 12 };
   const hours = hoursByWindow[window];
@@ -721,6 +754,36 @@ async function fetchLetsCampResponses(target: FetchTarget, camp: LetsCampCamp, n
   return promise;
 }
 
+async function fetchCamplifeResponse(target: FetchTarget, night: string, caches: ProviderCaches): Promise<CamplifeAvailabilityResponse> {
+  const cacheKey = `${target.operator_id}:${target.vendor_park_id}:${night}`;
+  let promise = caches.camplifeAvailability.get(cacheKey);
+  if (!promise) {
+    const baseUrl = target.operator_base_url.replace(/\/+$/, "");
+    promise = (async () => {
+      const response = await fetch(`${baseUrl}/api/campground/${encodeURIComponent(target.vendor_park_id)}/availability`, {
+        method: "POST",
+        headers: camplifeHeaders(target.vendor_park_id),
+        body: JSON.stringify({
+          flexible: false,
+          displayStartDate: "",
+          checkinDate: night,
+          checkoutDate: addDays(night, 1),
+        }),
+        signal: AbortSignal.timeout(20_000),
+      });
+      const data = await response.json().catch(() => ({})) as CamplifeAvailabilityResponse;
+      if (!response.ok) {
+        if (camplifeClosedAvailability(data)) return { ...data, closed: true };
+        const message = data.errors?.general?.map((e) => e.message).filter(Boolean).join("; ");
+        throw new Error(`CampLife availability HTTP ${response.status}${message ? `: ${message}` : ""}`);
+      }
+      return data;
+    })();
+    caches.camplifeAvailability.set(cacheKey, promise);
+  }
+  return promise;
+}
+
 async function fetchVendorAvailability(target: FetchTarget, startDate: string, endDate: string, caches: ProviderCaches): Promise<SiteNight[]> {
   const nowIso = new Date().toISOString();
   if (target.operator_vendor === "campspot") {
@@ -739,6 +802,15 @@ async function fetchVendorAvailability(target: FetchTarget, startDate: string, e
     for (let night = startDate; night < endDate; night = addDays(night, 1)) {
       const responses = await fetchLetsCampResponses(target, camp, night, caches);
       out.push({ site_id: target.site_id, night_date: night, status: letsCampStatusForSite(target.vendor_site_id, responses), last_checked_at: nowIso });
+    }
+    return out;
+  }
+
+  if (target.operator_vendor === "camplife") {
+    const out: SiteNight[] = [];
+    for (let night = startDate; night < endDate; night = addDays(night, 1)) {
+      const response = await fetchCamplifeResponse(target, night, caches);
+      out.push({ site_id: target.site_id, night_date: night, status: decodeCamplifeStatus(target.vendor_site_id, response), last_checked_at: nowIso });
     }
     return out;
   }
@@ -803,6 +875,7 @@ async function refreshAvailability(env: Env, input: RefreshOptions): Promise<Ref
       campspotAvailability: new Map(),
       letsCampCamp: new Map(),
       letsCampAvailability: new Map(),
+      camplifeAvailability: new Map(),
     };
     let cursor = 0;
     let sitesUpdated = 0;

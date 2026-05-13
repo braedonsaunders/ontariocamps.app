@@ -128,7 +128,7 @@ function categoryForPark(park: Pick<Park, "operator_id" | "operator_vendor">): P
   if (park.operator_id === "ontario_parks") return "provincial";
   if (park.operator_id === "st_lawrence_parks") return "provincial";
   if (park.operator_id === "parks_canada") return "federal";
-  if (park.operator_id.includes("_private") || park.operator_vendor === "campspot") return "private";
+  if (park.operator_id.includes("_private") || park.operator_vendor === "campspot" || park.operator_vendor === "camplife") return "private";
   return "conservation";
 }
 
@@ -330,11 +330,11 @@ export function OntarioMap({
             ["linear"],
             ["zoom"],
             5,
-            ["case", ["==", ["get", "category"], "provincial"], 18, 13],
+            ["case", ["==", ["get", "category"], "provincial"], 20, 13],
             10,
-            ["case", ["==", ["get", "category"], "provincial"], 25, 18],
+            ["case", ["==", ["get", "category"], "provincial"], 27, 18],
             14,
-            ["case", ["==", ["get", "category"], "provincial"], 32, 24],
+            ["case", ["==", ["get", "category"], "provincial"], 34, 24],
           ],
           "text-allow-overlap": true,
           "text-ignore-placement": true,
@@ -401,11 +401,11 @@ export function OntarioMap({
             ["linear"],
             ["zoom"],
             5,
-            ["case", ["==", ["get", "category"], "provincial"], 22, 16],
+            ["case", ["==", ["get", "category"], "provincial"], 24, 16],
             10,
-            ["case", ["==", ["get", "category"], "provincial"], 30, 22],
+            ["case", ["==", ["get", "category"], "provincial"], 32, 22],
             14,
-            ["case", ["==", ["get", "category"], "provincial"], 38, 28],
+            ["case", ["==", ["get", "category"], "provincial"], 40, 28],
           ],
           "text-allow-overlap": true,
           "text-ignore-placement": true,

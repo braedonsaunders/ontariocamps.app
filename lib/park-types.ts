@@ -19,7 +19,7 @@ export const PARK_TYPE_OPTIONS: Array<{ id: ParkType; label: string; operatorIds
     "campspot_saugeen",
   ] },
   { id: "federal", label: "Federal parks", operatorIds: ["parks_canada"] },
-  { id: "private", label: "Private campgrounds", operatorIds: ["campspot_ontario_private"] },
+  { id: "private", label: "Private campgrounds", operatorIds: ["campspot_ontario_private", "camplife_ontario_private"] },
 ];
 
 const PARK_TYPE_BY_OPERATOR = new Map<string, ParkType>();

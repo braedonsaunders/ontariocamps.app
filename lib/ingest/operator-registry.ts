@@ -1,7 +1,7 @@
 import type { Operator } from "../types";
 
 export type ProviderParkConfig = {
-  provider: "campspot" | "letscamp";
+  provider: "campspot" | "letscamp" | "camplife";
   slug: string;
   name: string;
   region: string;
@@ -638,6 +638,14 @@ export const OPERATORS: OperatorConfig[] = [
     booking_url: "https://www.campspot.com/book",
     active: true,
     providerParks: CAMPSPOT_ONTARIO_BOOKABLE_PARKS,
+  },
+  {
+    id: "camplife_ontario_private",
+    name: "CampLife Ontario Campgrounds",
+    vendor: "camplife",
+    base_url: "https://www.camplife.com",
+    booking_url: "https://www.camplife.com",
+    active: true,
   },
   {
     id: "letscamp_quinte",

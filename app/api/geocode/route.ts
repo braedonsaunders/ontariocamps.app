@@ -33,6 +33,15 @@ type PlaceSuggestion = {
 };
 
 const ONTARIO_VIEWBOX = "-95.2,56.9,-74.3,41.6";
+const FEATURE_LABEL_TYPES = new Set([
+  "camp_site",
+  "caravan_site",
+  "national_park",
+  "nature_reserve",
+  "park",
+  "picnic_site",
+  "recreation_ground",
+]);
 
 function compact(parts: Array<string | null | undefined>) {
   return parts.map((part) => part?.trim()).filter(Boolean).join(", ");
@@ -40,6 +49,8 @@ function compact(parts: Array<string | null | undefined>) {
 
 function placeLabel(result: NominatimResult) {
   const address = result.address ?? {};
+  const featureLabel = result.display_name?.split(",")[0]?.trim();
+  if (featureLabel && result.type && FEATURE_LABEL_TYPES.has(result.type)) return featureLabel;
   return (
     address.city ??
     address.town ??

@@ -30,6 +30,12 @@ export function addNights(startDate: string, nights = 1): string {
 export function buildBookingUrl(baseUrl: string, options: BookingUrlOptions = {}): string {
   try {
     const url = new URL(normalizeBookingUrlPath(baseUrl));
+    if (url.hostname.endsWith("camplife.com")) {
+      setParam(url.searchParams, "siteId", options.resourceId);
+      setParam(url.searchParams, "checkinDate", options.startDate);
+      setParam(url.searchParams, "checkoutDate", options.endDate);
+      return url.toString();
+    }
     setParam(url.searchParams, "resourceId", options.resourceId);
     setParam(url.searchParams, "mapId", options.mapId);
     setParam(url.searchParams, "startDate", options.startDate);

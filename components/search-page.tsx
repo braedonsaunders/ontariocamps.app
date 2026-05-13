@@ -11,6 +11,14 @@ import {
   useQueryStates,
 } from "nuqs";
 import { PRESET_LOCATIONS } from "@/lib/locations";
+import {
+  fetchPlaceSuggestions,
+  localLocationSuggestions,
+  mergeLocationSuggestions,
+  resolvePresetLocation,
+  scoreParkLookup,
+  type LocationSuggestion,
+} from "@/lib/location-suggestions";
 import { appDate } from "@/lib/app-time";
 import { AMENITIES, type SearchResponse, type SearchResult, type SearchResultGroup } from "@/lib/types";
 import { displayOperatorName } from "@/lib/display";
@@ -101,64 +109,18 @@ const EQUIPMENT_ICONS: Record<string, LucideIcon> = {
   roofed: Home,
 };
 
-type GeocodeSuggestion = {
-  label: string;
-  lat: number;
-  lng: number;
-};
-
 /** Match a typed location label against PRESET_LOCATIONS — case-insensitive
  *  exact-or-prefix match on either the key or the display label. Returns the
  *  preset's coords if matched, or null otherwise. */
 function resolveNear(input: string): { lat: number; lng: number; label: string } | null {
-  const q = input.trim().toLowerCase();
-  if (!q) return null;
-  const normalizedQ = normalizeLookupTerm(input);
-  // Exact key match first
-  if (PRESET_LOCATIONS[q]) return PRESET_LOCATIONS[q];
-  if (normalizedQ && PRESET_LOCATIONS[normalizedQ]) return PRESET_LOCATIONS[normalizedQ];
-  // Case-insensitive label match
-  for (const p of Object.values(PRESET_LOCATIONS)) {
-    if (p.label.toLowerCase() === q || (normalizedQ && normalizeLookupTerm(p.label) === normalizedQ)) return p;
-  }
-  // Prefix-on-label so "tor" → Toronto
-  for (const p of Object.values(PRESET_LOCATIONS)) {
-    const normalizedLabel = normalizeLookupTerm(p.label);
-    if (p.label.toLowerCase().startsWith(q) || (normalizedQ && normalizedLabel.startsWith(normalizedQ))) return p;
-  }
-  return null;
+  return resolvePresetLocation(input);
 }
 
-function normalizeLookupTerm(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/&/g, " and ")
-    .replace(/\b(?:ontario|canada|provincial|park|campground|conservation|area)\b/g, " ")
-    .replace(/[^a-z0-9]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function scoreParkLookup(query: string, park: ParkSummary): number {
-  const q = normalizeLookupTerm(query);
-  if (!q) return 0;
-  const name = normalizeLookupTerm(park.name);
-  const haystack = normalizeLookupTerm(`${park.name} ${park.operator} ${park.region}`);
-  const tokens = q.split(" ").filter(Boolean);
-  if (!tokens.every((token) => haystack.includes(token))) return 0;
-  if (name === q) return 100;
-  if (name.startsWith(q)) return 90;
-  if (name.includes(q)) return 80;
-  return 60 + Math.min(tokens.length, 5);
-}
-
-async function geocodeNear(input: string): Promise<GeocodeSuggestion | null> {
+async function geocodeNear(input: string): Promise<LocationSuggestion | null> {
   const query = input.trim();
   if (query.length < 2) return null;
-  const response = await fetch(`/api/geocode?q=${encodeURIComponent(query)}`);
-  if (!response.ok) return null;
-  const data = (await response.json()) as { suggestions?: GeocodeSuggestion[] };
-  return data.suggestions?.[0] ?? null;
+  const suggestions = await fetchPlaceSuggestions(query);
+  return suggestions[0] ?? null;
 }
 
 function rangeNights(start: string, end: string): number | null {
@@ -193,6 +155,12 @@ function dateRequirementMessage(startDate: string, endDate: string): string | nu
   if (sameDayMessage) return sameDayMessage;
   if (rangeNights(startDate, endDate) == null) return "Check-out must be after check-in.";
   return null;
+}
+
+function clampIntegerInput(value: string, min: number, max: number, fallback: number): number {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
 }
 
 function formatShortDate(value: string): string | null {
@@ -294,9 +262,16 @@ export function SearchPage() {
     }
     return "";
   });
+  const [selectedNearSuggestion, setSelectedNearSuggestion] = useState<LocationSuggestion | null>(null);
+  const [nearSuggestions, setNearSuggestions] = useState<LocationSuggestion[]>([]);
+  const [nearSuggestionsOpen, setNearSuggestionsOpen] = useState(false);
+  const [nearSuggestionsLoading, setNearSuggestionsLoading] = useState(false);
   const [endInput, setEndInput] = useState<string>(() => state.end_loc);
   const [parkInput, setParkInput] = useState("");
   const [radiusInput, setRadiusInput] = useState(() => String(state.radius_km));
+  const [partyInput, setPartyInput] = useState(() => String(state.party_size));
+  const [minNightsInput, setMinNightsInput] = useState(() => state.min_nights != null ? String(state.min_nights) : "");
+  const [minNightsDirty, setMinNightsDirty] = useState(false);
 
   const [data, setData] = useState<SearchResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -340,6 +315,10 @@ export function SearchPage() {
     setRadiusInput(String(normalizeSearchRadiusKm(state.radius_km)));
   }, [state.radius_km]);
 
+  useEffect(() => {
+    setPartyInput(String(state.party_size));
+  }, [state.party_size]);
+
   // Fetch the full parks rollup once on mount. Used to render every park on
   // the map regardless of the current search filters.
   useEffect(() => {
@@ -352,6 +331,39 @@ export function SearchPage() {
       });
     return () => ac.abort();
   }, []);
+
+  useEffect(() => {
+    const query = nearInput.trim();
+    if (selectedNearSuggestion && query === selectedNearSuggestion.label) return;
+
+    const localSuggestions = localLocationSuggestions(query, allParks);
+    setNearSuggestions(localSuggestions);
+
+    if (query.length < 2) {
+      setNearSuggestionsLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setNearSuggestionsLoading(true);
+      try {
+        const placeSuggestions = await fetchPlaceSuggestions(query, controller.signal);
+        setNearSuggestions(mergeLocationSuggestions([...localSuggestions, ...placeSuggestions]).slice(0, 8));
+      } catch (error) {
+        if ((error as Error).name !== "AbortError") {
+          setNearSuggestions(localSuggestions);
+        }
+      } finally {
+        setNearSuggestionsLoading(false);
+      }
+    }, 240);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [allParks, nearInput, selectedNearSuggestion]);
 
   // Resolve lat/lng from the typed "near" string (preset match) or explicit
   // lat/lng params from the URL.
@@ -381,10 +393,35 @@ export function SearchPage() {
       return;
     }
 
+    const committedPartySize = clampIntegerInput(partyInput, 1, 12, state.party_size || 2);
+    const effectiveMinNightsForSearch = Math.max(
+      minRouteNights,
+      Math.min(state.min_nights ?? dateWindowNights ?? minRouteNights, dateWindowNights ?? 21),
+    );
+    const shouldCommitMinNights = minNightsDirty || state.flexible;
+    const committedMinNights = shouldCommitMinNights
+      ? clampIntegerInput(
+        minNightsInput,
+        minRouteNights,
+        dateWindowNights ?? 21,
+        effectiveMinNightsForSearch,
+      )
+      : state.min_nights;
+
+    setPartyInput(String(committedPartySize));
+    if (shouldCommitMinNights && committedMinNights != null) {
+      setMinNightsInput(String(committedMinNights));
+      setMinNightsDirty(false);
+    }
+
     const query = nearInput.trim();
     const committedRadius = normalizeSearchRadiusKm(radiusInput);
     setRadiusInput(String(committedRadius));
-    const nextState: Partial<typeof state> = { page: 1, radius_km: committedRadius };
+    const nextState: Partial<typeof state> = { page: 1, radius_km: committedRadius, party_size: committedPartySize };
+    if (shouldCommitMinNights && committedMinNights != null) {
+      nextState.flexible = true;
+      nextState.min_nights = committedMinNights;
+    }
     let nextAutoNearParkSlug: string | null = autoNearParkSlug;
     setLocationMessage(null);
 
@@ -395,53 +432,72 @@ export function SearchPage() {
         nextAutoNearParkSlug = null;
       }
     } else if (query) {
-      const preset = resolveNear(query);
-      if (preset) {
-        const key = Object.entries(PRESET_LOCATIONS).find(([, p]) => p.label === preset.label)?.[0]
-          ?? query.toLowerCase();
-        nextState.loc = key;
-        nextState.lat = null;
-        nextState.lng = null;
+      const selectedNear = selectedNearSuggestion && query === selectedNearSuggestion.label
+        ? selectedNearSuggestion
+        : null;
+      if (selectedNear?.source === "park" && selectedNear.slug) {
+        nextState.loc = selectedNear.label;
+        nextState.lat = selectedNear.lat;
+        nextState.lng = selectedNear.lng;
+        nextState.park_slugs = [selectedNear.slug];
+        nextAutoNearParkSlug = selectedNear.slug;
+      } else if (selectedNear) {
+        nextState.loc = selectedNear.label;
+        nextState.lat = selectedNear.lat;
+        nextState.lng = selectedNear.lng;
         if (autoNearParkSlug) {
           nextState.park_slugs = state.park_slugs.filter((slug) => slug !== autoNearParkSlug);
           nextAutoNearParkSlug = null;
         }
       } else {
-        const parkMatch = allParks
-          .map((park) => ({ park, score: scoreParkLookup(query, park) }))
-          .filter((match) => match.score >= 80)
-          .sort((a, b) => b.score - a.score || b.park.available_sites - a.park.available_sites || a.park.name.localeCompare(b.park.name))[0]?.park;
-        if (parkMatch) {
-          setNearInput(parkMatch.name);
-          nextState.loc = parkMatch.name;
-          nextState.lat = parkMatch.lat;
-          nextState.lng = parkMatch.lng;
-          nextState.park_slugs = [parkMatch.slug];
-          nextAutoNearParkSlug = parkMatch.slug;
-        } else {
+        const preset = resolveNear(query);
+        if (preset) {
+          const key = Object.entries(PRESET_LOCATIONS).find(([, p]) => p.label === preset.label)?.[0]
+            ?? query.toLowerCase();
+          nextState.loc = key;
+          nextState.lat = null;
+          nextState.lng = null;
           if (autoNearParkSlug) {
             nextState.park_slugs = state.park_slugs.filter((slug) => slug !== autoNearParkSlug);
             nextAutoNearParkSlug = null;
           }
-          setResolvingNear(true);
-          let place: GeocodeSuggestion | null = null;
-          try {
-            place = await geocodeNear(query);
-          } catch {
-            place = null;
-          } finally {
-            setResolvingNear(false);
-          }
-          if (place) {
-            setNearInput(place.label);
-            nextState.loc = place.label;
-            nextState.lat = place.lat;
-            nextState.lng = place.lng;
+        } else {
+          const parkMatch = allParks
+            .map((park) => ({ park, score: scoreParkLookup(query, park) }))
+            .filter((match) => match.score >= 80)
+            .sort((a, b) => b.score - a.score || b.park.available_sites - a.park.available_sites || a.park.name.localeCompare(b.park.name))[0]?.park;
+          if (parkMatch) {
+            setNearInput(parkMatch.name);
+            nextState.loc = parkMatch.name;
+            nextState.lat = parkMatch.lat;
+            nextState.lng = parkMatch.lng;
+            nextState.park_slugs = [parkMatch.slug];
+            nextAutoNearParkSlug = parkMatch.slug;
           } else {
-            nextState.loc = query;
-            nextState.lat = null;
-            nextState.lng = null;
-            setLocationMessage("Showing Ontario-wide results until this place can be resolved.");
+            if (autoNearParkSlug) {
+              nextState.park_slugs = state.park_slugs.filter((slug) => slug !== autoNearParkSlug);
+              nextAutoNearParkSlug = null;
+            }
+            setResolvingNear(true);
+            let place: LocationSuggestion | null = null;
+            try {
+              place = await geocodeNear(query);
+            } catch {
+              place = null;
+            } finally {
+              setResolvingNear(false);
+            }
+            if (place) {
+              setNearInput(place.label);
+              nextState.loc = place.label;
+              nextState.lat = place.lat;
+              nextState.lng = place.lng;
+            } else {
+              nextState.loc = query;
+              nextState.lat = null;
+              nextState.lng = null;
+              setLocationMessage("Showing Ontario-wide results until this place can be resolved.");
+            }
           }
         }
       }
@@ -466,7 +522,7 @@ export function SearchPage() {
           setEndInput(endPreset.label);
         } else {
           setResolvingNear(true);
-          let endPlace: GeocodeSuggestion | null = null;
+          let endPlace: LocationSuggestion | null = null;
           try {
             endPlace = await geocodeNear(endQuery);
           } catch {
@@ -535,6 +591,38 @@ export function SearchPage() {
       },
       { enableHighAccuracy: false, timeout: 9000, maximumAge: 10 * 60 * 1000 },
     );
+  }
+
+  function selectNearSuggestion(suggestion: LocationSuggestion) {
+    setSelectedNearSuggestion(suggestion);
+    setNearInput(suggestion.label);
+    setNearSuggestions([]);
+    setNearSuggestionsOpen(false);
+    setLocationMessage(null);
+
+    if (suggestion.source === "park" && suggestion.slug) {
+      setAutoNearParkSlug(suggestion.slug);
+      setState({
+        loc: suggestion.label,
+        lat: suggestion.lat,
+        lng: suggestion.lng,
+        park_slugs: [suggestion.slug],
+        page: 1,
+      });
+      return;
+    }
+
+    const nextParkSlugs = autoNearParkSlug
+      ? state.park_slugs.filter((slug) => slug !== autoNearParkSlug)
+      : state.park_slugs;
+    if (autoNearParkSlug) setAutoNearParkSlug(null);
+    setState({
+      loc: suggestion.label,
+      lat: suggestion.lat,
+      lng: suggestion.lng,
+      park_slugs: nextParkSlugs,
+      page: 1,
+    });
   }
 
   // Fetch when searchKey changes. We use the submitted snapshot so the request
@@ -665,6 +753,7 @@ export function SearchPage() {
     const windowNights = rangeNights(state.start_date, state.end_date);
     const minRouteNights = state.stay_mode === "same_site" ? 1 : 2;
     const defaultNights = Math.max(minRouteNights, Math.min(windowNights ?? 2, 2));
+    setMinNightsDirty(false);
     setState({
       flexible: next,
       min_nights: next ? (state.min_nights ?? defaultNights) : null,
@@ -675,6 +764,8 @@ export function SearchPage() {
     setEndInput("");
     setParkInput("");
     setRadiusInput(String(DEFAULT_SEARCH_RADIUS_KM));
+    setPartyInput("2");
+    setMinNightsDirty(false);
     setAutoNearParkSlug(null);
     const nextState = {
       ...state,
@@ -945,6 +1036,11 @@ export function SearchPage() {
   const hasRouteEndpoint = state.stay_mode === "anywhere" && state.end_lat != null && state.end_lng != null;
   const routeNeedsDates = state.stay_mode !== "same_site" && (!dateWindowNights || dateWindowNights < 2);
   const minRouteNights = state.stay_mode === "same_site" ? 1 : 2;
+  const maxMinNights = dateWindowNights ?? 21;
+  const effectiveMinNights = Math.max(
+    minRouteNights,
+    Math.min(state.min_nights ?? dateWindowNights ?? minRouteNights, maxMinNights),
+  );
   const tripOptionCount = (state.stay_mode !== "same_site" ? 1 : 0) + (hasRouteEndpoint ? 1 : 0);
   const planningOptionCount =
     (state.group_by !== "park" ? 1 : 0) +
@@ -969,6 +1065,65 @@ export function SearchPage() {
     `${normalizeSearchRadiusKm(state.radius_km)} km`,
     selectedParks.length ? `${selectedParks.length} park${selectedParks.length === 1 ? "" : "s"}` : null,
   ].filter(Boolean).join(" · ");
+
+  useEffect(() => {
+    if (!minNightsDirty) setMinNightsInput(String(effectiveMinNights));
+  }, [effectiveMinNights, minNightsDirty]);
+
+  function commitPartyInput(value = partyInput) {
+    const next = clampIntegerInput(value, 1, 12, state.party_size || 2);
+    setPartyInput(String(next));
+    setState({ party_size: next, page: 1 });
+    return next;
+  }
+
+  function commitMinNightsInput(value = minNightsInput) {
+    const next = clampIntegerInput(value, minRouteNights, maxMinNights, effectiveMinNights);
+    setMinNightsInput(String(next));
+    setMinNightsDirty(false);
+    setState({ min_nights: next, flexible: true, page: 1 });
+    return next;
+  }
+
+  function renderNearSuggestions(menuClassName = "z-[70] max-h-72") {
+    const query = nearInput.trim();
+    const shouldShow =
+      nearSuggestionsOpen &&
+      query &&
+      (nearSuggestionsLoading || nearSuggestions.length > 0 || query.length >= 2);
+    if (!shouldShow) return null;
+
+    return (
+      <div className={`absolute left-0 right-0 top-full mt-1 overflow-y-auto rounded-md bg-white py-1 shadow-xl ring-1 ring-stone-200 ${menuClassName}`}>
+        {nearSuggestionsLoading && (
+          <div className="flex items-center gap-2 px-3 py-2 text-xs text-stone-500">
+            <Loader2 size={13} className="animate-spin" />
+            Finding places
+          </div>
+        )}
+        {!nearSuggestionsLoading && nearSuggestions.length > 0 ? nearSuggestions.map((suggestion) => (
+          <button
+            key={suggestion.id}
+            type="button"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => selectNearSuggestion(suggestion)}
+            className="flex w-full items-center gap-3 px-3 py-2 text-left transition hover:bg-forest-50"
+          >
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-forest-100 text-forest-700">
+              {suggestion.source === "park" ? <Tent size={15} /> : <MapPin size={15} />}
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-semibold text-stone-950">{suggestion.label}</span>
+              <span className="block truncate text-xs text-stone-500">{suggestion.detail}</span>
+            </span>
+          </button>
+        )) : !nearSuggestionsLoading ? (
+          <div className="px-3 py-2 text-xs text-stone-500">No park or Ontario place matches that search.</div>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-[calc(100dvh-3.5rem)] min-h-[calc(100dvh-3.5rem)] flex-col bg-stone-50 lg:min-h-[42rem]">
       <div className="sticky top-14 z-40 border-b border-stone-200 bg-white/95 shadow-sm backdrop-blur">
@@ -1056,7 +1211,14 @@ export function SearchPage() {
                   placeholder="Town, city, park, or postal code"
                   value={nearInput}
                   autoComplete="off"
-                  onChange={(e) => setNearInput(e.target.value)}
+                  onFocus={() => setNearSuggestionsOpen(true)}
+                  onBlur={() => window.setTimeout(() => setNearSuggestionsOpen(false), 120)}
+                  onChange={(e) => {
+                    setNearInput(e.target.value);
+                    if (selectedNearSuggestion && e.target.value !== selectedNearSuggestion.label) {
+                      setSelectedNearSuggestion(null);
+                    }
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
                       e.preventDefault();
@@ -1064,6 +1226,7 @@ export function SearchPage() {
                     }
                   }}
                 />
+                {renderNearSuggestions()}
               </div>
 
               <div className="relative col-span-2 rounded-md bg-stone-50 px-3 py-2 ring-1 ring-stone-200 transition focus-within:bg-white focus-within:ring-forest-600 sm:col-span-3 lg:col-span-1 lg:min-w-0">
@@ -1323,23 +1486,42 @@ export function SearchPage() {
                 <label className="inline-flex h-8 items-center gap-1.5 rounded-md bg-white px-2 text-xs font-semibold text-stone-700 ring-1 ring-stone-200">
                   <span>Nights</span>
                   <input
-                    type="number"
-                    min={minRouteNights}
-                    max={dateWindowNights ?? 21}
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    aria-label="Minimum nights"
                     className="w-11 bg-transparent text-right outline-none"
-                    value={Math.max(minRouteNights, state.min_nights ?? dateWindowNights ?? minRouteNights)}
-                    onChange={(e) => setState({ min_nights: Math.max(minRouteNights, Number(e.target.value)), flexible: true, page: 1 })}
+                    value={minNightsInput}
+                    onChange={(e) => {
+                      setMinNightsInput(e.target.value.replace(/\D/g, ""));
+                      setMinNightsDirty(true);
+                    }}
+                    onBlur={(e) => commitMinNightsInput(e.currentTarget.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        commitMinNightsInput(e.currentTarget.value);
+                      }
+                    }}
                   />
                 </label>
                 <label className="inline-flex h-8 items-center gap-1.5 rounded-md bg-white px-2 text-xs font-semibold text-stone-700 ring-1 ring-stone-200">
                   <span>Party</span>
                   <input
-                    type="number"
-                    min={1}
-                    max={12}
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    aria-label="Party size"
                     className="w-10 bg-transparent text-right outline-none"
-                    value={state.party_size}
-                    onChange={(e) => setState({ party_size: Number(e.target.value), page: 1 })}
+                    value={partyInput}
+                    onChange={(e) => setPartyInput(e.target.value.replace(/\D/g, ""))}
+                    onBlur={(e) => commitPartyInput(e.currentTarget.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        commitPartyInput(e.currentTarget.value);
+                      }
+                    }}
                   />
                 </label>
                 </div>
@@ -1434,17 +1616,24 @@ export function SearchPage() {
             <div className="max-h-[calc(90dvh-8rem)] space-y-4 overflow-y-auto px-4 py-3 pb-24">
               <section className="space-y-2">
                 <div className="grid grid-cols-[1fr_auto] gap-2">
-                  <label className="min-w-0 rounded-md bg-stone-50 px-3 py-2 ring-1 ring-stone-200 focus-within:bg-white focus-within:ring-forest-600">
-                    <span className="mb-0.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-stone-500">
+                  <div className="relative min-w-0 rounded-md bg-stone-50 px-3 py-2 ring-1 ring-stone-200 focus-within:bg-white focus-within:ring-forest-600">
+                    <label className="mb-0.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-stone-500">
                       <MapPin size={12} /> Near
-                    </span>
+                    </label>
                     <input
                       type="text"
                       className="w-full min-w-0 bg-transparent text-sm font-semibold text-stone-950 outline-none placeholder:text-stone-400"
                       placeholder="Town, city, park, or postal code"
                       value={nearInput}
                       autoComplete="off"
-                      onChange={(e) => setNearInput(e.target.value)}
+                      onFocus={() => setNearSuggestionsOpen(true)}
+                      onBlur={() => window.setTimeout(() => setNearSuggestionsOpen(false), 120)}
+                      onChange={(e) => {
+                        setNearInput(e.target.value);
+                        if (selectedNearSuggestion && e.target.value !== selectedNearSuggestion.label) {
+                          setSelectedNearSuggestion(null);
+                        }
+                      }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {
                           e.preventDefault();
@@ -1453,7 +1642,8 @@ export function SearchPage() {
                         }
                       }}
                     />
-                  </label>
+                    {renderNearSuggestions("z-[95] max-h-60")}
+                  </div>
                   <button
                     type="button"
                     onClick={useDeviceLocation}
@@ -1657,12 +1847,20 @@ export function SearchPage() {
                   <label className="rounded-md bg-stone-50 px-3 py-2 text-xs font-semibold text-stone-700 ring-1 ring-stone-200">
                     <span className="block text-stone-500">Party</span>
                     <input
-                      type="number"
-                      min={1}
-                      max={12}
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      aria-label="Party size"
                       className="mt-1 w-full bg-transparent text-sm text-stone-950 outline-none"
-                      value={state.party_size}
-                      onChange={(e) => setState({ party_size: Number(e.target.value), page: 1 })}
+                      value={partyInput}
+                      onChange={(e) => setPartyInput(e.target.value.replace(/\D/g, ""))}
+                      onBlur={(e) => commitPartyInput(e.currentTarget.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          commitPartyInput(e.currentTarget.value);
+                        }
+                      }}
                     />
                   </label>
                 </div>
@@ -1679,12 +1877,23 @@ export function SearchPage() {
                   <label className="inline-flex h-9 flex-1 items-center gap-2 rounded-md bg-white px-3 text-xs font-semibold text-stone-700 ring-1 ring-stone-200">
                     <span>Nights</span>
                     <input
-                      type="number"
-                      min={minRouteNights}
-                      max={dateWindowNights ?? 21}
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      aria-label="Minimum nights"
                       className="min-w-0 flex-1 bg-transparent text-right outline-none"
-                      value={Math.max(minRouteNights, state.min_nights ?? dateWindowNights ?? minRouteNights)}
-                      onChange={(e) => setState({ min_nights: Math.max(minRouteNights, Number(e.target.value)), flexible: true, page: 1 })}
+                      value={minNightsInput}
+                      onChange={(e) => {
+                        setMinNightsInput(e.target.value.replace(/\D/g, ""));
+                        setMinNightsDirty(true);
+                      }}
+                      onBlur={(e) => commitMinNightsInput(e.currentTarget.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          commitMinNightsInput(e.currentTarget.value);
+                        }
+                      }}
                     />
                   </label>
                 </div>
