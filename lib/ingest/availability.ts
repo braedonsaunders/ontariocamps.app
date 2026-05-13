@@ -87,9 +87,10 @@ type FetchTarget = {
  * fetch config. Returns one record per site.
  */
 async function loadFetchTargets(
-  opts: Pick<AvailabilityRefreshOptions, "missingOnly" | "staleHours"> & { missingDate?: string } = {},
+  opts: Pick<AvailabilityRefreshOptions, "missingOnly" | "operatorIds" | "staleHours"> & { missingDate?: string } = {},
 ): Promise<FetchTarget[]> {
   const missingDate = opts.missingDate ?? appDate();
+  const operatorIds = opts.operatorIds?.filter(Boolean) ?? [];
   const rows = await sqlDirect()<FetchTarget[]>`
     SELECT s.id              AS site_id,
            s.vendor_site_id,
@@ -100,8 +101,22 @@ async function loadFetchTargets(
            o.id              AS operator_id,
            o.vendor          AS operator_vendor,
            o.base_url        AS operator_base_url,
-           COALESCE((s.allowed_equipment->0->>'equipmentCategoryId')::int, ofc.equipment_category_id) AS equipment_category_id,
-           COALESCE((s.allowed_equipment->0->>'subEquipmentCategoryId')::int, ofc.sub_equipment_category_id) AS sub_equipment_category_id
+           COALESCE(
+             CASE
+               WHEN s.allowed_equipment->0->>'equipmentCategoryId' ~ '^-?[0-9]+$'
+                AND (s.allowed_equipment->0->>'equipmentCategoryId')::numeric BETWEEN -2147483648 AND 2147483647
+               THEN (s.allowed_equipment->0->>'equipmentCategoryId')::int
+             END,
+             ofc.equipment_category_id
+           ) AS equipment_category_id,
+           COALESCE(
+             CASE
+               WHEN s.allowed_equipment->0->>'subEquipmentCategoryId' ~ '^-?[0-9]+$'
+                AND (s.allowed_equipment->0->>'subEquipmentCategoryId')::numeric BETWEEN -2147483648 AND 2147483647
+               THEN (s.allowed_equipment->0->>'subEquipmentCategoryId')::int
+             END,
+             ofc.sub_equipment_category_id
+           ) AS sub_equipment_category_id
       FROM sites s
       JOIN campgrounds c           ON c.id = s.campground_id
       JOIN parks p                 ON p.id = c.park_id
@@ -109,6 +124,7 @@ async function loadFetchTargets(
       JOIN operator_fetch_config ofc ON ofc.operator_id = o.id
      WHERE s.vendor_resource_location_id IS NOT NULL
        AND s.vendor_resource_id IS NOT NULL
+       ${operatorIds.length > 0 ? sqlDirect()`AND p.operator_id = ANY(${operatorIds})` : sqlDirect()``}
        ${opts.missingOnly ? sqlDirect()`AND NOT EXISTS (
          SELECT 1 FROM site_availability sa
           WHERE sa.site_id = s.id
@@ -188,7 +204,12 @@ export async function refreshAvailability(
   const startStr = addDays(today, daysSkip);
   const endStr = addDays(startStr, daysAhead);
 
-  let targets = await loadFetchTargets({ missingOnly: opts.missingOnly, staleHours: opts.staleHours, missingDate: startStr });
+  let targets = await loadFetchTargets({
+    missingOnly: opts.missingOnly,
+    operatorIds: opts.operatorIds,
+    staleHours: opts.staleHours,
+    missingDate: startStr,
+  });
   if (opts.operatorIds && opts.operatorIds.length) {
     const allowed = new Set(opts.operatorIds);
     targets = targets.filter((t) => allowed.has(t.operator_id));
