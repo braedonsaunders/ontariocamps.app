@@ -51,6 +51,7 @@ const EMPTY_REVIEW_AGGREGATE: SiteReviewAggregate = {
   rating_noise: null,
   rating_site_size: null,
   rating_shade: null,
+  rating_cell_service: null,
 };
 
 function groupMonths(row?: CalendarRow | null): MonthCalendar[] {

@@ -5,6 +5,8 @@ import { AMENITIES } from "@/lib/types";
 import { displayOperatorName } from "@/lib/display";
 import { imageProxyUrl } from "@/lib/image-proxy";
 import { timeAgo } from "@/lib/utils";
+import { WeatherStrip } from "@/components/weather-strip";
+import { ParkAlertsStrip } from "@/components/park-alerts-strip";
 import { ArrowUpRight, MapPin, Calendar, Wifi, Droplet, Flame, Tent, Caravan, Route, Loader2 } from "lucide-react";
 
 function SiteIcon({ type }: { type: string }) {
@@ -162,6 +164,22 @@ export function ResultCard({
               </span>
             </div>
           )}
+
+          {result.availability.nights.length > 0 && (
+            <WeatherStrip
+              lat={result.park.location.lat}
+              lng={result.park.location.lng}
+              from={firstNight}
+              to={lastNight}
+              compact
+            />
+          )}
+
+          <ParkAlertsStrip
+            operatorId={result.park.operator_id}
+            parkName={result.park.name}
+            compact
+          />
 
           {segments.length > 1 && (
             <div className="mt-2 grid gap-1.5">

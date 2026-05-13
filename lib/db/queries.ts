@@ -644,6 +644,7 @@ type SiteReviewRow = {
   id: string; site_id: string; author_handle: string;
   overall: number; privacy: number | null; cleanliness: number | null;
   noise: number | null; site_size: number | null; shade: number | null;
+  cell_service: number | null;
   title: string | null; body: string; visited_at: Date | string | null;
   created_at: Date | string;
 };
@@ -653,6 +654,7 @@ function rowToSiteReview(r: SiteReviewRow): SiteReview {
     id: r.id, site_id: r.site_id, author_handle: r.author_handle,
     overall: r.overall, privacy: r.privacy, cleanliness: r.cleanliness,
     noise: r.noise, site_size: r.site_size, shade: r.shade,
+    cell_service: r.cell_service,
     title: r.title, body: r.body,
     visited_at: r.visited_at instanceof Date ? r.visited_at.toISOString().slice(0, 10) : (r.visited_at as string | null),
     created_at: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
@@ -663,6 +665,7 @@ type ParkReviewRow = {
   id: string; park_id: string; author_handle: string;
   overall: number; facilities: number | null; trails: number | null;
   beach: number | null; privacy: number | null; noise: number | null;
+  cell_service: number | null;
   title: string | null; body: string; visited_at: Date | string | null;
   created_at: Date | string;
 };
@@ -672,6 +675,7 @@ function rowToParkReview(r: ParkReviewRow): ParkReview {
     id: r.id, park_id: r.park_id, author_handle: r.author_handle,
     overall: r.overall, facilities: r.facilities, trails: r.trails,
     beach: r.beach, privacy: r.privacy, noise: r.noise,
+    cell_service: r.cell_service,
     title: r.title, body: r.body,
     visited_at: r.visited_at instanceof Date ? r.visited_at.toISOString().slice(0, 10) : (r.visited_at as string | null),
     created_at: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
@@ -680,7 +684,7 @@ function rowToParkReview(r: ParkReviewRow): ParkReview {
 
 export async function getSiteReviews(siteId: string, limit = 20, offset = 0): Promise<SiteReview[]> {
   const rows = await sql()<SiteReviewRow[]>`
-    SELECT id, site_id, author_handle, overall, privacy, cleanliness, noise, site_size, shade,
+    SELECT id, site_id, author_handle, overall, privacy, cleanliness, noise, site_size, shade, cell_service,
            title, body, visited_at, created_at
       FROM site_reviews
      WHERE site_id = ${siteId} AND status = 'approved'
@@ -695,17 +699,18 @@ export async function getSiteReviewAggregate(siteId: string): Promise<SiteReview
     review_count: number; rating_avg: number | null;
     rating_privacy: number | null; rating_cleanliness: number | null;
     rating_noise: number | null; rating_site_size: number | null; rating_shade: number | null;
+    rating_cell_service: number | null;
   }>>`
     SELECT review_count, rating_avg, rating_privacy, rating_cleanliness,
-           rating_noise, rating_site_size, rating_shade
+           rating_noise, rating_site_size, rating_shade, rating_cell_service
       FROM sites WHERE id = ${siteId}
   `;
-  return rows[0] ?? { review_count: 0, rating_avg: null, rating_privacy: null, rating_cleanliness: null, rating_noise: null, rating_site_size: null, rating_shade: null };
+  return rows[0] ?? { review_count: 0, rating_avg: null, rating_privacy: null, rating_cleanliness: null, rating_noise: null, rating_site_size: null, rating_shade: null, rating_cell_service: null };
 }
 
 export async function getParkReviews(parkId: string, limit = 20, offset = 0): Promise<ParkReview[]> {
   const rows = await sql()<ParkReviewRow[]>`
-    SELECT id, park_id, author_handle, overall, facilities, trails, beach, privacy, noise,
+    SELECT id, park_id, author_handle, overall, facilities, trails, beach, privacy, noise, cell_service,
            title, body, visited_at, created_at
       FROM park_reviews
      WHERE park_id = ${parkId} AND status = 'approved'
@@ -720,18 +725,19 @@ export async function getParkReviewAggregate(parkId: string): Promise<ParkReview
     review_count: number; rating_avg: number | null;
     rating_facilities: number | null; rating_trails: number | null;
     rating_beach: number | null; rating_privacy: number | null; rating_noise: number | null;
+    rating_cell_service: number | null;
   }>>`
     SELECT review_count, rating_avg, rating_facilities, rating_trails,
-           rating_beach, rating_privacy, rating_noise
+           rating_beach, rating_privacy, rating_noise, rating_cell_service
       FROM parks WHERE id = ${parkId}
   `;
-  return rows[0] ?? { review_count: 0, rating_avg: null, rating_facilities: null, rating_trails: null, rating_beach: null, rating_privacy: null, rating_noise: null };
+  return rows[0] ?? { review_count: 0, rating_avg: null, rating_facilities: null, rating_trails: null, rating_beach: null, rating_privacy: null, rating_noise: null, rating_cell_service: null };
 }
 
 export async function getRecentSiteReviewsForPark(parkId: string, limit = 5): Promise<Array<SiteReview & { site_name: string }>> {
   const rows = await sql()<Array<SiteReviewRow & { site_name: string }>>`
     SELECT sr.id, sr.site_id, sr.author_handle, sr.overall, sr.privacy, sr.cleanliness,
-           sr.noise, sr.site_size, sr.shade, sr.title, sr.body, sr.visited_at, sr.created_at,
+           sr.noise, sr.site_size, sr.shade, sr.cell_service, sr.title, sr.body, sr.visited_at, sr.created_at,
            s.name AS site_name
       FROM site_reviews sr
       JOIN sites s ON s.id = sr.site_id
@@ -759,14 +765,16 @@ export async function insertSiteReview(input: {
   site_id: string; author_handle: string;
   overall: number; privacy?: number; cleanliness?: number;
   noise?: number; site_size?: number; shade?: number;
+  cell_service?: number;
   title?: string; body: string; visited_at?: string;
   submitter_hash?: string;
 }): Promise<string> {
   const rows = await sqlDirect()<{ id: string }[]>`
-    INSERT INTO site_reviews (site_id, author_handle, overall, privacy, cleanliness, noise, site_size, shade, title, body, visited_at, submitter_hash)
+    INSERT INTO site_reviews (site_id, author_handle, overall, privacy, cleanliness, noise, site_size, shade, cell_service, title, body, visited_at, submitter_hash)
     VALUES (${input.site_id}, ${input.author_handle}, ${input.overall},
             ${input.privacy ?? null}, ${input.cleanliness ?? null},
             ${input.noise ?? null}, ${input.site_size ?? null}, ${input.shade ?? null},
+            ${input.cell_service ?? null},
             ${input.title ?? null}, ${input.body}, ${input.visited_at ?? null},
             ${input.submitter_hash ?? null})
     RETURNING id
@@ -778,14 +786,16 @@ export async function insertParkReview(input: {
   park_id: string; author_handle: string;
   overall: number; facilities?: number; trails?: number;
   beach?: number; privacy?: number; noise?: number;
+  cell_service?: number;
   title?: string; body: string; visited_at?: string;
   submitter_hash?: string;
 }): Promise<string> {
   const rows = await sqlDirect()<{ id: string }[]>`
-    INSERT INTO park_reviews (park_id, author_handle, overall, facilities, trails, beach, privacy, noise, title, body, visited_at, submitter_hash)
+    INSERT INTO park_reviews (park_id, author_handle, overall, facilities, trails, beach, privacy, noise, cell_service, title, body, visited_at, submitter_hash)
     VALUES (${input.park_id}, ${input.author_handle}, ${input.overall},
             ${input.facilities ?? null}, ${input.trails ?? null},
             ${input.beach ?? null}, ${input.privacy ?? null}, ${input.noise ?? null},
+            ${input.cell_service ?? null},
             ${input.title ?? null}, ${input.body}, ${input.visited_at ?? null},
             ${input.submitter_hash ?? null})
     RETURNING id

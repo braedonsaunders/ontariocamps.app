@@ -87,6 +87,7 @@ export async function POST(req: NextRequest) {
       beach: validateRating(data.beach),
       privacy: validateRating(data.privacy),
       noise: validateRating(data.noise),
+      cell_service: validateRating(data.cell_service),
       title: data.title ? String(data.title).trim().slice(0, 120) : undefined,
       body: b,
       visited_at: cleanPastIsoDate(data.visited_at),

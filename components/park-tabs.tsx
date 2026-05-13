@@ -12,6 +12,8 @@ import { ParkReviewAggregateDisplay, ParkReviewList, ParkReviewForm } from "@/co
 import { SiteFieldNotes, type SiteStatsEntry } from "@/components/site-field-notes";
 import { SiteDetailFlyout, type SiteFlyoutDetails } from "@/components/site-detail-flyout";
 import { RulesPanel } from "@/components/rules-panel";
+import { WeatherStrip } from "@/components/weather-strip";
+import { ParkAlertsStrip } from "@/components/park-alerts-strip";
 import { timeAgo } from "@/lib/utils";
 import { mapImageUrl } from "@/lib/map-image";
 import { imageProxyUrl } from "@/lib/image-proxy";
@@ -634,10 +636,27 @@ export function ParkTabs(props: Props) {
     () => Object.values(availabilitySummary).filter((a) => a.status === "available").length,
     [availabilitySummary],
   );
+  const weatherRange = dateContext.mode === "range"
+    ? { from: dateContext.from, to: dateContext.to }
+    : { from: dateContext.date, to: dateContext.date };
 
   return (
     <section className="mx-auto w-full min-w-0 max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
       <DateFilter ctx={dateContext} />
+
+      <div className="mt-3 grid gap-2">
+        <WeatherStrip
+          lat={parkLocation.lat}
+          lng={parkLocation.lng}
+          from={weatherRange.from}
+          to={weatherRange.to}
+        />
+        <ParkAlertsStrip
+          operatorId={operatorId}
+          parkName={parkName}
+          sourceUrl={operatorRuleSource?.alerts_url ?? undefined}
+        />
+      </div>
 
       {/* Sticky-ish tab strip */}
       <div className="relative mt-4 min-w-0 border-b border-stone-200">

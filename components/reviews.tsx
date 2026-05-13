@@ -64,6 +64,7 @@ export function SiteReviewAggregateDisplay({
     { label: "Quietness", value: aggregate.rating_noise },
     { label: "Site size", value: aggregate.rating_site_size },
     { label: "Shade", value: aggregate.rating_shade },
+    { label: "Cell service", value: aggregate.rating_cell_service },
   ].filter((a) => a.value !== null);
 
   return (
@@ -99,6 +100,7 @@ export function ParkReviewAggregateDisplay({
     { label: "Beach / Water", value: aggregate.rating_beach },
     { label: "Privacy", value: aggregate.rating_privacy },
     { label: "Quietness", value: aggregate.rating_noise },
+    { label: "Cell service", value: aggregate.rating_cell_service },
   ].filter((a) => a.value !== null);
 
   return (
@@ -376,6 +378,7 @@ export function SiteReviewForm({ siteId }: { siteId: string }) {
       noise: data.noise || undefined,
       site_size: data.site_size || undefined,
       shade: data.shade || undefined,
+      cell_service: data.cell_service || undefined,
       title: (data.title as string) || undefined,
       body: data.body,
       visited_at: (data.visited_at as string) || undefined,
@@ -493,6 +496,7 @@ export function ParkReviewForm({ parkId }: { parkId: string }) {
       beach: data.beach || undefined,
       privacy: data.privacy || undefined,
       noise: data.noise || undefined,
+      cell_service: data.cell_service || undefined,
       title: (data.title as string) || undefined,
       body: data.body,
       visited_at: (data.visited_at as string) || undefined,

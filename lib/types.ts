@@ -320,6 +320,7 @@ export type SiteReview = {
   noise: number | null;
   site_size: number | null;
   shade: number | null;
+  cell_service: number | null;
   title: string | null;
   body: string;
   visited_at: string | null;
@@ -336,6 +337,7 @@ export type ParkReview = {
   beach: number | null;
   privacy: number | null;
   noise: number | null;
+  cell_service: number | null;
   title: string | null;
   body: string;
   visited_at: string | null;
@@ -350,6 +352,7 @@ export type SiteReviewAggregate = {
   rating_noise: number | null;
   rating_site_size: number | null;
   rating_shade: number | null;
+  rating_cell_service: number | null;
 };
 
 export type ParkReviewAggregate = {
@@ -360,6 +363,7 @@ export type ParkReviewAggregate = {
   rating_beach: number | null;
   rating_privacy: number | null;
   rating_noise: number | null;
+  rating_cell_service: number | null;
 };
 
 export type SiteReviewInput = {
@@ -371,6 +375,7 @@ export type SiteReviewInput = {
   noise?: number;
   site_size?: number;
   shade?: number;
+  cell_service?: number;
   title?: string;
   body: string;
   visited_at?: string;
@@ -385,25 +390,28 @@ export type ParkReviewInput = {
   beach?: number;
   privacy?: number;
   noise?: number;
+  cell_service?: number;
   title?: string;
   body: string;
   visited_at?: string;
 };
 
-export const SITE_RATING_ATTRS: { key: keyof Pick<SiteReview, "privacy" | "cleanliness" | "noise" | "site_size" | "shade">; label: string }[] = [
+export const SITE_RATING_ATTRS: { key: keyof Pick<SiteReview, "privacy" | "cleanliness" | "noise" | "site_size" | "shade" | "cell_service">; label: string }[] = [
   { key: "privacy", label: "Privacy" },
   { key: "cleanliness", label: "Cleanliness" },
   { key: "noise", label: "Quietness" },
   { key: "site_size", label: "Site size" },
   { key: "shade", label: "Shade" },
+  { key: "cell_service", label: "Cell service" },
 ];
 
-export const PARK_RATING_ATTRS: { key: keyof Pick<ParkReview, "facilities" | "trails" | "beach" | "privacy" | "noise">; label: string }[] = [
+export const PARK_RATING_ATTRS: { key: keyof Pick<ParkReview, "facilities" | "trails" | "beach" | "privacy" | "noise" | "cell_service">; label: string }[] = [
   { key: "facilities", label: "Facilities" },
   { key: "trails", label: "Trails" },
   { key: "beach", label: "Beach / Water" },
   { key: "privacy", label: "Privacy" },
   { key: "noise", label: "Quietness" },
+  { key: "cell_service", label: "Cell service" },
 ];
 
 export const AMENITIES: Record<string, { label: string; category: string }> = {
