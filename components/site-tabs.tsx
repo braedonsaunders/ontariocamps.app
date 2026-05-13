@@ -74,6 +74,21 @@ function statusBadge(status: string, checkingLive = false) {
   return { cls: "bg-stone-100 text-stone-500 ring-stone-200", label: "Unknown" };
 }
 
+function plainTextFromOperatorHtml(value: string): string {
+  return value
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<\/(?:div|li|h[1-6])>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, "\"")
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .trim();
+}
+
 function monthGridCells(month: MonthCalendar): Array<{ key: string; night_date: string | null; day: number | null; status: string | null }> {
   const [year, monthNumber] = month.key.split("-").map(Number);
   if (!year || !monthNumber) return [];
@@ -128,6 +143,7 @@ export function SiteTabs(props: Props) {
   } = props;
 
   const [activeTab, setActiveTab] = useState<Tab>("photos");
+  const operatorNotes = site.description ? plainTextFromOperatorHtml(site.description) : "";
   const ratingAvg = ratingNumber(reviewAggregate.rating_avg);
   const petPolicy = getSitePetPolicy(site);
   const ruleHighlights = (site.rule_summary?.highlights ?? [])
@@ -193,10 +209,10 @@ export function SiteTabs(props: Props) {
                   </span>
                 </div>
                 <PhotoGallery photos={photos} alt={`Site ${site.name} at ${parkName}`} />
-                {site.description && (
+                {operatorNotes && (
                   <div>
                     <h2 className="text-xl font-semibold tracking-tight mb-2">Operator notes</h2>
-                    <p className="text-stone-700 leading-relaxed">{site.description}</p>
+                    <p className="whitespace-pre-line text-stone-700 leading-relaxed">{operatorNotes}</p>
                   </div>
                 )}
               </motion.div>
@@ -489,11 +505,15 @@ export function SiteTabs(props: Props) {
           )}
 
           <div className="card p-5 text-sm text-stone-600 leading-relaxed">
-            <div className="font-semibold text-stone-900 mb-1.5 inline-flex items-center gap-1.5">
+            <div className="mb-2 flex items-center gap-1.5 font-semibold text-stone-900">
               <Tent size={14} /> Heads up
             </div>
-            We don&apos;t handle rates or take bookings. Click through to {operatorName} to complete your reservation.
-            Photos and descriptions come straight from {operatorName}&apos;s booking platform.
+            <p>
+              We don&apos;t handle rates or take bookings. Click through to {operatorName} to complete your reservation.
+            </p>
+            <p className="mt-2">
+              Photos and descriptions come straight from {operatorName}&apos;s booking platform.
+            </p>
           </div>
         </aside>
       </div>
