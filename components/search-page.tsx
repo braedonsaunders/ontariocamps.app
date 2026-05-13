@@ -188,7 +188,7 @@ function sameDayCheckInMessage(startDate: string): string | null {
 }
 
 function dateRequirementMessage(startDate: string, endDate: string): string | null {
-  if (!startDate || !endDate) return "Choose check-in and check-out dates to search availability.";
+  if (!startDate || !endDate) return null;
   const sameDayMessage = sameDayCheckInMessage(startDate);
   if (sameDayMessage) return sameDayMessage;
   if (rangeNights(startDate, endDate) == null) return "Check-out must be after check-in.";
@@ -363,6 +363,12 @@ export function SearchPage() {
 
   async function runSearch() {
     // Commit typed place strings into state only when the user runs a search.
+    if (!state.start_date || !state.end_date) {
+      setLocationMessage(null);
+      setLoading(false);
+      return;
+    }
+
     const dateMessage = dateRequirementMessage(state.start_date, state.end_date);
     if (dateMessage) {
       setLocationMessage(dateMessage);
@@ -536,6 +542,12 @@ export function SearchPage() {
   useEffect(() => {
     if (searchKey === 0) return;
     const requestState = submittedState ?? state;
+    if (!requestState.start_date || !requestState.end_date) {
+      setLocationMessage(null);
+      setLoading(false);
+      return;
+    }
+
     const dateMessage = dateRequirementMessage(requestState.start_date, requestState.end_date);
     if (dateMessage) {
       setLocationMessage(dateMessage);
@@ -765,7 +777,8 @@ export function SearchPage() {
     1,
   );
   const dateBlockMessage = dateRequirementMessage(state.start_date, state.end_date);
-  const searchDisabled = loading || resolvingNear || Boolean(dateBlockMessage);
+  const datesMissing = !state.start_date || !state.end_date;
+  const searchDisabled = loading || resolvingNear || datesMissing || Boolean(dateBlockMessage);
   const selectedParkSet = useMemo(() => new Set(state.park_slugs), [state.park_slugs]);
   const selectedParks = useMemo(
     () =>
@@ -847,7 +860,7 @@ export function SearchPage() {
       .sort((a, b) => b.available_sites - a.available_sites || a.name.localeCompare(b.name))
       .slice(0, 8);
   }, [allParks, parkInput, selectedParkSet]);
-  const advancedFilterCount = state.site_types.length + state.amenities.length + state.park_types.length;
+  const advancedFilterCount = state.site_types.length + state.amenities.length;
   const resultWord = state.stay_mode === "same_site" ? "sites" : "routes";
   const groupedMode = state.group_by !== "none";
   const groupedResults = useMemo(
@@ -1338,7 +1351,7 @@ export function SearchPage() {
                     <Sliders size={13} className="text-stone-500" />
                     <span>Filters</span>
                     <span className="truncate text-stone-500">
-                      {advancedFilterCount ? `${advancedFilterCount} active` : "Park types, site types, amenities"}
+                      {advancedFilterCount ? `${advancedFilterCount} active` : "Site types and amenities"}
                     </span>
                   </span>
                   <span className="inline-flex shrink-0 items-center gap-2">
@@ -1347,24 +1360,6 @@ export function SearchPage() {
                   </span>
                 </summary>
                 <div className="flex items-center gap-2 overflow-x-auto border-t border-stone-200 p-1.5 scrollbar-none">
-                  {PARK_TYPE_OPTIONS.map((type) => {
-                    const active = state.park_types.includes(type.id);
-                    return (
-                      <button
-                        key={type.id}
-                        type="button"
-                        onClick={() => setState({ park_types: toggle(state.park_types, type.id), page: 1 })}
-                        className={`chip shrink-0 ring-1 ${
-                          active
-                            ? "bg-stone-900 text-white ring-stone-900"
-                            : "bg-white text-stone-700 ring-stone-300 hover:bg-stone-50"
-                        }`}
-                      >
-                        {type.label}
-                      </button>
-                    );
-                  })}
-                  <span className="h-4 w-px shrink-0 bg-stone-300" />
                   {SITE_TYPES.map((t) => (
                     <button
                       key={t}
@@ -1700,22 +1695,6 @@ export function SearchPage() {
                   <Sliders size={13} /> Filters
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  {PARK_TYPE_OPTIONS.map((type) => (
-                    <button
-                      key={type.id}
-                      type="button"
-                      onClick={() => setState({ park_types: toggle(state.park_types, type.id), page: 1 })}
-                      className={`chip ring-1 ${
-                        state.park_types.includes(type.id)
-                          ? "bg-stone-900 text-white ring-stone-900"
-                          : "bg-white text-stone-700 ring-stone-300 hover:bg-stone-50"
-                      }`}
-                    >
-                      {type.label}
-                    </button>
-                  ))}
-                </div>
-                <div className="flex flex-wrap gap-1.5">
                   {SITE_TYPES.map((t) => (
                     <button
                       key={t}
@@ -1861,7 +1840,7 @@ export function SearchPage() {
               )}
               {!data && !loading && !routeNeedsDates && (
                 <div className="rounded-lg border border-dashed border-stone-300 bg-stone-50 p-8 text-center text-sm text-stone-500">
-                  Choose check-in and check-out dates, then search. Results land here with map context beside them.
+                  Results land here with map context beside them.
                 </div>
               )}
               {groupedMode ? groupedResults.map((group) => {
