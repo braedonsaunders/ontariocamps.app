@@ -709,7 +709,7 @@ function rowToParkReview(r: ParkReviewRow): ParkReview {
 export async function getSiteReviews(siteId: string, limit = 20, offset = 0): Promise<SiteReview[]> {
   const rows = await sql()<SiteReviewRow[]>`
     SELECT id, site_id, author_handle, overall, privacy, cleanliness, noise, site_size, shade,
-           (to_jsonb(site_reviews)->>'cell_service')::int AS cell_service,
+           cell_service,
            title, body, visited_at, created_at
       FROM site_reviews
      WHERE site_id = ${siteId} AND status = 'approved'
@@ -727,8 +727,7 @@ export async function getSiteReviewAggregate(siteId: string): Promise<SiteReview
     rating_cell_service: number | null;
   }>>`
     SELECT review_count, rating_avg, rating_privacy, rating_cleanliness,
-           rating_noise, rating_site_size, rating_shade,
-           (to_jsonb(sites)->>'rating_cell_service')::numeric AS rating_cell_service
+           rating_noise, rating_site_size, rating_shade, rating_cell_service
       FROM sites WHERE id = ${siteId}
   `;
   return rows[0] ?? { review_count: 0, rating_avg: null, rating_privacy: null, rating_cleanliness: null, rating_noise: null, rating_site_size: null, rating_shade: null, rating_cell_service: null };
@@ -737,7 +736,7 @@ export async function getSiteReviewAggregate(siteId: string): Promise<SiteReview
 export async function getParkReviews(parkId: string, limit = 20, offset = 0): Promise<ParkReview[]> {
   const rows = await sql()<ParkReviewRow[]>`
     SELECT id, park_id, author_handle, overall, facilities, trails, beach, privacy, noise,
-           (to_jsonb(park_reviews)->>'cell_service')::int AS cell_service,
+           cell_service,
            title, body, visited_at, created_at
       FROM park_reviews
      WHERE park_id = ${parkId} AND status = 'approved'
@@ -755,8 +754,7 @@ export async function getParkReviewAggregate(parkId: string): Promise<ParkReview
     rating_cell_service: number | null;
   }>>`
     SELECT review_count, rating_avg, rating_facilities, rating_trails,
-           rating_beach, rating_privacy, rating_noise,
-           (to_jsonb(parks)->>'rating_cell_service')::numeric AS rating_cell_service
+           rating_beach, rating_privacy, rating_noise, rating_cell_service
       FROM parks WHERE id = ${parkId}
   `;
   return rows[0] ?? { review_count: 0, rating_avg: null, rating_facilities: null, rating_trails: null, rating_beach: null, rating_privacy: null, rating_noise: null, rating_cell_service: null };
@@ -765,8 +763,7 @@ export async function getParkReviewAggregate(parkId: string): Promise<ParkReview
 export async function getRecentSiteReviewsForPark(parkId: string, limit = 5): Promise<Array<SiteReview & { site_name: string }>> {
   const rows = await sql()<Array<SiteReviewRow & { site_name: string }>>`
     SELECT sr.id, sr.site_id, sr.author_handle, sr.overall, sr.privacy, sr.cleanliness,
-           sr.noise, sr.site_size, sr.shade,
-           (to_jsonb(sr)->>'cell_service')::int AS cell_service,
+           sr.noise, sr.site_size, sr.shade, sr.cell_service,
            sr.title, sr.body, sr.visited_at, sr.created_at,
            s.name AS site_name
       FROM site_reviews sr

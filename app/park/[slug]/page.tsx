@@ -5,9 +5,6 @@ import {
   getParkBySlug,
   getOperatorWithStats,
   getEquipmentForOperator,
-  getParkReviews,
-  getParkReviewAggregate,
-  getRecentSiteReviewsForPark,
   getOperatorRuleSource,
   getParkAvailabilityOverviewForWindow,
 } from "@/lib/data-source";
@@ -19,8 +16,20 @@ import { normalizeBookingUrlPath } from "@/lib/booking-url";
 import { appDate } from "@/lib/app-time";
 import { imageProxyUrl } from "@/lib/image-proxy";
 import { SITE_NAME, absoluteUrl, toMetaDescription } from "@/lib/seo";
+import type { ParkReviewAggregate } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
+
+const EMPTY_PARK_REVIEW_AGGREGATE: ParkReviewAggregate = {
+  review_count: 0,
+  rating_avg: null,
+  rating_facilities: null,
+  rating_trails: null,
+  rating_beach: null,
+  rating_privacy: null,
+  rating_noise: null,
+  rating_cell_service: null,
+};
 
 export async function generateMetadata({
   params,
@@ -107,13 +116,10 @@ export default async function ParkPage({
   const park = await getParkBySlug(slug);
   if (!park) notFound();
 
-  const [firstBookableNight, operator, operatorEquipment, parkReviews, parkReviewAggregate, recentSiteReviews, operatorRuleSource] = await Promise.all([
+  const [firstBookableNight, operator, operatorEquipment, operatorRuleSource] = await Promise.all([
     getFirstBookableNightForPark(park.id),
     getOperatorWithStats(park.operator_id),
     getEquipmentForOperator(park.operator_id),
-    getParkReviews(park.id),
-    getParkReviewAggregate(park.id),
-    getRecentSiteReviewsForPark(park.id),
     getOperatorRuleSource(park.operator_id),
   ]);
   if (!operator) notFound();
@@ -253,10 +259,11 @@ export default async function ParkPage({
         vendorSiteIds={{}}
         calendarDataUrl={`/api/park/${encodeURIComponent(park.slug)}/calendar`}
         siteDataUrl={`/api/park/${encodeURIComponent(park.slug)}/sites?${siteDataParams.toString()}`}
+        reviewDataUrl={`/api/park/${encodeURIComponent(park.slug)}/reviews`}
         dateContext={dateContext}
-        parkReviews={parkReviews}
-        parkReviewAggregate={parkReviewAggregate}
-        recentSiteReviews={recentSiteReviews}
+        parkReviews={[]}
+        parkReviewAggregate={EMPTY_PARK_REVIEW_AGGREGATE}
+        recentSiteReviews={[]}
         parkId={park.id}
         siteStats={[]}
         operatorRuleSource={operatorRuleSource}

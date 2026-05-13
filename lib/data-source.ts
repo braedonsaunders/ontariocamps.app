@@ -175,6 +175,7 @@ export async function getCampMapsForPark(parkId: string): Promise<CampMap[]> {
 export type CampMapAvailabilitySummary = CampMap & {
   total_sites: number;
   available_sites: number;
+  availability_pending?: boolean;
 };
 
 export type ParkAvailabilityOverview = {
@@ -184,58 +185,26 @@ export type ParkAvailabilityOverview = {
   calendarLastChecked: string | null;
 };
 
-function inclusiveNightCount(fromDate: string, toDate: string): number {
-  const from = Date.parse(`${fromDate}T00:00:00Z`);
-  const to = Date.parse(`${toDate}T00:00:00Z`);
-  if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) return 1;
-  return Math.max(1, Math.round((to - from) / 86_400_000) + 1);
-}
-
 export async function getParkAvailabilityOverviewForWindow(
   parkId: string,
-  fromDate: string,
-  toDate: string,
+  _fromDate: string,
+  _toDate: string,
 ): Promise<ParkAvailabilityOverview> {
-  const expectedNights = inclusiveNightCount(fromDate, toDate);
   const [mapRows, totalRows] = await Promise.all([
     sql()<Array<{
       id: string; park_id: string; campground_id: string; vendor_map_id: string;
       name: string | null; description: string | null;
       image_url: string; x_dimension: number; y_dimension: number;
-      total_sites: number; available_sites: number;
+      total_sites: number;
     }>>`
-      WITH map_sites AS (
-        SELECT cm.id, cm.park_id, cm.campground_id, cm.vendor_map_id,
-               cm.name, cm.description, cm.image_url, cm.x_dimension, cm.y_dimension,
-               s.id AS site_id
-          FROM camp_maps cm
-          LEFT JOIN sites s ON s.camp_map_id = cm.id
-         WHERE cm.park_id = ${parkId}
-      ),
-      site_status AS (
-        SELECT ms.id, ms.park_id, ms.campground_id, ms.vendor_map_id,
-               ms.name, ms.description, ms.image_url, ms.x_dimension, ms.y_dimension,
-               ms.site_id,
-               count(sa.night_date)::int AS nights_seen,
-               count(sa.night_date) FILTER (WHERE sa.status = 'available')::int AS available_nights
-          FROM map_sites ms
-          LEFT JOIN site_availability sa
-                 ON sa.site_id = ms.site_id
-                AND sa.night_date BETWEEN ${fromDate}::date AND ${toDate}::date
-         GROUP BY ms.id, ms.park_id, ms.campground_id, ms.vendor_map_id,
-                  ms.name, ms.description, ms.image_url, ms.x_dimension, ms.y_dimension,
-                  ms.site_id
-      )
-      SELECT id, park_id, campground_id, vendor_map_id, name, description,
-             image_url, x_dimension, y_dimension,
-             count(site_id)::int AS total_sites,
-             count(site_id) FILTER (
-               WHERE nights_seen = ${expectedNights}
-                 AND available_nights = ${expectedNights}
-             )::int AS available_sites
-        FROM site_status
-       GROUP BY id, park_id, campground_id, vendor_map_id, name, description,
-                image_url, x_dimension, y_dimension
+      SELECT cm.id, cm.park_id, cm.campground_id, cm.vendor_map_id,
+             cm.name, cm.description, cm.image_url, cm.x_dimension, cm.y_dimension,
+             count(s.id)::int AS total_sites
+        FROM camp_maps cm
+        LEFT JOIN sites s ON s.camp_map_id = cm.id
+       WHERE cm.park_id = ${parkId}
+       GROUP BY cm.id, cm.park_id, cm.campground_id, cm.vendor_map_id,
+                cm.name, cm.description, cm.image_url, cm.x_dimension, cm.y_dimension
        ORDER BY total_sites DESC, name
     `,
     sql()<Array<{
@@ -243,26 +212,12 @@ export async function getParkAvailabilityOverviewForWindow(
       available_sites: number;
       calendar_last_checked: Date | string | null;
     }>>`
-      WITH per_site AS (
-        SELECT s.id,
-               count(sa.night_date)::int AS nights_seen,
-               count(sa.night_date) FILTER (WHERE sa.status = 'available')::int AS available_nights,
-               max(sa.last_checked_at) AS last_checked_at
-          FROM sites s
-          JOIN campgrounds c ON c.id = s.campground_id
-          LEFT JOIN site_availability sa
-                 ON sa.site_id = s.id
-                AND sa.night_date BETWEEN ${fromDate}::date AND ${toDate}::date
-         WHERE c.park_id = ${parkId}
-         GROUP BY s.id
-      )
-      SELECT count(*)::int AS total_sites,
-             count(*) FILTER (
-               WHERE nights_seen = ${expectedNights}
-                 AND available_nights = ${expectedNights}
-             )::int AS available_sites,
-             max(last_checked_at) AS calendar_last_checked
-        FROM per_site
+      SELECT total_sites::int,
+             available_sites::int,
+             last_availability_at AS calendar_last_checked
+        FROM parks
+       WHERE id = ${parkId}
+       LIMIT 1
     `,
   ]);
 
@@ -280,7 +235,8 @@ export async function getParkAvailabilityOverviewForWindow(
       y_dimension: r.y_dimension,
       features: [],
       total_sites: r.total_sites,
-      available_sites: r.available_sites,
+      available_sites: 0,
+      availability_pending: true,
     })),
     totalSites: total?.total_sites ?? 0,
     availableSites: total?.available_sites ?? 0,

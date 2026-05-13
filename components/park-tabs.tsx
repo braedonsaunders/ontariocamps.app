@@ -32,6 +32,7 @@ export type DateContext =
 type CampMapSummary = CampMap & {
   total_sites: number;
   available_sites: number;
+  availability_pending?: boolean;
 };
 
 type Props = {
@@ -56,6 +57,7 @@ type Props = {
   vendorSiteIds: Record<string, string>;
   calendarDataUrl?: string;
   siteDataUrl?: string;
+  reviewDataUrl?: string;
   dateContext: DateContext;
   parkReviews: ParkReview[];
   parkReviewAggregate: ParkReviewAggregate;
@@ -83,6 +85,12 @@ type ParkSitePayload = {
   bookingUrls: Record<string, string>;
   calendarLastChecked: string | null;
   siteStats: SiteStatsEntry[];
+};
+
+type ParkReviewPayload = {
+  parkReviews: ParkReview[];
+  parkReviewAggregate: ParkReviewAggregate;
+  recentSiteReviews: Array<import("@/lib/types").SiteReview & { site_name: string }>;
 };
 
 const PARK_REFRESH_COOLDOWN_MS = 5 * 60 * 1000;
@@ -385,10 +393,11 @@ export function ParkTabs(props: Props) {
     vendorSiteIds,
     calendarDataUrl,
     siteDataUrl,
+    reviewDataUrl,
     dateContext,
-    parkReviews,
-    parkReviewAggregate,
-    recentSiteReviews,
+    parkReviews: initialParkReviews,
+    parkReviewAggregate: initialParkReviewAggregate,
+    recentSiteReviews: initialRecentSiteReviews,
     parkId,
     siteStats: initialSiteStats,
     operatorRuleSource,
@@ -411,6 +420,14 @@ export function ParkTabs(props: Props) {
   const [siteLoadStatus, setSiteLoadStatus] = useState<CalendarLoadStatus>(
     initialSites.length > 0 ? "ready" : "idle",
   );
+  const [reviewData, setReviewData] = useState<ParkReviewPayload>({
+    parkReviews: initialParkReviews,
+    parkReviewAggregate: initialParkReviewAggregate,
+    recentSiteReviews: initialRecentSiteReviews,
+  });
+  const [reviewLoadStatus, setReviewLoadStatus] = useState<CalendarLoadStatus>(
+    initialParkReviews.length > 0 || initialParkReviewAggregate.review_count > 0 ? "ready" : "idle",
+  );
   const [calendarData, setCalendarData] = useState<ParkCalendarPayload>({
     calendarRows,
     calendarLastChecked: initialCalendarLastChecked,
@@ -422,6 +439,10 @@ export function ParkTabs(props: Props) {
   );
   const siteDataUrlRef = useRef(siteDataUrl ?? null);
   const siteLoadStatusRef = useRef<CalendarLoadStatus>(initialSites.length > 0 ? "ready" : "idle");
+  const reviewDataUrlRef = useRef(reviewDataUrl ?? null);
+  const reviewLoadStatusRef = useRef<CalendarLoadStatus>(
+    initialParkReviews.length > 0 || initialParkReviewAggregate.review_count > 0 ? "ready" : "idle",
+  );
   const calendarDataUrlRef = useRef(calendarDataUrl ?? null);
   const calendarLoadStatusRef = useRef<CalendarLoadStatus>(calendarRows.length > 0 ? "ready" : "idle");
   const router = useRouter();
@@ -439,6 +460,9 @@ export function ParkTabs(props: Props) {
   const activeSites = siteData.sites;
   const activeAvailabilitySummary = siteData.availabilitySummary;
   const activeSiteStats = siteData.siteStats;
+  const activeParkReviews = reviewData.parkReviews;
+  const activeParkReviewAggregate = reviewData.parkReviewAggregate;
+  const activeRecentSiteReviews = reviewData.recentSiteReviews;
   const activeSiteBookingUrls = siteData.bookingUrls;
   const activeTotalSites = activeSites.length > 0 ? activeSites.length : totalSites;
   const activeAvgAvailability =
@@ -461,6 +485,10 @@ export function ParkTabs(props: Props) {
   useEffect(() => {
     siteLoadStatusRef.current = siteLoadStatus;
   }, [siteLoadStatus]);
+
+  useEffect(() => {
+    reviewLoadStatusRef.current = reviewLoadStatus;
+  }, [reviewLoadStatus]);
 
   useEffect(() => {
     const nextUrl = siteDataUrl ?? null;
@@ -486,6 +514,26 @@ export function ParkTabs(props: Props) {
     initialSiteStats,
     initialSites,
     siteDataUrl,
+  ]);
+
+  useEffect(() => {
+    const nextUrl = reviewDataUrl ?? null;
+    const urlChanged = reviewDataUrlRef.current !== nextUrl;
+    if (!urlChanged && initialParkReviews.length === 0 && initialParkReviewAggregate.review_count === 0) return;
+    reviewDataUrlRef.current = nextUrl;
+    setReviewData({
+      parkReviews: initialParkReviews,
+      parkReviewAggregate: initialParkReviewAggregate,
+      recentSiteReviews: initialRecentSiteReviews,
+    });
+    const nextStatus = initialParkReviews.length > 0 || initialParkReviewAggregate.review_count > 0 ? "ready" : "idle";
+    reviewLoadStatusRef.current = nextStatus;
+    setReviewLoadStatus(nextStatus);
+  }, [
+    initialParkReviewAggregate,
+    initialParkReviews,
+    initialRecentSiteReviews,
+    reviewDataUrl,
   ]);
 
   useEffect(() => {
@@ -536,6 +584,36 @@ export function ParkTabs(props: Props) {
       }
     }
   }, [initialBookingUrls, siteDataUrl]);
+
+  const loadReviewData = useCallback(async ({ force = false }: { force?: boolean } = {}) => {
+    if (!reviewDataUrl) return;
+    const currentStatus = reviewLoadStatusRef.current;
+    if (currentStatus === "loading" || (!force && currentStatus === "ready")) return;
+    const keepReadyVisible = currentStatus === "ready";
+    reviewLoadStatusRef.current = "loading";
+    if (!keepReadyVisible) {
+      setReviewLoadStatus("loading");
+    }
+    try {
+      const response = await fetch(reviewDataUrl);
+      if (!response.ok) throw new Error("Unable to load park reviews");
+      const payload = (await response.json()) as Partial<ParkReviewPayload>;
+      setReviewData((current) => ({
+        parkReviews: payload.parkReviews ?? current.parkReviews,
+        parkReviewAggregate: payload.parkReviewAggregate ?? current.parkReviewAggregate,
+        recentSiteReviews: payload.recentSiteReviews ?? current.recentSiteReviews,
+      }));
+      reviewLoadStatusRef.current = "ready";
+      setReviewLoadStatus("ready");
+    } catch {
+      if (keepReadyVisible) {
+        reviewLoadStatusRef.current = "ready";
+      } else {
+        reviewLoadStatusRef.current = "error";
+        setReviewLoadStatus("error");
+      }
+    }
+  }, [reviewDataUrl]);
 
   const loadCalendarData = useCallback(async ({ force = false }: { force?: boolean } = {}) => {
     if (!calendarDataUrl) return;
@@ -638,6 +716,12 @@ export function ParkTabs(props: Props) {
   }, [activeTab, loadSiteData]);
 
   useEffect(() => {
+    if (activeTab === "reviews") {
+      void loadReviewData();
+    }
+  }, [activeTab, loadReviewData]);
+
+  useEffect(() => {
     if (activeTab === "sites" || activeTab === "calendar") {
       void refreshLiveAvailability({ park: true });
     }
@@ -663,7 +747,7 @@ export function ParkTabs(props: Props) {
         calendarRow: activeCalendarRows.find((row) => row.site.id === site.id) ?? null,
         lastCheckedAt: activeAvailabilitySummary[site.id]?.last_checked_at ?? activeCalendarLastChecked,
         stats: activeSiteStats.find((entry) => entry.id === site.id) ?? null,
-        recentReviews: recentSiteReviews.filter((review) => review.site_id === site.id),
+        recentReviews: activeRecentSiteReviews.filter((review) => review.site_id === site.id),
       });
     }
     void refreshLiveAvailability({ siteId });
@@ -692,7 +776,7 @@ export function ParkTabs(props: Props) {
     operatorName,
     parkName,
     parkSlug,
-    recentSiteReviews,
+    activeRecentSiteReviews,
     refreshLiveAvailability,
   ]);
 
@@ -815,6 +899,7 @@ export function ParkTabs(props: Props) {
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
                     {activeCampMapSummaries.map((m) => {
+                      const showAvailability = !m.availability_pending;
                       const pct = m.total_sites > 0 ? Math.round((m.available_sites / m.total_sites) * 100) : 0;
                       return (
                         <button
@@ -832,17 +917,19 @@ export function ParkTabs(props: Props) {
                               loading="lazy"
                             />
                             <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
-                            <span
-                              className={`absolute top-2 right-2 chip ring-1 ${
-                                pct > 50
-                                  ? "bg-emerald-50/95 text-emerald-700 ring-emerald-200"
-                                  : pct > 10
-                                  ? "bg-amber-50/95 text-amber-700 ring-amber-200"
-                                  : "bg-red-50/95 text-red-700 ring-red-200"
-                              }`}
-                            >
-                              {pct}% open
-                            </span>
+                            {showAvailability && (
+                              <span
+                                className={`absolute top-2 right-2 chip ring-1 ${
+                                  pct > 50
+                                    ? "bg-emerald-50/95 text-emerald-700 ring-emerald-200"
+                                    : pct > 10
+                                    ? "bg-amber-50/95 text-amber-700 ring-amber-200"
+                                    : "bg-red-50/95 text-red-700 ring-red-200"
+                                }`}
+                              >
+                                {pct}% open
+                              </span>
+                            )}
                           </div>
                           <div className="p-4">
                             <div className="font-semibold text-stone-900 group-hover:text-forest-700 transition-colors">
@@ -941,13 +1028,13 @@ export function ParkTabs(props: Props) {
                         Stats, ratings, and popularity rankings for this park&apos;s campsites
                       </span>
                     </div>
-                    <SiteFieldNotes
-                      totalSites={activeTotalSites}
-                      availableCount={availableNowCount}
-                      siteStats={activeSiteStats}
-                      recentSiteReviews={recentSiteReviews}
-                      onOpenSiteDetails={openSiteFlyout}
-                    />
+                      <SiteFieldNotes
+                        totalSites={activeTotalSites}
+                        availableCount={availableNowCount}
+                        siteStats={activeSiteStats}
+                        recentSiteReviews={activeRecentSiteReviews}
+                        onOpenSiteDetails={openSiteFlyout}
+                      />
                   </>
                 )}
               </motion.div>
@@ -1004,15 +1091,29 @@ export function ParkTabs(props: Props) {
               >
                 <div className="flex items-baseline justify-between flex-wrap gap-2">
                   <h2 className="text-xl font-semibold tracking-tight">Reviews</h2>
-                  {parkReviewAggregate.review_count > 0 && (
+                  {activeParkReviewAggregate.review_count > 0 && (
                     <span className="text-xs text-stone-500">
-                      {parkReviewAggregate.review_count} park {parkReviewAggregate.review_count === 1 ? "review" : "reviews"}
+                      {activeParkReviewAggregate.review_count} park {activeParkReviewAggregate.review_count === 1 ? "review" : "reviews"}
                     </span>
                   )}
                 </div>
 
-                <ParkReviewAggregateDisplay aggregate={parkReviewAggregate} />
-                <ParkReviewList reviews={parkReviews} siteReviews={recentSiteReviews} />
+                {(reviewLoadStatus === "idle" || reviewLoadStatus === "loading") && (
+                  <div className="card p-8 text-center text-sm text-stone-500">
+                    Loading reviews...
+                  </div>
+                )}
+                {reviewLoadStatus === "error" && (
+                  <div className="card p-8 text-center text-sm text-stone-500">
+                    Reviews could not be loaded. Switch tabs and open Reviews again to retry.
+                  </div>
+                )}
+                {reviewLoadStatus === "ready" && (
+                  <>
+                    <ParkReviewAggregateDisplay aggregate={activeParkReviewAggregate} />
+                    <ParkReviewList reviews={activeParkReviews} siteReviews={activeRecentSiteReviews} />
+                  </>
+                )}
                 <ParkReviewForm parkId={parkId} />
               </motion.div>
             )}
