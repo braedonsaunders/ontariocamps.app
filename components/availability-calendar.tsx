@@ -1,6 +1,6 @@
 "use client";
-import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Filter, ExternalLink } from "lucide-react";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { ChevronDown, ChevronLeft, ChevronRight, Filter, ExternalLink } from "lucide-react";
 import { buildOneNightBookingUrl } from "@/lib/booking-url";
 
 type Status = "available" | "reserved" | "closed" | "unknown";
@@ -11,6 +11,9 @@ export type CalendarSite = {
   site_type: string;
   site_type_label: string | null;
   has_electric: boolean;
+  area_id?: string | null;
+  area_name?: string | null;
+  area_description?: string | null;
 };
 
 export type CalendarRow = {
@@ -36,9 +39,14 @@ type Props = {
   onOpenSiteDetails?: (siteId: string) => void;
   /** True while live availability is being refreshed; book links are withheld. */
   checkingLive?: boolean;
+  /** Date that should be visible when the grid first opens. */
+  initialDate?: string | null;
+  /** Selected range from the park-level date filter, inclusive by camp night. */
+  selectedRange?: { from: string; to: string } | null;
 };
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const VISIBLE_DAYS = 14;
 const STATUS_BG: Record<Status, string> = {
   available: "bg-emerald-500 hover:bg-emerald-600",
   reserved: "bg-red-400 hover:bg-red-500",
@@ -52,6 +60,16 @@ const STATUS_LABEL: Record<Status, string> = {
   unknown: "Unknown",
 };
 
+type CalendarGroup = {
+  id: string;
+  name: string;
+  description: string | null;
+  rows: CalendarRow[];
+  availableSites: number;
+  availableCells: number;
+  totalCells: number;
+};
+
 function addDays(d: Date, n: number): Date {
   const out = new Date(d);
   out.setUTCDate(out.getUTCDate() + n);
@@ -59,6 +77,32 @@ function addDays(d: Date, n: number): Date {
 }
 function fmt(d: Date): string {
   return d.toISOString().slice(0, 10);
+}
+
+function visibleOffsetForDate(earliest: string, initialDate: string): number {
+  const start = Date.parse(`${earliest}T00:00:00Z`);
+  const target = Date.parse(`${initialDate}T00:00:00Z`);
+  if (!Number.isFinite(start) || !Number.isFinite(target) || target <= start) return 0;
+  return Math.floor((target - start) / (86_400_000 * VISIBLE_DAYS));
+}
+
+function eachDateInclusive(from: string, to: string): string[] {
+  const start = Date.parse(`${from}T00:00:00Z`);
+  const end = Date.parse(`${to}T00:00:00Z`);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return [];
+  const dates: string[] = [];
+  for (let t = start; t <= end; t += 86_400_000) {
+    dates.push(new Date(t).toISOString().slice(0, 10));
+  }
+  return dates;
+}
+
+function groupKey(row: CalendarRow): string {
+  return row.site.area_id ? `area:${row.site.area_id}` : "area:other-sites";
+}
+
+function groupName(row: CalendarRow): string {
+  return row.site.area_name || "Other sites";
 }
 
 export function AvailabilityCalendar({
@@ -70,6 +114,8 @@ export function AvailabilityCalendar({
   vendorUrl,
   onOpenSiteDetails,
   checkingLive = false,
+  initialDate,
+  selectedRange,
 }: Props) {
   // Compose the operator booking URL for one (site, night) cell client-side.
   // (Server-rendered components can't pass functions across the boundary.)
@@ -97,6 +143,12 @@ export function AvailabilityCalendar({
   const [showAvailableOnly, setShowAvailableOnly] = useState(false);
   const [weekOffset, setWeekOffset] = useState(0);
   const [siteTypeFilter, setSiteTypeFilter] = useState<string | null>(null);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() => new Set());
+
+  useEffect(() => {
+    if (!window.earliest || !initialDate) return;
+    setWeekOffset(visibleOffsetForDate(window.earliest, initialDate));
+  }, [initialDate, window.earliest]);
 
   // Start date for the visible window
   const visibleStart = useMemo(() => {
@@ -104,11 +156,15 @@ export function AvailabilityCalendar({
     return addDays(new Date(window.earliest + "T00:00:00Z"), weekOffset * 14);
   }, [window.earliest, weekOffset]);
 
-  const VISIBLE_DAYS = 14;
   const visibleDates = useMemo(
     () => Array.from({ length: VISIBLE_DAYS }, (_, i) => fmt(addDays(visibleStart, i))),
     [visibleStart],
   );
+  const focusDates = useMemo(
+    () => selectedRange ? eachDateInclusive(selectedRange.from, selectedRange.to) : visibleDates,
+    [selectedRange, visibleDates],
+  );
+  const hasSelectedRange = Boolean(selectedRange && focusDates.length > 0);
   const canGoBack = weekOffset > 0;
   const canGoForward = useMemo(() => {
     if (!window.latest) return false;
@@ -123,28 +179,98 @@ export function AvailabilityCalendar({
     return Array.from(types.entries()).sort((a, b) => b[1] - a[1]);
   }, [rows]);
 
-  // Filter + sort rows: most available within visible window first
-  const filteredRows = useMemo(() => {
-    let r = rows;
-    if (siteTypeFilter) r = r.filter((row) => row.site.site_type === siteTypeFilter);
-    if (showAvailableOnly) {
-      r = r.filter((row) => visibleDates.some((d) => row.nights[d] === "available"));
+  const baseRows = useMemo(() => {
+    if (!siteTypeFilter) return rows;
+    return rows.filter((row) => row.site.site_type === siteTypeFilter);
+  }, [rows, siteTypeFilter]);
+
+  const openInFocus = useMemo(() => {
+    const result = new Map<string, boolean>();
+    for (const row of baseRows) {
+      const isOpen = hasSelectedRange
+        ? focusDates.length > 0 && focusDates.every((d) => row.nights[d] === "available")
+        : focusDates.some((d) => row.nights[d] === "available");
+      result.set(row.site.id, isOpen);
     }
-    // Sort by availability count in visible window (desc)
+    return result;
+  }, [baseRows, focusDates, hasSelectedRange]);
+
+  // Filter + sort rows: most available within the selected/visible window first
+  const filteredRows = useMemo(() => {
+    let r = baseRows;
+    if (showAvailableOnly) {
+      r = r.filter((row) => openInFocus.get(row.site.id));
+    }
+    // Sort by availability count in the selected/visible window (desc)
     const scored = r.map((row) => ({
       row,
-      score: visibleDates.reduce((sum, d) => sum + (row.nights[d] === "available" ? 1 : 0), 0),
+      score: focusDates.reduce((sum, d) => sum + (row.nights[d] === "available" ? 1 : 0), 0),
     }));
     scored.sort((a, b) => b.score - a.score || a.row.site.name.localeCompare(b.row.site.name));
     return scored.map((s) => s.row);
-  }, [rows, showAvailableOnly, siteTypeFilter, visibleDates]);
+  }, [baseRows, focusDates, openInFocus, showAvailableOnly]);
 
-  // Aggregate stats for the visible window
+  const groupedRows = useMemo<CalendarGroup[]>(() => {
+    const groups = new Map<string, CalendarGroup>();
+    for (const row of filteredRows) {
+      const id = groupKey(row);
+      let group = groups.get(id);
+      if (!group) {
+        group = {
+          id,
+          name: groupName(row),
+          description: row.site.area_description ?? null,
+          rows: [],
+          availableSites: 0,
+          availableCells: 0,
+          totalCells: 0,
+        };
+        groups.set(id, group);
+      }
+      const openNights = focusDates.filter((d) => row.nights[d] === "available").length;
+      group.rows.push(row);
+      group.availableCells += openNights;
+      group.totalCells += focusDates.length;
+      if (openInFocus.get(row.site.id)) group.availableSites += 1;
+    }
+
+    return Array.from(groups.values()).sort((a, b) => {
+      if (a.id === "area:other-sites") return 1;
+      if (b.id === "area:other-sites") return -1;
+      return b.rows.length - a.rows.length || a.name.localeCompare(b.name);
+    });
+  }, [filteredRows, focusDates, openInFocus]);
+
+  useEffect(() => {
+    setExpandedGroups((current) => {
+      const validIds = new Set(groupedRows.map((group) => group.id));
+      const preserved = new Set(Array.from(current).filter((id) => validIds.has(id)));
+      if (preserved.size > 0 || groupedRows.length === 0) return preserved;
+      return groupedRows.length === 1 ? new Set([groupedRows[0].id]) : new Set();
+    });
+  }, [groupedRows]);
+
+  function toggleGroup(groupId: string) {
+    setExpandedGroups((current) => {
+      const next = new Set(current);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
+      return next;
+    });
+  }
+
+  function setAllGroups(expanded: boolean) {
+    setExpandedGroups(expanded ? new Set(groupedRows.map((group) => group.id)) : new Set());
+  }
+
+  // Aggregate stats for the selected/visible window.
   const windowStats = useMemo(() => {
     let total = 0;
     let avail = 0;
-    for (const r of filteredRows) {
-      for (const d of visibleDates) {
+    let openSites = 0;
+    for (const r of baseRows) {
+      if (openInFocus.get(r.site.id)) openSites += 1;
+      for (const d of focusDates) {
         total += 1;
         if (r.nights[d] === "available") avail += 1;
       }
@@ -152,9 +278,11 @@ export function AvailabilityCalendar({
     return {
       total,
       avail,
+      openSites,
+      totalSites: baseRows.length,
       pct: total > 0 ? Math.round((avail / total) * 100) : 0,
     };
-  }, [filteredRows, visibleDates]);
+  }, [baseRows, focusDates, openInFocus]);
 
   if (rows.length === 0) {
     return (
@@ -202,8 +330,27 @@ export function AvailabilityCalendar({
             checked={showAvailableOnly}
             onChange={(e) => setShowAvailableOnly(e.target.checked)}
           />
-          <span className="ml-1">Has open nights only</span>
+          <span className="ml-1">{hasSelectedRange ? "Open selected dates only" : "Has open nights only"}</span>
         </label>
+
+        {groupedRows.length > 1 && (
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setAllGroups(true)}
+              className="chip ring-1 ring-stone-300 text-stone-700 hover:bg-stone-50"
+            >
+              Expand all
+            </button>
+            <button
+              type="button"
+              onClick={() => setAllGroups(false)}
+              className="chip ring-1 ring-stone-300 text-stone-700 hover:bg-stone-50"
+            >
+              Collapse all
+            </button>
+          </div>
+        )}
 
         {siteTypes.length > 1 && (
           <div className="flex items-center gap-1 flex-wrap">
@@ -235,9 +382,18 @@ export function AvailabilityCalendar({
         )}
 
         <div className="ml-auto text-xs text-stone-600 inline-flex items-center gap-2">
-          <span className="font-semibold text-stone-900 tabular-nums">{windowStats.avail.toLocaleString()}</span>
-          / {windowStats.total.toLocaleString()} cells available
-          <span className="font-semibold text-emerald-700 tabular-nums">{windowStats.pct}%</span>
+          {hasSelectedRange ? (
+            <>
+              <span className="font-semibold text-stone-900 tabular-nums">{windowStats.openSites.toLocaleString()}</span>
+              / {windowStats.totalSites.toLocaleString()} sites open for dates
+            </>
+          ) : (
+            <>
+              <span className="font-semibold text-stone-900 tabular-nums">{windowStats.avail.toLocaleString()}</span>
+              open / {windowStats.total.toLocaleString()} site-nights
+              <span className="font-semibold text-emerald-700 tabular-nums">{windowStats.pct}%</span>
+            </>
+          )}
         </div>
       </div>
 
@@ -266,65 +422,108 @@ export function AvailabilityCalendar({
             </tr>
           </thead>
           <tbody>
-            {filteredRows.map((row) => {
-              const availInWindow = visibleDates.filter((d) => row.nights[d] === "available").length;
+            {groupedRows.length === 0 && (
+              <tr>
+                <td colSpan={visibleDates.length + 1} className="px-4 py-8 text-center text-sm text-stone-500">
+                  {hasSelectedRange
+                    ? "No sites match those selected dates and filters."
+                    : "No sites match the current calendar filters."}
+                </td>
+              </tr>
+            )}
+            {groupedRows.map((group) => {
+              const expanded = expandedGroups.has(group.id);
+              const pct = group.totalCells > 0 ? Math.round((group.availableCells / group.totalCells) * 100) : 0;
               return (
-                <tr key={row.site.id} className="border-t border-stone-100 hover:bg-stone-50/60">
-                  <td className="py-1.5 px-3 sticky left-0 bg-white border-r border-stone-200 whitespace-nowrap">
-                    <div className="flex items-center gap-2">
-                      {onOpenSiteDetails ? (
-                        <button
-                          type="button"
-                          onClick={() => onOpenSiteDetails(row.site.id)}
-                          className="text-stone-900 font-medium tabular-nums hover:text-forest-700 transition-colors"
-                        >
-                          {row.site.name}
-                        </button>
-                      ) : (
-                        <span className="text-stone-900 font-medium tabular-nums">{row.site.name}</span>
-                      )}
-                      <span className="text-[10px] uppercase text-stone-400">{row.site.site_type}</span>
-                      {row.site.has_electric && (
-                        <span className="text-[10px] text-amber-600 font-medium">⚡</span>
-                      )}
-                      <span
-                        className={`ml-auto text-[10px] tabular-nums ${
-                          availInWindow > 0 ? "text-emerald-700 font-semibold" : "text-stone-400"
-                        }`}
+                <Fragment key={group.id}>
+                  <tr className="border-t border-stone-200 bg-stone-50/80">
+                    <td colSpan={visibleDates.length + 1} className="p-0">
+                      <button
+                        type="button"
+                        onClick={() => toggleGroup(group.id)}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-stone-100"
+                        aria-expanded={expanded}
                       >
-                        {availInWindow}/{VISIBLE_DAYS}
-                      </span>
-                    </div>
-                  </td>
-                  {visibleDates.map((d) => {
-                    const status = row.nights[d] ?? "unknown";
-                    const url = status === "available" && !checkingLive && buildBookingUrl ? buildBookingUrl(row.site.id, d) : null;
-                    const cellBg = STATUS_BG[status];
-                    const cell = (
-                      <span
-                        className={`block h-6 mx-px rounded-sm ${cellBg} transition-colors`}
-                        title={`Site ${row.site.name} · ${d} · ${STATUS_LABEL[status]}`}
-                      />
-                    );
+                        <span className="grid h-5 w-5 shrink-0 place-items-center rounded bg-white text-stone-600 ring-1 ring-stone-200">
+                          {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="font-semibold text-stone-900">{group.name}</span>
+                          {group.description && (
+                            <span className="ml-2 hidden text-[11px] text-stone-500 sm:inline">/ {group.description}</span>
+                          )}
+                        </span>
+                        <span className="hidden text-[11px] text-stone-500 sm:inline">
+                          {hasSelectedRange
+                            ? `${group.availableSites}/${group.rows.length} open for dates`
+                            : `${group.availableSites}/${group.rows.length} sites with open nights`}
+                        </span>
+                        <span className="text-[11px] font-semibold text-emerald-700 tabular-nums">{pct}% open</span>
+                      </button>
+                    </td>
+                  </tr>
+                  {expanded && group.rows.map((row) => {
+                    const availInWindow = visibleDates.filter((d) => row.nights[d] === "available").length;
                     return (
-                      <td key={d} className="p-0.5 align-middle">
-                        {url ? (
-                          <a
-                            href={url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="block cursor-pointer"
-                            aria-label={`Book site ${row.site.name} on ${d}`}
-                          >
-                            {cell}
-                          </a>
-                        ) : (
-                          cell
-                        )}
-                      </td>
+                      <tr key={row.site.id} className="border-t border-stone-100 hover:bg-stone-50/60">
+                        <td className="py-1.5 px-3 sticky left-0 bg-white border-r border-stone-200 whitespace-nowrap">
+                          <div className="flex items-center gap-2">
+                            {onOpenSiteDetails ? (
+                              <button
+                                type="button"
+                                onClick={() => onOpenSiteDetails(row.site.id)}
+                                className="text-stone-900 font-medium tabular-nums hover:text-forest-700 transition-colors"
+                              >
+                                {row.site.name}
+                              </button>
+                            ) : (
+                              <span className="text-stone-900 font-medium tabular-nums">{row.site.name}</span>
+                            )}
+                            <span className="text-[10px] uppercase text-stone-400">{row.site.site_type}</span>
+                            {row.site.has_electric && (
+                              <span className="text-[10px] text-amber-600 font-medium">⚡</span>
+                            )}
+                            <span
+                              className={`ml-auto text-[10px] tabular-nums ${
+                                availInWindow > 0 ? "text-emerald-700 font-semibold" : "text-stone-400"
+                              }`}
+                            >
+                              {availInWindow}/{VISIBLE_DAYS}
+                            </span>
+                          </div>
+                        </td>
+                        {visibleDates.map((d) => {
+                          const status = row.nights[d] ?? "unknown";
+                          const url = status === "available" && !checkingLive && buildBookingUrl ? buildBookingUrl(row.site.id, d) : null;
+                          const cellBg = STATUS_BG[status];
+                          const cell = (
+                            <span
+                              className={`block h-6 mx-px rounded-sm ${cellBg} transition-colors`}
+                              title={`Site ${row.site.name} · ${d} · ${STATUS_LABEL[status]}`}
+                            />
+                          );
+                          return (
+                            <td key={d} className="p-0.5 align-middle">
+                              {url ? (
+                                <a
+                                  href={url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="block cursor-pointer"
+                                  aria-label={`Book site ${row.site.name} on ${d}`}
+                                >
+                                  {cell}
+                                </a>
+                              ) : (
+                                cell
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
                     );
                   })}
-                </tr>
+                </Fragment>
               );
             })}
           </tbody>

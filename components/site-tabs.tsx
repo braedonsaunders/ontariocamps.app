@@ -55,6 +55,8 @@ type Props = {
 
 type Tab = "photos" | "calendar" | "rules" | "reviews";
 
+const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
 function statusBadge(status: string, checkingLive = false) {
   if (status === "available" && checkingLive) {
     return { cls: "bg-amber-50 text-amber-900 ring-amber-200", label: "Last seen open" };
@@ -63,6 +65,30 @@ function statusBadge(status: string, checkingLive = false) {
   if (status === "reserved") return { cls: "bg-red-50 text-red-700 ring-red-200", label: "Booked" };
   if (status === "closed") return { cls: "bg-stone-200 text-stone-700 ring-stone-300", label: "Closed" };
   return { cls: "bg-stone-100 text-stone-500 ring-stone-200", label: "Unknown" };
+}
+
+function monthGridCells(month: MonthCalendar): Array<{ key: string; night_date: string | null; day: number | null; status: string | null }> {
+  const [year, monthNumber] = month.key.split("-").map(Number);
+  if (!year || !monthNumber) return [];
+  const firstDay = new Date(Date.UTC(year, monthNumber - 1, 1));
+  const daysInMonth = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+  const statusByDate = new Map(month.nights.map((night) => [night.night_date, night.status]));
+  const cells: Array<{ key: string; night_date: string | null; day: number | null; status: string | null }> = [];
+
+  for (let i = 0; i < firstDay.getUTCDay(); i += 1) {
+    cells.push({ key: `${month.key}-leading-${i}`, night_date: null, day: null, status: null });
+  }
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    const night_date = `${month.key}-${String(day).padStart(2, "0")}`;
+    cells.push({
+      key: night_date,
+      night_date,
+      day,
+      status: statusByDate.get(night_date) ?? null,
+    });
+  }
+
+  return cells;
 }
 
 function ruleToneClass(tone?: string) {
@@ -195,23 +221,44 @@ export function SiteTabs(props: Props) {
                       <div key={m.key} className="card p-4">
                         <div className="text-sm font-semibold text-stone-900 mb-2">{m.label}</div>
                         <div className="grid grid-cols-7 gap-1 text-[10px]">
-                          {m.nights.map((n) => {
-                            const day = Number(n.night_date.slice(-2));
-                            const b = statusBadge(n.status, checkingLive);
-                            const isAvailable = n.status === "available";
+                          {DAY_LABELS.map((label) => (
+                            <div key={label} className="pb-1 text-center font-semibold text-stone-500">
+                              {label}
+                            </div>
+                          ))}
+                          {monthGridCells(m).map((cell) => {
+                            if (!cell.night_date || !cell.day) {
+                              return <div key={cell.key} className="aspect-square" aria-hidden="true" />;
+                            }
+
+                            if (!cell.status) {
+                              return (
+                                <div key={cell.key}>
+                                  <div
+                                    className="flex aspect-square items-center justify-center rounded text-stone-300"
+                                    title={`${cell.night_date} · No data`}
+                                  >
+                                    {cell.day}
+                                  </div>
+                                </div>
+                              );
+                            }
+
+                            const b = statusBadge(cell.status, checkingLive);
+                            const isAvailable = cell.status === "available";
                             const inner = (
                               <div
                                 className={`aspect-square rounded ring-1 flex items-center justify-center font-medium tabular-nums ${b.cls}`}
-                                title={`${n.night_date} · ${b.label}`}
+                                title={`${cell.night_date} · ${b.label}`}
                               >
-                                {day}
+                                {cell.day}
                               </div>
                             );
                             if (isAvailable && !checkingLive) {
                               return (
                                 <a
-                                  key={n.night_date}
-                                  href={buildOneNightBookingUrl(bookingUrl, n.night_date)}
+                                  key={cell.night_date}
+                                  href={buildOneNightBookingUrl(bookingUrl, cell.night_date)}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="block hover:scale-[1.05] transition-transform"
@@ -220,7 +267,7 @@ export function SiteTabs(props: Props) {
                                 </a>
                               );
                             }
-                            return <div key={n.night_date}>{inner}</div>;
+                            return <div key={cell.night_date}>{inner}</div>;
                           })}
                         </div>
                       </div>

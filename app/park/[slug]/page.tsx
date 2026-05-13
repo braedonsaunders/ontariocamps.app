@@ -15,7 +15,6 @@ import {
 } from "@/lib/data-source";
 import { getSiteAvailabilityForPark } from "@/lib/db/queries";
 import { MapPin } from "lucide-react";
-import { type CalendarRow } from "@/components/availability-calendar";
 import { MotionHero } from "@/components/motion";
 import { ParkTabs, type DateContext } from "@/components/park-tabs";
 import type { SiteStatsEntry } from "@/components/site-field-notes";
@@ -268,45 +267,21 @@ export default async function ParkPage({
         )
       : 0;
 
-  // Calendar rows for the Calendar tab. One row per site, with the per-night
-  // status map.
-  const sitesById = new Map(allParkSites.map((s) => [s.id, s]));
-  const calendarRowsMap = new Map<string, CalendarRow>();
+  const campMapById = new Map(parkCampMaps.map((m) => [m.id, m]));
   let calendarLastChecked: string | null = null;
   for (const r of perNight) {
-    const site = sitesById.get(r.site_id);
-    if (!site) continue;
-    if (!calendarRowsMap.has(r.site_id)) {
-      calendarRowsMap.set(r.site_id, {
-        site: {
-          id: site.id,
-          name: site.name,
-          site_type: site.site_type,
-          site_type_label: site.site_type_label ?? null,
-          has_electric: site.has_electric,
-        },
-        nights: {},
-      });
-    }
-    calendarRowsMap.get(r.site_id)!.nights[r.night_date] = r.status;
     if (!calendarLastChecked || r.last_checked_at > calendarLastChecked) {
       calendarLastChecked = r.last_checked_at;
     }
   }
-  const calendarRows = Array.from(calendarRowsMap.values()).sort((a, b) =>
-    a.site.name.localeCompare(b.site.name, undefined, { numeric: true }),
-  );
 
   const bookingUrls: Record<string, string> = {};
-  const vendorSiteIds: Record<string, string> = {};
-  const campMapById = new Map(parkCampMaps.map((m) => [m.id, m]));
   for (const s of allParkSites) {
     const campMap = s.camp_map_id ? campMapById.get(s.camp_map_id) : null;
     bookingUrls[s.id] = buildBookingUrl(park.vendor_url, {
       resourceId: s.vendor_site_id,
       mapId: campMap?.vendor_map_id || undefined,
     });
-    vendorSiteIds[s.id] = s.vendor_site_id;
   }
 
   const siteBookingData: Record<string, { total: number; available: number; reserved: number }> = {};
@@ -395,9 +370,10 @@ export default async function ParkPage({
         availabilitySummary={availabilitySummary}
         bookingUrls={bookingUrls}
         equipmentOptions={operatorEquipment}
-        calendarRows={calendarRows}
+        calendarRows={[]}
         calendarLastChecked={calendarLastChecked}
-        vendorSiteIds={vendorSiteIds}
+        vendorSiteIds={{}}
+        calendarDataUrl={`/api/park/${encodeURIComponent(park.slug)}/calendar`}
         dateContext={dateContext}
         parkReviews={parkReviews}
         parkReviewAggregate={parkReviewAggregate}

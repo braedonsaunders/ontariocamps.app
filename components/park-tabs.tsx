@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
 import type { Site, CampMap, EquipmentOption, ParkReview, SiteReviewAggregate, ParkReviewAggregate, OperatorRuleSource } from "@/lib/types";
 import { AvailabilityCalendar, type CalendarRow } from "@/components/availability-calendar";
@@ -13,7 +13,7 @@ import { SiteDetailFlyout, type SiteFlyoutDetails } from "@/components/site-deta
 import { RulesPanel } from "@/components/rules-panel";
 import { timeAgo } from "@/lib/utils";
 import { mapImageUrl } from "@/lib/map-image";
-import { Info, Map as MapIcon, Calendar, Tent, ArrowUpRight, CalendarRange, MessageSquare, TreePine, ShieldCheck, Loader2 } from "lucide-react";
+import { Info, Map as MapIcon, Calendar, Tent, ArrowUpRight, CalendarRange, MessageSquare, TreePine, ShieldCheck, Loader2, X } from "lucide-react";
 
 type SiteAvailability = {
   status: "available" | "reserved" | "closed" | "unknown";
@@ -50,6 +50,7 @@ type Props = {
   calendarRows: CalendarRow[];
   calendarLastChecked: string | null;
   vendorSiteIds: Record<string, string>;
+  calendarDataUrl?: string;
   dateContext: DateContext;
   parkReviews: ParkReview[];
   parkReviewAggregate: ParkReviewAggregate;
@@ -61,6 +62,14 @@ type Props = {
 
 type Tab = "overview" | "sites" | "calendar" | "rules" | "reviews";
 type SitesSubTab = "map" | "field-notes";
+type CalendarLoadStatus = "idle" | "loading" | "ready" | "error";
+
+type ParkCalendarPayload = {
+  calendarRows: CalendarRow[];
+  calendarLastChecked: string | null;
+  vendorSiteIds: Record<string, string>;
+  bookingUrls: Record<string, string>;
+};
 
 const PARK_REFRESH_COOLDOWN_MS = 5 * 60 * 1000;
 const SITE_REFRESH_COOLDOWN_MS = 2 * 60 * 1000;
@@ -90,38 +99,131 @@ function formatDate(iso: string): string {
   });
 }
 
-function DateBanner({ ctx }: { ctx: DateContext }) {
+function rangeStatusText(ctx: DateContext): ReactNode {
   if (ctx.mode === "range") {
     return (
-      <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-forest-50 ring-1 ring-forest-200 text-sm text-forest-900">
-        <CalendarRange size={14} />
-        <span>
-          Showing whether each site is open <span className="font-semibold">every night from {formatDate(ctx.from)} → {formatDate(ctx.to)}</span>.
-        </span>
-      </div>
+      <>
+        Showing sites open every night from <span className="font-semibold">{formatDate(ctx.from)} to {formatDate(ctx.to)}</span>.
+      </>
     );
   }
-  // The page resolves ctx.date to the first night with data — operators hold
-  // the first ~14 days back so today's row usually doesn't exist. Make the
-  // banner say *which* night we're actually rendering.
+
   const today = new Date().toISOString().slice(0, 10);
-  const isToday = ctx.date === today;
+  if (ctx.date === today) {
+    return (
+      <>
+        No dates selected - showing <span className="font-semibold">tonight&apos;s</span> status.
+      </>
+    );
+  }
+
   return (
-    <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-stone-100 ring-1 ring-stone-200 text-sm text-stone-700">
-      <CalendarRange size={14} className="text-stone-500" />
-      <span>
-        {isToday ? (
-          <>
-            No dates selected — showing <span className="font-semibold">tonight&apos;s</span> status.
-          </>
-        ) : (
-          <>
-            Earliest bookable night — showing <span className="font-semibold">{formatDate(ctx.date)}</span>.
-          </>
-        )}
-        {" "}Pick a date range in the Calendar tab or via{" "}
-        <Link href="/search" className="text-forest-700 hover:underline">search</Link> to refine.
-      </span>
+    <>
+      Earliest bookable night - showing <span className="font-semibold">{formatDate(ctx.date)}</span>.
+    </>
+  );
+}
+
+function DateFilter({ ctx }: { ctx: DateContext }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const activeFrom = ctx.mode === "range" ? ctx.from : "";
+  const activeTo = ctx.mode === "range" ? ctx.to : "";
+  const [fromDate, setFromDate] = useState(activeFrom);
+  const [toDate, setToDate] = useState(activeTo);
+  const [rangeError, setRangeError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setFromDate(activeFrom);
+    setToDate(activeTo);
+    setRangeError(null);
+  }, [activeFrom, activeTo]);
+
+  function pushParams(nextParams: URLSearchParams) {
+    const query = nextParams.toString();
+    router.push(query ? `${pathname}?${query}` : pathname);
+  }
+
+  function applyRange(event: FormEvent) {
+    event.preventDefault();
+    const from = fromDate || toDate;
+    const to = toDate || fromDate;
+
+    if (!from || !to) {
+      setRangeError("Choose at least one night.");
+      return;
+    }
+    if (from > to) {
+      setRangeError("Last night must be after first night.");
+      return;
+    }
+
+    const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.set("from", from);
+    nextParams.set("to", to);
+    setRangeError(null);
+    pushParams(nextParams);
+  }
+
+  function clearRange() {
+    const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.delete("from");
+    nextParams.delete("to");
+    setRangeError(null);
+    setFromDate("");
+    setToDate("");
+    pushParams(nextParams);
+  }
+
+  return (
+    <div className="rounded-lg bg-white p-3 shadow-sm ring-1 ring-stone-200">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className={`flex min-w-0 items-center gap-2 text-sm ${ctx.mode === "range" ? "text-forest-900" : "text-stone-700"}`}>
+          <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-md ring-1 ${
+            ctx.mode === "range" ? "bg-forest-50 text-forest-700 ring-forest-200" : "bg-stone-100 text-stone-500 ring-stone-200"
+          }`}>
+            <CalendarRange size={15} />
+          </span>
+          <span className="min-w-0">{rangeStatusText(ctx)}</span>
+        </div>
+
+        <form onSubmit={applyRange} className="grid grid-cols-2 gap-2 sm:flex sm:items-end">
+          <label className="rounded-md bg-stone-50 px-3 py-2 ring-1 ring-stone-200 transition focus-within:bg-white focus-within:ring-forest-600 sm:w-36">
+            <span className="mb-0.5 block text-[11px] font-semibold uppercase tracking-wide text-stone-500">First night</span>
+            <input
+              type="date"
+              className="w-full min-w-0 bg-transparent text-sm font-semibold text-stone-950 outline-none"
+              value={fromDate}
+              onChange={(event) => setFromDate(event.target.value)}
+            />
+          </label>
+          <label className="rounded-md bg-stone-50 px-3 py-2 ring-1 ring-stone-200 transition focus-within:bg-white focus-within:ring-forest-600 sm:w-36">
+            <span className="mb-0.5 block text-[11px] font-semibold uppercase tracking-wide text-stone-500">Last night</span>
+            <input
+              type="date"
+              className="w-full min-w-0 bg-transparent text-sm font-semibold text-stone-950 outline-none"
+              min={fromDate || undefined}
+              value={toDate}
+              onChange={(event) => setToDate(event.target.value)}
+            />
+          </label>
+          <button type="submit" className="btn-primary min-h-11 px-3 text-xs">
+            <CalendarRange size={13} />
+            Show dates
+          </button>
+          <button
+            type="button"
+            onClick={clearRange}
+            disabled={ctx.mode !== "range" && !fromDate && !toDate}
+            className="btn-secondary min-h-11 px-3 text-xs"
+          >
+            <X size={13} />
+            Clear
+          </button>
+        </form>
+      </div>
+      {rangeError && <div className="mt-2 text-xs font-semibold text-amber-700">{rangeError}</div>}
     </div>
   );
 }
@@ -248,6 +350,7 @@ export function ParkTabs(props: Props) {
     calendarRows,
     calendarLastChecked,
     vendorSiteIds,
+    calendarDataUrl,
     dateContext,
     parkReviews,
     parkReviewAggregate,
@@ -260,9 +363,18 @@ export function ParkTabs(props: Props) {
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [sitesSubTab, setSitesSubTab] = useState<SitesSubTab>("map");
   const [selectedSection, setSelectedSection] = useState<string | undefined>(undefined);
-  const [selectedSiteFlyoutId, setSelectedSiteFlyoutId] = useState<string | null>(null);
+  const [selectedSiteDetails, setSelectedSiteDetails] = useState<SiteFlyoutDetails | null>(null);
   const [parkRefreshKeyInFlight, setParkRefreshKeyInFlight] = useState<string | null>(null);
   const [refreshingSiteId, setRefreshingSiteId] = useState<string | null>(null);
+  const [calendarData, setCalendarData] = useState<ParkCalendarPayload>({
+    calendarRows,
+    calendarLastChecked,
+    vendorSiteIds,
+    bookingUrls,
+  });
+  const [calendarLoadStatus, setCalendarLoadStatus] = useState<CalendarLoadStatus>(
+    calendarRows.length > 0 ? "ready" : "idle",
+  );
   const router = useRouter();
 
   const dateWindowKey = useMemo(() => (
@@ -272,6 +384,44 @@ export function ParkTabs(props: Props) {
   ), [dateContext]);
   const parkRefreshKey = `park:${parkId}:${dateWindowKey}`;
   const parkRefreshInFlight = parkRefreshKeyInFlight === parkRefreshKey;
+  const activeCalendarRows = calendarData.calendarRows;
+  const activeCalendarLastChecked = calendarData.calendarLastChecked ?? calendarLastChecked;
+  const activeVendorSiteIds = Object.keys(calendarData.vendorSiteIds).length > 0
+    ? calendarData.vendorSiteIds
+    : vendorSiteIds;
+  const activeBookingUrls = Object.keys(calendarData.bookingUrls).length > 0
+    ? calendarData.bookingUrls
+    : bookingUrls;
+
+  useEffect(() => {
+    setCalendarData({
+      calendarRows,
+      calendarLastChecked,
+      vendorSiteIds,
+      bookingUrls,
+    });
+    setCalendarLoadStatus(calendarRows.length > 0 ? "ready" : "idle");
+  }, [bookingUrls, calendarDataUrl, calendarLastChecked, calendarRows, vendorSiteIds]);
+
+  const loadCalendarData = useCallback(async () => {
+    if (!calendarDataUrl) return;
+    if (calendarLoadStatus === "loading" || calendarLoadStatus === "ready") return;
+    setCalendarLoadStatus("loading");
+    try {
+      const response = await fetch(calendarDataUrl);
+      if (!response.ok) throw new Error("Unable to load park calendar");
+      const payload = (await response.json()) as Partial<ParkCalendarPayload>;
+      setCalendarData({
+        calendarRows: payload.calendarRows ?? [],
+        calendarLastChecked: payload.calendarLastChecked ?? null,
+        vendorSiteIds: payload.vendorSiteIds ?? {},
+        bookingUrls: { ...bookingUrls, ...(payload.bookingUrls ?? {}) },
+      });
+      setCalendarLoadStatus("ready");
+    } catch {
+      setCalendarLoadStatus("error");
+    }
+  }, [bookingUrls, calendarDataUrl, calendarLoadStatus]);
 
   const refreshLiveAvailability = useCallback(async (payload: { siteId?: string; park?: boolean }) => {
     const scopedSiteId = payload.siteId ?? null;
@@ -279,7 +429,7 @@ export function ParkTabs(props: Props) {
     const cooldownMs = scopedSiteId ? SITE_REFRESH_COOLDOWN_MS : PARK_REFRESH_COOLDOWN_MS;
     const lastCheckedAt = scopedSiteId
       ? availabilitySummary[scopedSiteId]?.last_checked_at
-      : calendarLastChecked;
+      : activeCalendarLastChecked;
 
     if (isFreshEnough(lastCheckedAt, scopedSiteId ? 2 : 3)) return;
 
@@ -309,11 +459,17 @@ export function ParkTabs(props: Props) {
           days: payload.siteId
             ? 30
             : dateContext.mode === "range"
-              ? Math.max(1, Math.min(45, Math.ceil((Date.parse(`${dateContext.to}T00:00:00Z`) - Date.parse(`${dateContext.from}T00:00:00Z`)) / 86_400_000)))
+              ? Math.max(1, Math.min(45, Math.ceil((Date.parse(`${dateContext.to}T00:00:00Z`) - Date.parse(`${dateContext.from}T00:00:00Z`)) / 86_400_000) + 1))
               : 14,
         }),
       });
-      if (response.ok) router.refresh();
+      if (response.ok) {
+        if (!scopedSiteId) {
+          setCalendarLoadStatus("idle");
+          setCalendarData((current) => ({ ...current, calendarRows: [] }));
+        }
+        router.refresh();
+      }
     })()
       .catch(() => {
         // Freshening availability is opportunistic; stale cached data is still usable.
@@ -329,7 +485,7 @@ export function ParkTabs(props: Props) {
 
     availabilityRefreshesInFlight.set(refreshKey, refreshPromise);
     await refreshPromise;
-  }, [availabilitySummary, calendarLastChecked, dateContext, dateWindowKey, parkId, parkRefreshKey, parkSlug, router]);
+  }, [activeCalendarLastChecked, availabilitySummary, dateContext, dateWindowKey, parkId, parkRefreshKey, parkSlug, router]);
 
   useEffect(() => {
     if (activeTab === "sites" || activeTab === "calendar") {
@@ -337,13 +493,61 @@ export function ParkTabs(props: Props) {
     }
   }, [activeTab, refreshLiveAvailability]);
 
-  const openSiteFlyout = useCallback((siteId: string) => {
-    setSelectedSiteFlyoutId(siteId);
+  useEffect(() => {
+    if (activeTab === "calendar") {
+      void loadCalendarData();
+    }
+  }, [activeTab, loadCalendarData]);
+
+  const openSiteFlyout = useCallback(async (siteId: string) => {
+    const site = sites.find((candidate) => candidate.id === siteId);
+    if (site) {
+      setSelectedSiteDetails({
+        site,
+        parkName,
+        parkSlug,
+        operatorName,
+        operatorId,
+        bookingUrl: activeBookingUrls[site.id],
+        equipment: equipmentOptions,
+        calendarRow: activeCalendarRows.find((row) => row.site.id === site.id) ?? null,
+        lastCheckedAt: availabilitySummary[site.id]?.last_checked_at ?? activeCalendarLastChecked,
+        stats: siteStats.find((entry) => entry.id === site.id) ?? null,
+        recentReviews: recentSiteReviews.filter((review) => review.site_id === site.id),
+      });
+    }
     void refreshLiveAvailability({ siteId });
-  }, [refreshLiveAvailability]);
+
+    try {
+      const response = await fetch(`/api/sites/${encodeURIComponent(siteId)}/details`);
+      if (!response.ok) throw new Error("Failed to load site details");
+      const payload = (await response.json()) as { details?: SiteFlyoutDetails };
+      if (!payload.details) throw new Error("Missing site details");
+      setSelectedSiteDetails({
+        ...payload.details,
+        bookingUrl: activeBookingUrls[siteId] ?? payload.details.bookingUrl,
+      });
+    } catch {
+      // Keep the lightweight local details open; the direct booking link still works.
+    }
+  }, [
+    activeBookingUrls,
+    activeCalendarLastChecked,
+    activeCalendarRows,
+    availabilitySummary,
+    equipmentOptions,
+    operatorId,
+    operatorName,
+    parkName,
+    parkSlug,
+    recentSiteReviews,
+    refreshLiveAvailability,
+    siteStats,
+    sites,
+  ]);
 
   const closeSiteFlyout = useCallback(() => {
-    setSelectedSiteFlyoutId(null);
+    setSelectedSiteDetails(null);
   }, []);
 
   const siteTypeCounts = useMemo(() => {
@@ -388,42 +592,9 @@ export function ParkTabs(props: Props) {
     [availabilitySummary],
   );
 
-  const selectedSiteDetails: SiteFlyoutDetails | null = useMemo(() => {
-    if (!selectedSiteFlyoutId) return null;
-    const site = sites.find((s) => s.id === selectedSiteFlyoutId);
-    if (!site) return null;
-    return {
-      site,
-      parkName,
-      parkSlug,
-      operatorName,
-      operatorId,
-      bookingUrl: bookingUrls[site.id],
-      equipment: equipmentOptions,
-      calendarRow: calendarRows.find((row) => row.site.id === site.id) ?? null,
-      lastCheckedAt: availabilitySummary[site.id]?.last_checked_at ?? calendarLastChecked,
-      stats: siteStats.find((entry) => entry.id === site.id) ?? null,
-      recentReviews: recentSiteReviews.filter((review) => review.site_id === site.id),
-    };
-  }, [
-    selectedSiteFlyoutId,
-    sites,
-    parkName,
-    parkSlug,
-    operatorName,
-    operatorId,
-    bookingUrls,
-    equipmentOptions,
-    calendarRows,
-    availabilitySummary,
-    calendarLastChecked,
-    siteStats,
-    recentSiteReviews,
-  ]);
-
   return (
     <section className="mx-auto w-full min-w-0 max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-      <DateBanner ctx={dateContext} />
+      <DateFilter ctx={dateContext} />
 
       {/* Sticky-ish tab strip */}
       <div className="relative mt-4 min-w-0 border-b border-stone-200">
@@ -641,15 +812,29 @@ export function ParkTabs(props: Props) {
                     Real per-night status from {operatorName} · click a green cell to book
                   </span>
                 </div>
-                <AvailabilityCalendar
-                  rows={calendarRows}
-                  totalSites={sites.length}
-                  lastCheckedAt={calendarLastChecked}
-                  vendorSiteIds={vendorSiteIds}
-                  bookingUrls={bookingUrls}
-                  vendorUrl={vendorUrl}
-                  onOpenSiteDetails={openSiteFlyout}
-                />
+                {(calendarLoadStatus === "idle" || calendarLoadStatus === "loading") && (
+                  <div className="card p-8 text-center text-sm text-stone-500">
+                    Loading the full park calendar...
+                  </div>
+                )}
+                {calendarLoadStatus === "error" && (
+                  <div className="card p-8 text-center text-sm text-stone-500">
+                    Calendar data could not be loaded. Switch tabs and open it again to retry.
+                  </div>
+                )}
+                {calendarLoadStatus === "ready" && (
+                  <AvailabilityCalendar
+                    rows={activeCalendarRows}
+                    totalSites={sites.length}
+                    lastCheckedAt={activeCalendarLastChecked}
+                    vendorSiteIds={activeVendorSiteIds}
+                    bookingUrls={activeBookingUrls}
+                    vendorUrl={vendorUrl}
+                    onOpenSiteDetails={openSiteFlyout}
+                    initialDate={dateContext.mode === "range" ? dateContext.from : dateContext.date}
+                    selectedRange={dateContext.mode === "range" ? { from: dateContext.from, to: dateContext.to } : null}
+                  />
+                )}
               </motion.div>
             )}
 
