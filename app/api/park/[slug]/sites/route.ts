@@ -8,6 +8,7 @@ import {
 import { getFirstBookableNightForPark, getSiteAvailabilityForParkWindow } from "@/lib/db/queries";
 import { appDate } from "@/lib/app-time";
 import { buildBookingUrl } from "@/lib/booking-url";
+import { getSitePetPolicy } from "@/lib/site-pet-policy";
 import type { SiteStatsEntry } from "@/components/site-field-notes";
 
 export const dynamic = "force-dynamic";
@@ -132,7 +133,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
       siteTypeLabel: site.site_type_label ?? site.site_type,
       hasElectric: site.has_electric,
       isWaterfront: site.is_waterfront,
-      isPetFriendly: site.is_pet_friendly,
+      isPetFriendly: getSitePetPolicy(site) === "pet-friendly",
       totalNights: booking.total,
       availableNights: booking.available,
       reservedNights: booking.reserved,

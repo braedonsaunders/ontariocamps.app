@@ -256,12 +256,14 @@ export async function getSitesForPark(parkId: string): Promise<Site[]> {
     has_electric: boolean;
     is_pet_friendly: boolean; is_waterfront: boolean;
     camp_map_id: string | null; map_x: number | null; map_y: number | null;
+    rule_policies: unknown;
   }>>`
     SELECT s.id, s.campground_id, s.vendor_site_id, s.name, s.site_type,
            s.site_type_label, s.icon_type,
            s.max_party_size,
            s.has_electric, s.is_pet_friendly, s.is_waterfront,
-           s.camp_map_id, s.map_x, s.map_y
+           s.camp_map_id, s.map_x, s.map_y,
+           s.rule_summary->'policies' AS rule_policies
       FROM sites s
       JOIN campgrounds c ON c.id = s.campground_id
      WHERE c.park_id = ${parkId}
@@ -277,7 +279,9 @@ export async function getSitesForPark(parkId: string): Promise<Site[]> {
     is_pet_friendly: r.is_pet_friendly, is_waterfront: r.is_waterfront,
     amenities: [],
     camp_map_id: r.camp_map_id, map_x: r.map_x, map_y: r.map_y,
-    rule_summary: null,
+    rule_summary: r.rule_policies && typeof r.rule_policies === "object"
+      ? ({ policies: r.rule_policies } as Site["rule_summary"])
+      : null,
   }));
 }
 

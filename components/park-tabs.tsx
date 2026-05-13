@@ -17,6 +17,7 @@ import { ParkAlertsStrip } from "@/components/park-alerts-strip";
 import { timeAgo } from "@/lib/utils";
 import { mapImageUrl } from "@/lib/map-image";
 import { imageProxyUrl } from "@/lib/image-proxy";
+import { getSitePetPolicy } from "@/lib/site-pet-policy";
 import { Info, Map as MapIcon, Calendar, Tent, ArrowUpRight, CalendarRange, MessageSquare, TreePine, ShieldCheck, Loader2, X, ChevronDown } from "lucide-react";
 
 type SiteAvailability = {
@@ -308,6 +309,7 @@ function SiteDirectoryFallback({
           const status = availabilitySummary[site.id]?.status ?? "unknown";
           const photo = (site.photos ?? []).find((p) => p.url || p.avifUrl);
           const photoUrl = imageProxyUrl(photo?.url ?? photo?.avifUrl, "thumb") ?? photo?.url ?? photo?.avifUrl ?? "";
+          const petPolicy = getSitePetPolicy(site);
           return (
             <div key={site.id} className="flex min-w-0 gap-3 rounded-lg bg-stone-50 p-2.5 ring-1 ring-stone-200">
               <div className="relative h-16 w-20 shrink-0 overflow-hidden rounded-md bg-stone-200">
@@ -338,7 +340,8 @@ function SiteDirectoryFallback({
                 <div className="mt-2 flex flex-wrap items-center gap-1.5">
                   {site.has_electric && <span className="chip bg-amber-50 text-amber-800 ring-1 ring-amber-200">Electric</span>}
                   {site.is_waterfront && <span className="chip bg-lake-50 text-lake-800 ring-1 ring-lake-200">Waterfront</span>}
-                  {site.is_pet_friendly && <span className="chip bg-stone-100 text-stone-700 ring-1 ring-stone-200">Pets</span>}
+                  {petPolicy === "no-pets" && <span className="chip bg-red-50 text-red-700 ring-1 ring-red-200">No pets</span>}
+                  {petPolicy === "pet-friendly" && <span className="chip bg-stone-100 text-stone-700 ring-1 ring-stone-200">Pets</span>}
                 </div>
                 <div className="mt-2 flex items-center gap-2 text-xs">
                   <button

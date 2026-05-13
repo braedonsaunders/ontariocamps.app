@@ -7,6 +7,7 @@ import {
   getSiteReviewAggregate,
   getSiteReviews,
 } from "@/lib/data-source";
+import { getSitePetPolicy } from "@/lib/site-pet-policy";
 import type { Site } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -154,6 +155,7 @@ export async function GET(
   }
 
   const site = rowToSite(row);
+  const isPetFriendly = getSitePetPolicy(site) === "pet-friendly";
   return NextResponse.json({
     details: {
       site,
@@ -184,7 +186,7 @@ export async function GET(
         siteTypeLabel: site.site_type_label ?? site.site_type,
         hasElectric: site.has_electric,
         isWaterfront: site.is_waterfront,
-        isPetFriendly: site.is_pet_friendly,
+        isPetFriendly,
         totalNights: availability.length,
         availableNights,
         reservedNights,

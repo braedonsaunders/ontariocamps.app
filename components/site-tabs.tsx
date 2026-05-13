@@ -9,6 +9,7 @@ import { PhotoGallery } from "@/components/photo-gallery";
 import { SiteReviewAggregateDisplay, SiteReviewList, SiteReviewForm } from "@/components/reviews";
 import { buildOneNightBookingUrl } from "@/lib/booking-url";
 import { SiteRulesCard } from "@/components/rules-panel";
+import { getSitePetPolicy, isPetPolicyHighlight } from "@/lib/site-pet-policy";
 import { timeAgo } from "@/lib/utils";
 import {
   Camera,
@@ -128,6 +129,10 @@ export function SiteTabs(props: Props) {
 
   const [activeTab, setActiveTab] = useState<Tab>("photos");
   const ratingAvg = ratingNumber(reviewAggregate.rating_avg);
+  const petPolicy = getSitePetPolicy(site);
+  const ruleHighlights = (site.rule_summary?.highlights ?? [])
+    .filter((rule) => !isPetPolicyHighlight(rule))
+    .slice(0, petPolicy === "no-pets" ? 3 : 4);
 
   const TABS: Array<{ id: Tab; label: string; icon: typeof Camera }> = [
     { id: "photos", label: "Photos", icon: Camera },
@@ -357,7 +362,10 @@ export function SiteTabs(props: Props) {
             </dl>
 
             <div className="mt-4 flex flex-wrap gap-1.5">
-              {site.rule_summary?.highlights?.slice(0, 4).map((rule) => (
+              {petPolicy === "no-pets" && (
+                <span className="chip bg-red-50 text-red-700 ring-1 ring-red-200"><PawPrint size={10} /> No pets</span>
+              )}
+              {ruleHighlights.map((rule) => (
                 <span key={rule.label} className={`chip ring-1 ${ruleToneClass(rule.tone)}`}>
                   {rule.label}
                 </span>
@@ -377,7 +385,7 @@ export function SiteTabs(props: Props) {
               {site.is_accessible && (
                 <span className="chip bg-stone-100 text-stone-700 ring-1 ring-stone-200"><Accessibility size={10} /> Accessible</span>
               )}
-              {site.is_pet_friendly && (
+              {petPolicy === "pet-friendly" && (
                 <span className="chip bg-stone-100 text-stone-700 ring-1 ring-stone-200"><PawPrint size={10} /> Pet-friendly</span>
               )}
             </div>
