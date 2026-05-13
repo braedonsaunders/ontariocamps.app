@@ -27,6 +27,7 @@ import type { OperatorConfig } from "./operator-registry";
 import { addDays, defaultSampleDate, slugify as providerSlugify, stableNumericId } from "./provider-utils";
 import { fetchSvgMap, type ParsedSvgMap } from "./svg-map";
 import { decodeResourceRules, decodeSiteAttributes, equipmentRules, operatorRuleProfile } from "../rules";
+import { allowedEquipmentMaxLengthFt } from "../equipment-normalization";
 import { resolveCoordinates } from "./coordinates";
 import {
   upsertOperator,
@@ -40,6 +41,7 @@ import {
   upsertOperatorFetchConfig,
   upsertOperatorRuleSource,
   upsertOperatorAttributeDefinition,
+  deleteParkById,
   startRefreshLog,
   finishRefreshLog,
   setRefreshMeta,
@@ -171,6 +173,13 @@ function campspotMaxLength(row: CampspotAvailabilityRow): number | null {
   return match ? Math.round(Number(match[1])) : null;
 }
 
+function siteTypeFromCampspot(row: CampspotAvailabilityRow): SiteType {
+  const text = `${row.campsiteCategoryCode ?? ""} ${row.name} ${row.description ?? ""}`.toLowerCase();
+  if (/tent/.test(text) && !/trailer|rv|motorhome/.test(text)) return "tent";
+  if (/cabin|cottage|yurt|lodging|shelter/.test(text) || row.campsiteCategoryCode === "other") return "cabin";
+  return "rv";
+}
+
 function campspotAmenities(row: CampspotAvailabilityRow): string[] {
   return Array.from(new Set([...(row.amenities ?? []), ...(row.campsites?.[0]?.amenities ?? [])]));
 }
@@ -180,6 +189,23 @@ function campsiteCategoryLabel(row: CampspotAvailabilityRow): string {
   if (/serviced/i.test(amenities) && !/unserviced/i.test(amenities)) return "Serviced";
   if (/unserviced/i.test(amenities)) return "Unserviced";
   return row.campsiteCategoryCode ?? "Site";
+}
+
+function campspotSeasonalOnlySignal(row: CampspotAvailabilityRow): boolean {
+  const labelText = [
+    row.name,
+    row.campsiteCategoryCode,
+    ...((row.campsites ?? []).flatMap((site) => [
+      site.name,
+      site.preferredSiteType,
+      ...(site.amenities ?? []),
+    ])),
+    ...(row.amenities ?? []),
+  ].filter(Boolean).join(" ");
+  if (/\b(full[-\s]?season|seasonal|annual|monthly|permanent|long[-\s]?term)\b/i.test(labelText)) return true;
+
+  const description = row.description ?? "";
+  return /\b(full[-\s]?season booking only|seasonal (?:rate|site|lot)s? only|monthly (?:rate|stay)s? only|annual (?:rate|site|lot)s? only|permanent (?:site|lot)s? only|long[-\s]?term stays? only)\b/i.test(description);
 }
 
 function letsCampElectrical(site: LetsCampSite): boolean {
@@ -239,8 +265,18 @@ async function refreshCampspotMetadata(
         startDate: sampleStart,
         endDate: sampleEnd,
       });
-      parks_seen += 1;
       const parkId = `p_${operator.id}_${park.id}`;
+      if (rows.length === 0) {
+        log(`[${operator.id}] ${config.slug}: skipped; Campspot returned no site inventory`);
+        await deleteParkById(parkId);
+        continue;
+      }
+      if (rows.every(campspotSeasonalOnlySignal)) {
+        log(`[${operator.id}] ${config.slug}: skipped; seasonal-only Campspot inventory`);
+        await deleteParkById(parkId);
+        continue;
+      }
+      parks_seen += 1;
       const hero = campspotImageUrl(park.media?.mainImage)
         ?? campspotImageUrl(park.backgroundImage)
         ?? (rows[0] ? photosFromCampspot(rows[0])[0]?.url : undefined)
@@ -296,7 +332,7 @@ async function refreshCampspotMetadata(
           campground_id: campgroundId,
           vendor_site_id: String(row.id),
           name: campspotSiteName(row),
-          site_type: row.campsiteCategoryCode === "tent" ? "tent" : row.campsiteCategoryCode === "other" ? "cabin" : "rv",
+          site_type: siteTypeFromCampspot(row),
           site_type_label: siteLabel,
           icon_type: null,
           min_party_size: null,
@@ -827,7 +863,7 @@ export async function refreshOperatorMetadata(
           min_party_size: detail?.minCapacity ?? null,
           max_party_size: detail?.maxCapacity ?? 6,
           max_stay_nights: detail?.maxStay ?? null,
-          max_equipment_length_ft: null,
+          max_equipment_length_ft: allowedEquipmentMaxLengthFt(allowedEquipment),
           has_electric: hasElectricFromLabel(label),
           has_water: false,
           has_sewer: false,

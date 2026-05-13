@@ -2,6 +2,7 @@
 import { motion } from "motion/react";
 import type { SearchResult } from "@/lib/types";
 import { AMENITIES } from "@/lib/types";
+import { displayOperatorName } from "@/lib/display";
 import { imageProxyUrl } from "@/lib/image-proxy";
 import { timeAgo } from "@/lib/utils";
 import { ArrowUpRight, MapPin, Calendar, Wifi, Droplet, Flame, Tent, Caravan, Route, Loader2 } from "lucide-react";
@@ -50,6 +51,7 @@ export function ResultCard({
   const lastNight = result.availability.nights[result.availability.nights.length - 1];
   const compactRules = result.site.rule_highlights?.slice(0, 2) ?? [];
   const compactAmenities = result.site.amenities.slice(0, Math.max(0, 3 - compactRules.length));
+  const operatorName = displayOperatorName(result.park.operator);
   const canOpen = Boolean(onOpenResult || onOpenSiteDetails);
   const openLabel = isRoute
     ? `Open all sites for ${result.stay?.label ?? "this route"} starting at ${result.park.name} site ${result.site.name}`
@@ -100,9 +102,9 @@ export function ResultCard({
             decoding="async"
             fetchPriority="low"
           />
-          <div className="absolute inset-0 bg-gradient-to-br from-white/[0.93] via-white/[0.65] to-white/[0.15]" />
-          <div className="absolute inset-0 bg-gradient-to-tr from-white/[0.85] via-white/[0.45] to-transparent" />
-          <div className="absolute bottom-0 left-0 h-2/3 w-2/3 bg-white/25 blur-xl" />
+          <div className="absolute inset-0 bg-gradient-to-br from-white/[0.90] via-white/[0.55] to-white/[0.08]" />
+          <div className="absolute inset-0 bg-gradient-to-tr from-white/[0.75] via-white/[0.35] to-transparent" />
+          <div className="absolute bottom-0 left-0 h-2/3 w-2/3 bg-white/[0.18] blur-xl" />
         </>
       ) : (
         <div className="absolute inset-0 bg-gradient-to-br from-forest-50 via-white to-lake-50" />
@@ -113,7 +115,7 @@ export function ResultCard({
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
               <div className="mb-0.5 flex min-w-0 items-center gap-1.5 text-[11px] text-stone-500">
-                <span className={`hidden shrink-0 rounded-full px-1.5 py-0.5 font-medium ring-1 sm:inline-flex ${operatorClass}`}>{result.park.operator}</span>
+                <span className={`hidden shrink-0 rounded-full px-1.5 py-0.5 font-medium ring-1 sm:inline-flex ${operatorClass}`}>{operatorName}</span>
                 {result.stay && (
                   <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-stone-100 px-1.5 py-0.5 font-medium text-stone-700 ring-1 ring-stone-200">
                     <Route size={11} /> {result.stay.label}

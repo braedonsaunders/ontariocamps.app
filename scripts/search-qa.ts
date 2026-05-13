@@ -1,4 +1,5 @@
 import { sql } from "@/lib/db/client";
+import { allowedEquipmentSupportsLength } from "@/lib/equipment-normalization";
 import { runSearch, type SearchParams } from "@/lib/search";
 import type { SearchResult, SearchSortMode, SearchStayMode } from "@/lib/types";
 import { eachDate } from "@/lib/utils";
@@ -16,6 +17,8 @@ type SiteFact = {
   max_party_size: number;
   max_equipment_length_ft: number | null;
   amenities: string[];
+  allowed_equipment: unknown;
+  rule_summary: unknown;
   operator_id: string;
   park_slug: string;
 };
@@ -38,10 +41,10 @@ const DATE_WINDOWS = {
 
 const EQUIPMENT = {
   any: {},
-  tent: { site_types: ["tent"] },
-  rv32: { site_types: ["rv"], equipment_length_ft: 32 },
+  tent: { equipment: "tent", site_types: ["tent", "rv", "backcountry"] },
+  rv32: { equipment: "rv", site_types: ["rv"], equipment_length_ft: 32 },
   roofed: { site_types: ["cabin", "yurt"] },
-} satisfies Record<string, Pick<SearchParams, "site_types" | "equipment_length_ft">>;
+} satisfies Record<string, Pick<SearchParams, "equipment" | "site_types" | "equipment_length_ft">>;
 
 const SORTS: SearchSortMode[] = ["distance", "route", "moves", "availability", "freshness", "name", "price"];
 const STAY_MODES: SearchStayMode[] = ["same_site", "same_park", "anywhere"];
@@ -85,6 +88,13 @@ function compareMetrics(a: SearchResult, b: SearchResult, sort: SearchSortMode) 
 
 function allSegments(result: SearchResult) {
   return result.stay?.segments ?? [result];
+}
+
+function ruleSiteLengthFt(raw: unknown): number | null {
+  if (!raw || typeof raw !== "object") return null;
+  const setup = (raw as { setup?: { siteLengthM?: unknown } }).setup;
+  const metres = setup?.siteLengthM;
+  return typeof metres === "number" && Number.isFinite(metres) ? Math.round(metres * 3.28084) : null;
 }
 
 function scenarioList(): Scenario[] {
@@ -256,6 +266,8 @@ async function validateAgainstDatabase(scenario: Scenario, results: SearchResult
       s.max_party_size,
       s.max_equipment_length_ft,
       s.amenities,
+      s.allowed_equipment,
+      s.rule_summary,
       p.operator_id,
       p.slug AS park_slug
     FROM sites s
@@ -291,8 +303,13 @@ async function validateAgainstDatabase(scenario: Scenario, results: SearchResult
       assert(scenario.params.site_types.includes(fact.site_type), `${scenario.name}: site type filter leaked ${fact.site_type}`);
     }
     if (scenario.params.equipment_length_ft) {
+      const allowedSignal = allowedEquipmentSupportsLength(fact.allowed_equipment, scenario.params.equipment_length_ft);
+      const ruleLength = ruleSiteLengthFt(fact.rule_summary);
       assert(
-        fact.max_equipment_length_ft == null || fact.max_equipment_length_ft >= scenario.params.equipment_length_ft,
+        allowedSignal === true ||
+          (allowedSignal == null &&
+            (fact.max_equipment_length_ft == null || fact.max_equipment_length_ft >= scenario.params.equipment_length_ft) &&
+            (ruleLength == null || ruleLength >= scenario.params.equipment_length_ft)),
         `${scenario.name}: equipment length filter leaked ${segment.site.id}`,
       );
     }

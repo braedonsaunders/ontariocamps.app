@@ -21,6 +21,7 @@ export async function GET(req: Request) {
     min_nights: q.has("min_nights") ? Number(q.get("min_nights")) : undefined,
     flexible: q.get("flexible") === "true",
     party_size: q.has("party_size") ? Number(q.get("party_size")) : undefined,
+    equipment: q.get("equipment") ?? undefined,
     site_types: parseList("site_types"),
     amenities: parseList("amenities"),
     operators: parseList("operators"),
@@ -33,7 +34,7 @@ export async function GET(req: Request) {
     group_result_limit: q.has("group_result_limit") ? Number(q.get("group_result_limit")) : undefined,
     limit: q.has("limit") ? Number(q.get("limit")) : undefined,
     offset: q.has("offset") ? Number(q.get("offset")) : undefined,
-    sort: (q.get("sort") as "distance" | "route" | "moves" | "freshness" | "name" | "availability" | "price" | null) ?? undefined,
+    sort: (q.get("sort") as "recommended" | "distance" | "route" | "moves" | "freshness" | "name" | "availability" | "price" | null) ?? undefined,
   });
 
   return NextResponse.json(data, {

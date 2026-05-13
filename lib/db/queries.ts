@@ -324,6 +324,10 @@ export async function upsertPark(p: Park): Promise<void> {
   `;
 }
 
+export async function deleteParkById(id: string): Promise<void> {
+  await sqlDirect()`DELETE FROM parks WHERE id = ${id}`;
+}
+
 export async function upsertCampground(c: Campground): Promise<void> {
   await sqlDirect()`
     INSERT INTO campgrounds (id, park_id, vendor_map_id, name)

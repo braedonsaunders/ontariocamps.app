@@ -8,6 +8,7 @@ import type { EquipmentOption, Site, SiteReview, SiteReviewAggregate } from "@/l
 import type { CalendarRow } from "@/components/availability-calendar";
 import type { SiteStatsEntry } from "@/components/site-field-notes";
 import { SiteTabs } from "@/components/site-tabs";
+import { displayOperatorName } from "@/lib/display";
 import { timeAgo } from "@/lib/utils";
 
 type MonthCalendar = {
@@ -133,6 +134,7 @@ export function SiteDetailFlyout({ details, onClose, checkingLive = false }: Pro
   const activeReviewPayload = reviewPayload?.siteId === details?.site.id ? reviewPayload : null;
   const reviewAggregate = activeReviewPayload?.aggregate ?? fallbackAggregate(details?.stats);
   const reviews = activeReviewPayload?.reviews ?? details?.recentReviews ?? [];
+  const operatorName = displayOperatorName(details?.operatorName);
 
   return (
     <AnimatePresence>
@@ -163,9 +165,9 @@ export function SiteDetailFlyout({ details, onClose, checkingLive = false }: Pro
             <header className="shrink-0 border-b border-stone-200 bg-white/95 backdrop-blur">
               <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
                 <div className="mb-3 flex items-center gap-1.5 text-xs text-stone-500">
-                  <Link href={`/operator/${details.operatorId}`} className="hover:text-stone-900">
-                    {details.operatorName}
-                  </Link>
+	                  <Link href={`/operator/${details.operatorId}`} className="hover:text-stone-900">
+	                    {operatorName}
+	                  </Link>
                   <span>/</span>
                   <span>{details.parkName}</span>
                   <span>/</span>
@@ -207,7 +209,7 @@ export function SiteDetailFlyout({ details, onClose, checkingLive = false }: Pro
                           rel="noopener noreferrer"
                           className="btn-primary hidden sm:inline-flex"
                         >
-                          Book on {details.operatorName} <ArrowUpRight size={14} />
+	                          Book on {operatorName} <ArrowUpRight size={14} />
                         </a>
                       )
                     )}
@@ -229,7 +231,7 @@ export function SiteDetailFlyout({ details, onClose, checkingLive = false }: Pro
                 site={details.site}
                 parkName={details.parkName}
                 parkSlug={details.parkSlug}
-                operatorName={details.operatorName}
+	                operatorName={operatorName}
                 operatorId={details.operatorId}
                 bookingUrl={details.bookingUrl ?? ""}
                 photos={details.site.photos ?? []}

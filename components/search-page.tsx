@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   parseAsArrayOf,
   parseAsBoolean,
@@ -11,6 +12,7 @@ import {
 } from "nuqs";
 import { PRESET_LOCATIONS } from "@/lib/locations";
 import { AMENITIES, type SearchResponse, type SearchResult, type SearchResultGroup } from "@/lib/types";
+import { displayOperatorName } from "@/lib/display";
 import { imageProxyUrl } from "@/lib/image-proxy";
 import { ResultCard } from "@/components/result-card";
 import { OntarioMap, type Park as MapPark } from "@/components/ontario-map";
@@ -54,23 +56,27 @@ const OPERATOR_OPTIONS: { id: string; label: string }[] = [
   { id: "ontario_parks", label: "Ontario Parks" },
   { id: "parks_canada", label: "Parks Canada" },
   { id: "st_lawrence_parks", label: "Parks of the St. Lawrence" },
-  { id: "gtc_lprca", label: "Long Point CA" },
-  { id: "gtc_stclair", label: "St. Clair CA" },
-  { id: "gtc_grca", label: "Grand River CA" },
-  { id: "gtc_trca", label: "Toronto & Region CA" },
-  { id: "gtc_npca", label: "Niagara Peninsula CA" },
-  { id: "gtc_otonabee", label: "Otonabee CA" },
-  { id: "gtc_upperthames", label: "Upper Thames CA" },
-  { id: "gtc_maitland", label: "Maitland Valley CA" },
-  { id: "gtc_catfish", label: "Catfish Creek CA" },
-  { id: "gtc_hca", label: "Hamilton CA" },
+  { id: "gtc_lprca", label: "Long Point Conservation" },
+  { id: "gtc_stclair", label: "St. Clair Conservation" },
+  { id: "gtc_grca", label: "Grand River Conservation" },
+  { id: "gtc_trca", label: "Toronto Region Conservation" },
+  { id: "gtc_npca", label: "Niagara Peninsula Conservation" },
+  { id: "gtc_otonabee", label: "Otonabee Conservation" },
+  { id: "gtc_upperthames", label: "Upper Thames River Conservation" },
+  { id: "gtc_maitland", label: "Maitland Valley Conservation" },
+  { id: "gtc_catfish", label: "Catfish Creek Conservation" },
+  { id: "gtc_hca", label: "Hamilton Conservation" },
 ];
-const SORT_OPTIONS = ["distance", "route", "moves", "availability", "freshness", "name", "price"] as const;
+const SORT_OPTIONS = ["recommended", "distance", "route", "moves", "availability", "freshness", "name", "price"] as const;
 const RAW_RESULTS_PER_PAGE = 60;
 const GROUPS_PER_PAGE = 10;
 const RESULTS_PER_GROUP = 60;
+const MAP_GROUPS_PER_PAGE = 5;
+const INITIAL_GROUP_RESULTS = 8;
+const GROUP_RESULTS_INCREMENT = 8;
 
 const SORT_LABELS: Record<(typeof SORT_OPTIONS)[number], string> = {
+  recommended: "Recommended",
   distance: "Distance from you",
   route: "Route fit",
   moves: "Fewest moves",
@@ -118,17 +124,43 @@ type GeocodeSuggestion = {
 function resolveNear(input: string): { lat: number; lng: number; label: string } | null {
   const q = input.trim().toLowerCase();
   if (!q) return null;
+  const normalizedQ = normalizeLookupTerm(input);
   // Exact key match first
   if (PRESET_LOCATIONS[q]) return PRESET_LOCATIONS[q];
+  if (normalizedQ && PRESET_LOCATIONS[normalizedQ]) return PRESET_LOCATIONS[normalizedQ];
   // Case-insensitive label match
   for (const p of Object.values(PRESET_LOCATIONS)) {
-    if (p.label.toLowerCase() === q) return p;
+    if (p.label.toLowerCase() === q || (normalizedQ && normalizeLookupTerm(p.label) === normalizedQ)) return p;
   }
   // Prefix-on-label so "tor" → Toronto
   for (const p of Object.values(PRESET_LOCATIONS)) {
-    if (p.label.toLowerCase().startsWith(q)) return p;
+    const normalizedLabel = normalizeLookupTerm(p.label);
+    if (p.label.toLowerCase().startsWith(q) || (normalizedQ && normalizedLabel.startsWith(normalizedQ))) return p;
   }
   return null;
+}
+
+function normalizeLookupTerm(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/\b(?:ontario|canada|provincial|park|campground|conservation|area)\b/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function scoreParkLookup(query: string, park: ParkSummary): number {
+  const q = normalizeLookupTerm(query);
+  if (!q) return 0;
+  const name = normalizeLookupTerm(park.name);
+  const haystack = normalizeLookupTerm(`${park.name} ${park.operator} ${park.region}`);
+  const tokens = q.split(" ").filter(Boolean);
+  if (!tokens.every((token) => haystack.includes(token))) return 0;
+  if (name === q) return 100;
+  if (name.startsWith(q)) return 90;
+  if (name.includes(q)) return 80;
+  return 60 + Math.min(tokens.length, 5);
 }
 
 async function geocodeNear(input: string): Promise<GeocodeSuggestion | null> {
@@ -174,14 +206,14 @@ function groupResults(results: SearchResult[], groupBy: (typeof GROUP_OPTIONS)[n
       const parks = Array.from(new Set(resultSegments(result).map((segment) => segment.park.name)));
       key = result.park.slug;
       label = result.park.name;
-      detail = parks.length > 1 ? `${parks.length} parks on route` : `${result.park.operator} · ${result.campground.name}`;
+      detail = parks.length > 1 ? `${parks.length} parks on route` : `${displayOperatorName(result.park.operator)} · ${result.campground.name}`;
     } else if (groupBy === "campground") {
       key = result.campground.id;
       label = result.campground.name;
-      detail = `${result.park.name} · ${result.park.operator}`;
+      detail = `${result.park.name} · ${displayOperatorName(result.park.operator)}`;
     } else if (groupBy === "operator") {
       key = result.park.operator_id;
-      label = result.park.operator;
+      label = displayOperatorName(result.park.operator);
       detail = "Operator network";
     }
 
@@ -233,7 +265,7 @@ export function SearchPage() {
     stay_mode: parseAsStringLiteral(STAY_MODES).withDefault("same_site"),
     view: parseAsStringLiteral(VIEW_MODES).withDefault("list"),
     group_by: parseAsStringLiteral(GROUP_OPTIONS).withDefault("park"),
-    sort: parseAsStringLiteral(SORT_OPTIONS).withDefault("distance"),
+    sort: parseAsStringLiteral(SORT_OPTIONS).withDefault("recommended"),
     page: parseAsInteger.withDefault(1),
   });
 
@@ -248,6 +280,7 @@ export function SearchPage() {
   });
   const [endInput, setEndInput] = useState<string>(() => state.end_loc);
   const [parkInput, setParkInput] = useState("");
+  const [radiusInput, setRadiusInput] = useState(() => String(state.radius_km));
 
   const [data, setData] = useState<SearchResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -258,6 +291,11 @@ export function SearchPage() {
   const [loadingSiteId, setLoadingSiteId] = useState<string | null>(null);
   const [allParks, setAllParks] = useState<ParkSummary[]>([]);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const [activeMapGroupIndex, setActiveMapGroupIndex] = useState(0);
+  const [expandedMapGroup, setExpandedMapGroup] = useState<SearchResultGroup | null>(null);
+  const [visibleGroupResultCounts, setVisibleGroupResultCounts] = useState<Record<string, number>>({});
+  const [submittedState, setSubmittedState] = useState<typeof state | null>(null);
+  const [autoNearParkSlug, setAutoNearParkSlug] = useState<string | null>(null);
   // `searchKey` bumps every time the user explicitly hits Search.
   // The fetch effect depends on it, NOT on filter state — so changing a chip
   // doesn't auto-fire a query.
@@ -281,6 +319,10 @@ export function SearchPage() {
       setSearchKey(1);
     }
   }, []);
+
+  useEffect(() => {
+    setRadiusInput(String(normalizeSearchRadiusKm(state.radius_km)));
+  }, [state.radius_km]);
 
   // Fetch the full parks rollup once on mount. Used to render every park on
   // the map regardless of the current search filters.
@@ -306,11 +348,18 @@ export function SearchPage() {
   async function runSearch() {
     // Commit typed place strings into state only when the user runs a search.
     const query = nearInput.trim();
-    const nextState: Partial<typeof state> = { page: 1, radius_km: normalizeSearchRadiusKm(state.radius_km) };
+    const committedRadius = normalizeSearchRadiusKm(radiusInput);
+    setRadiusInput(String(committedRadius));
+    const nextState: Partial<typeof state> = { page: 1, radius_km: committedRadius };
+    let nextAutoNearParkSlug: string | null = autoNearParkSlug;
     setLocationMessage(null);
 
     if (query.toLowerCase() === "current location" && state.lat != null && state.lng != null) {
       nextState.loc = "Current location";
+      if (autoNearParkSlug) {
+        nextState.park_slugs = state.park_slugs.filter((slug) => slug !== autoNearParkSlug);
+        nextAutoNearParkSlug = null;
+      }
     } else if (query) {
       const preset = resolveNear(query);
       if (preset) {
@@ -319,32 +368,57 @@ export function SearchPage() {
         nextState.loc = key;
         nextState.lat = null;
         nextState.lng = null;
-      } else {
-        setResolvingNear(true);
-        let place: GeocodeSuggestion | null = null;
-        try {
-          place = await geocodeNear(query);
-        } catch {
-          place = null;
-        } finally {
-          setResolvingNear(false);
+        if (autoNearParkSlug) {
+          nextState.park_slugs = state.park_slugs.filter((slug) => slug !== autoNearParkSlug);
+          nextAutoNearParkSlug = null;
         }
-        if (place) {
-          setNearInput(place.label);
-          nextState.loc = place.label;
-          nextState.lat = place.lat;
-          nextState.lng = place.lng;
+      } else {
+        const parkMatch = allParks
+          .map((park) => ({ park, score: scoreParkLookup(query, park) }))
+          .filter((match) => match.score >= 80)
+          .sort((a, b) => b.score - a.score || b.park.available_sites - a.park.available_sites || a.park.name.localeCompare(b.park.name))[0]?.park;
+        if (parkMatch) {
+          setNearInput(parkMatch.name);
+          nextState.loc = parkMatch.name;
+          nextState.lat = parkMatch.lat;
+          nextState.lng = parkMatch.lng;
+          nextState.park_slugs = [parkMatch.slug];
+          nextAutoNearParkSlug = parkMatch.slug;
         } else {
-          nextState.loc = query;
-          nextState.lat = null;
-          nextState.lng = null;
-          setLocationMessage("Showing Ontario-wide results until this place can be resolved.");
+          if (autoNearParkSlug) {
+            nextState.park_slugs = state.park_slugs.filter((slug) => slug !== autoNearParkSlug);
+            nextAutoNearParkSlug = null;
+          }
+          setResolvingNear(true);
+          let place: GeocodeSuggestion | null = null;
+          try {
+            place = await geocodeNear(query);
+          } catch {
+            place = null;
+          } finally {
+            setResolvingNear(false);
+          }
+          if (place) {
+            setNearInput(place.label);
+            nextState.loc = place.label;
+            nextState.lat = place.lat;
+            nextState.lng = place.lng;
+          } else {
+            nextState.loc = query;
+            nextState.lat = null;
+            nextState.lng = null;
+            setLocationMessage("Showing Ontario-wide results until this place can be resolved.");
+          }
         }
       }
     } else {
       nextState.loc = "";
       nextState.lat = null;
       nextState.lng = null;
+      if (autoNearParkSlug) {
+        nextState.park_slugs = state.park_slugs.filter((slug) => slug !== autoNearParkSlug);
+        nextAutoNearParkSlug = null;
+      }
     }
 
     if (state.stay_mode === "anywhere") {
@@ -388,8 +462,11 @@ export function SearchPage() {
     if (state.stay_mode === "anywhere" && (nextState.end_lat != null || state.end_lat != null) && state.sort === "distance") {
       nextState.sort = "route";
     }
+    const committedState = { ...state, ...nextState } as typeof state;
+    setAutoNearParkSlug(nextAutoNearParkSlug);
+    setSubmittedState(committedState);
     try {
-      setState(nextState);
+      await setState(nextState);
     } finally {
       setSearchKey((k) => k + 1);
     }
@@ -406,10 +483,15 @@ export function SearchPage() {
     navigator.geolocation.getCurrentPosition(
       (position) => {
         setNearInput("Current location");
+        const parkSlugs = autoNearParkSlug
+          ? state.park_slugs.filter((slug) => slug !== autoNearParkSlug)
+          : state.park_slugs;
+        setAutoNearParkSlug(null);
         setState({
           loc: "Current location",
           lat: position.coords.latitude,
           lng: position.coords.longitude,
+          park_slugs: parkSlugs,
         });
         setResolvingNear(false);
       },
@@ -421,47 +503,52 @@ export function SearchPage() {
     );
   }
 
-  // Fetch when searchKey changes. We rebuild the URL params off of *state*
-  // at request time so the user can prep filters then hit Search.
+  // Fetch when searchKey changes. We use the submitted snapshot so the request
+  // cannot race behind URL/query-state commits.
   useEffect(() => {
     if (searchKey === 0) return;
-    const searchNights = rangeNights(state.start_date, state.end_date);
-    if (state.stay_mode !== "same_site" && (!searchNights || searchNights < 2)) {
+    const requestState = submittedState ?? state;
+    const requestAnchor =
+      requestState.lat != null && requestState.lng != null
+        ? { lat: requestState.lat, lng: requestState.lng }
+        : resolveNear(requestState.loc);
+    const searchNights = rangeNights(requestState.start_date, requestState.end_date);
+    if (requestState.stay_mode !== "same_site" && (!searchNights || searchNights < 2)) {
       setData({ results: [], total: 0, group_total: 0, groups: [], freshness_p50_minutes: 0 });
       setLoading(false);
       return;
     }
     const sp = new URLSearchParams();
-    if (effectiveAnchor) {
-      sp.set("lat", String(effectiveAnchor.lat));
-      sp.set("lng", String(effectiveAnchor.lng));
+    if (requestAnchor) {
+      sp.set("lat", String(requestAnchor.lat));
+      sp.set("lng", String(requestAnchor.lng));
     }
-    if (state.stay_mode === "anywhere" && state.end_lat != null && state.end_lng != null) {
-      sp.set("end_lat", String(state.end_lat));
-      sp.set("end_lng", String(state.end_lng));
+    if (requestState.stay_mode === "anywhere" && requestState.end_lat != null && requestState.end_lng != null) {
+      sp.set("end_lat", String(requestState.end_lat));
+      sp.set("end_lng", String(requestState.end_lng));
     }
-    sp.set("radius_km", String(normalizeSearchRadiusKm(state.radius_km)));
-    if (state.start_date) sp.set("start_date", state.start_date);
-    if (state.end_date) sp.set("end_date", state.end_date);
-    if (state.flexible) sp.set("flexible", "true");
-    if (state.min_nights) sp.set("min_nights", String(state.min_nights));
-    if (state.party_size) sp.set("party_size", String(state.party_size));
-    if (state.equipment && state.equipment !== "any") sp.set("equipment", state.equipment);
-    if (state.equipment_length_ft) sp.set("equipment_length_ft", String(state.equipment_length_ft));
-    if (state.site_types.length) sp.set("site_types", state.site_types.join(","));
-    if (state.amenities.length) sp.set("amenities", state.amenities.join(","));
-    if (state.operators.length) sp.set("operators", state.operators.join(","));
-    if (state.park_slugs.length) sp.set("park_slugs", state.park_slugs.join(","));
-    sp.set("stay_mode", state.stay_mode);
-    sp.set("sort", state.sort);
-    if (state.group_by === "none") {
+    sp.set("radius_km", String(normalizeSearchRadiusKm(requestState.radius_km)));
+    if (requestState.start_date) sp.set("start_date", requestState.start_date);
+    if (requestState.end_date) sp.set("end_date", requestState.end_date);
+    if (requestState.flexible) sp.set("flexible", "true");
+    if (requestState.min_nights) sp.set("min_nights", String(requestState.min_nights));
+    if (requestState.party_size) sp.set("party_size", String(requestState.party_size));
+    if (requestState.equipment && requestState.equipment !== "any") sp.set("equipment", requestState.equipment);
+    if (requestState.equipment_length_ft) sp.set("equipment_length_ft", String(requestState.equipment_length_ft));
+    if (requestState.site_types.length) sp.set("site_types", requestState.site_types.join(","));
+    if (requestState.amenities.length) sp.set("amenities", requestState.amenities.join(","));
+    if (requestState.operators.length) sp.set("operators", requestState.operators.join(","));
+    if (requestState.park_slugs.length) sp.set("park_slugs", requestState.park_slugs.join(","));
+    sp.set("stay_mode", requestState.stay_mode);
+    sp.set("sort", requestState.sort);
+    if (requestState.group_by === "none") {
       sp.set("group_by", "none");
       sp.set("limit", String(RAW_RESULTS_PER_PAGE));
-      sp.set("offset", String((Math.max(1, state.page) - 1) * RAW_RESULTS_PER_PAGE));
+      sp.set("offset", String((Math.max(1, requestState.page) - 1) * RAW_RESULTS_PER_PAGE));
     } else {
-      sp.set("group_by", state.group_by);
+      sp.set("group_by", requestState.group_by);
       sp.set("group_limit", String(GROUPS_PER_PAGE));
-      sp.set("group_offset", String((Math.max(1, state.page) - 1) * GROUPS_PER_PAGE));
+      sp.set("group_offset", String((Math.max(1, requestState.page) - 1) * GROUPS_PER_PAGE));
       sp.set("group_result_limit", String(RESULTS_PER_GROUP));
     }
 
@@ -494,11 +581,13 @@ export function SearchPage() {
 
   function addParkFilter(park: ParkSummary) {
     if (state.park_slugs.includes(park.slug)) return;
+    setAutoNearParkSlug(null);
     setState({ park_slugs: [...state.park_slugs, park.slug], page: 1 });
     setParkInput("");
   }
 
   function removeParkFilter(slug: string) {
+    if (autoNearParkSlug === slug) setAutoNearParkSlug(null);
     setState({ park_slugs: state.park_slugs.filter((item) => item !== slug), page: 1 });
   }
 
@@ -517,7 +606,9 @@ export function SearchPage() {
   }
 
   async function goToPage(page: number) {
-    await setState({ page: Math.max(1, page) });
+    const nextPage = Math.max(1, page);
+    setSubmittedState({ ...state, page: nextPage } as typeof state);
+    await setState({ page: nextPage });
     setSearchKey((k) => k + 1);
   }
 
@@ -529,6 +620,60 @@ export function SearchPage() {
       flexible: next,
       min_nights: next ? (state.min_nights ?? defaultNights) : null,
     });
+  }
+
+  async function resetFilters() {
+    setEndInput("");
+    setParkInput("");
+    setRadiusInput(String(DEFAULT_SEARCH_RADIUS_KM));
+    setAutoNearParkSlug(null);
+    const nextState = {
+      ...state,
+      end_loc: "",
+      end_lat: null,
+      end_lng: null,
+      radius_km: DEFAULT_SEARCH_RADIUS_KM,
+      flexible: false,
+      min_nights: null,
+      party_size: 2,
+      equipment: "any",
+      equipment_length_ft: null,
+      site_types: [],
+      amenities: [],
+      operators: [],
+      park_slugs: [],
+      stay_mode: "same_site",
+      group_by: "park",
+      sort: "recommended",
+      page: 1,
+    } as typeof state;
+    setSubmittedState(nextState);
+    await setState({
+      end_loc: nextState.end_loc,
+      end_lat: nextState.end_lat,
+      end_lng: nextState.end_lng,
+      radius_km: nextState.radius_km,
+      flexible: nextState.flexible,
+      min_nights: nextState.min_nights,
+      party_size: nextState.party_size,
+      equipment: nextState.equipment,
+      equipment_length_ft: nextState.equipment_length_ft,
+      site_types: nextState.site_types,
+      amenities: nextState.amenities,
+      operators: nextState.operators,
+      park_slugs: nextState.park_slugs,
+      stay_mode: nextState.stay_mode,
+      group_by: nextState.group_by,
+      sort: nextState.sort,
+      page: nextState.page,
+    });
+    if (data) setSearchKey((k) => k + 1);
+  }
+
+  function commitRadiusInput(value = radiusInput) {
+    const normalized = normalizeSearchRadiusKm(value);
+    setRadiusInput(String(normalized));
+    setState({ radius_km: normalized, page: 1 });
   }
 
   async function openSiteDetails(siteId: string, bookingUrl?: string) {
@@ -599,6 +744,52 @@ export function SearchPage() {
     () => allParks.map((park) => ({ ...park, description: null, hero_image_url: null })),
     [allParks],
   );
+  const searchMapParks = useMemo<MapPark[]>(() => {
+    if (!data) return mapParks;
+    const baseBySlug = new Map(allParks.map((park) => [park.slug, park]));
+    const bySlug = new Map<string, MapPark>();
+
+    for (const result of data.results) {
+      const seenInResult = new Set<string>();
+      for (const segment of result.stay?.segments ?? [result]) {
+        if (seenInResult.has(segment.park.slug)) continue;
+        seenInResult.add(segment.park.slug);
+        const base = baseBySlug.get(segment.park.slug);
+        const existing = bySlug.get(segment.park.slug);
+        if (existing) {
+          existing.match_count = (existing.match_count ?? 0) + 1;
+          existing.available_sites = existing.match_count;
+          existing.total_sites = Math.max(existing.total_sites, existing.match_count);
+          if (segment.park.distance_km != null) {
+            existing.distance_km = Math.min(existing.distance_km ?? Infinity, segment.park.distance_km);
+          }
+          if (!existing.hero_image_url && segment.park.hero_image_url) existing.hero_image_url = segment.park.hero_image_url;
+          continue;
+        }
+        bySlug.set(segment.park.slug, {
+          slug: segment.park.slug,
+          name: segment.park.name,
+          description: null,
+          hero_image_url: segment.park.hero_image_url ?? null,
+          operator: segment.park.operator,
+          operator_id: segment.park.operator_id,
+          region: base?.region ?? "",
+          lat: base?.lat ?? segment.park.location.lat,
+          lng: base?.lng ?? segment.park.location.lng,
+          total_sites: Math.max(1, base?.total_sites ?? 1),
+          available_sites: 1,
+          availability_pct: 100,
+          match_count: 1,
+          distance_km: segment.park.distance_km,
+        });
+      }
+    }
+
+    return Array.from(bySlug.values()).sort((a, b) => {
+      if (a.distance_km != null && b.distance_km != null && a.distance_km !== b.distance_km) return a.distance_km - b.distance_km;
+      return (b.match_count ?? 0) - (a.match_count ?? 0) || a.name.localeCompare(b.name);
+    });
+  }, [allParks, data, mapParks]);
   const parkSuggestions = useMemo(() => {
     const query = parkInput.trim().toLowerCase();
     if (!query) return [];
@@ -617,6 +808,63 @@ export function SearchPage() {
     () => (data?.groups ? data.groups : data ? groupResults(data.results, state.group_by) : []),
     [data, state.group_by],
   );
+  const mapParkGroups = useMemo(
+    () => (data ? groupResults(data.results, "park") : []),
+    [data],
+  );
+  const clampedActiveMapGroupIndex = mapParkGroups.length
+    ? Math.min(activeMapGroupIndex, mapParkGroups.length - 1)
+    : 0;
+  const activeMapGroup = mapParkGroups[clampedActiveMapGroupIndex] ?? null;
+  const activeMapPage = Math.floor(clampedActiveMapGroupIndex / MAP_GROUPS_PER_PAGE);
+  const visibleMapParkGroups = mapParkGroups.slice(
+    activeMapPage * MAP_GROUPS_PER_PAGE,
+    activeMapPage * MAP_GROUPS_PER_PAGE + MAP_GROUPS_PER_PAGE,
+  );
+  const visibleMapPageStart = mapParkGroups.length ? activeMapPage * MAP_GROUPS_PER_PAGE + 1 : 0;
+  const visibleMapPageEnd = Math.min((activeMapPage + 1) * MAP_GROUPS_PER_PAGE, mapParkGroups.length);
+
+  useEffect(() => {
+    setActiveMapGroupIndex(0);
+    setExpandedMapGroup(null);
+    setVisibleGroupResultCounts({});
+  }, [data]);
+
+  useEffect(() => {
+    if (!expandedMapGroup) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setExpandedMapGroup(null);
+    }
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [expandedMapGroup]);
+
+  function focusMapPark(slug: string | undefined) {
+    if (!slug) return;
+    const index = mapParkGroups.findIndex((group) => group.key === slug);
+    if (index >= 0) setActiveMapGroupIndex(index);
+  }
+
+  function visibleResultCountForGroup(renderKey: string, group: SearchResultGroup) {
+    return Math.min(visibleGroupResultCounts[renderKey] ?? INITIAL_GROUP_RESULTS, group.results.length);
+  }
+
+  function loadMoreGroupResults(renderKey: string, loadedCount: number) {
+    setVisibleGroupResultCounts((current) => {
+      const nextCount = Math.min(loadedCount, (current[renderKey] ?? INITIAL_GROUP_RESULTS) + GROUP_RESULTS_INCREMENT);
+      return { ...current, [renderKey]: nextCount };
+    });
+  }
+
+  const expandedMapGroupKey = expandedMapGroup ? `map:${expandedMapGroup.key}` : "";
+  const expandedMapVisibleResultCount = expandedMapGroup
+    ? visibleResultCountForGroup(expandedMapGroupKey, expandedMapGroup)
+    : 0;
   const groupTotal = data?.group_total ?? groupedResults.length;
   const groupUnit = state.group_by === "park" ? "parks" : state.group_by === "campground" ? "campgrounds" : "operators";
   const pageStart = data
@@ -706,11 +954,6 @@ export function SearchPage() {
                 {state.flexible && <span className="chip shrink-0 bg-lake-50 text-lake-800 ring-1 ring-lake-200">Flexible</span>}
                 {state.stay_mode !== "same_site" && <span className="chip shrink-0 bg-forest-50 text-forest-800 ring-1 ring-forest-200">{selectedStayMode.label}</span>}
                 {advancedFilterCount > 0 && <span className="chip shrink-0 bg-stone-100 text-stone-700 ring-1 ring-stone-200">{advancedFilterCount} filters</span>}
-                {selectedParks.map((park) => (
-                  <span key={park.slug} className="chip max-w-[10rem] shrink-0 bg-white text-stone-700 ring-1 ring-stone-200">
-                    <span className="truncate">{park.name}</span>
-                  </span>
-                ))}
               </div>
               <div className="inline-flex shrink-0 rounded-md bg-stone-100 p-1 ring-1 ring-stone-200">
                 {VIEW_MODES.map((mode) => {
@@ -796,7 +1039,7 @@ export function SearchPage() {
                       >
                         <span className="min-w-0">
                           <span className="block truncate text-sm font-semibold text-stone-950">{park.name}</span>
-                          <span className="block truncate text-xs text-stone-500">{park.operator} · {park.region}</span>
+                          <span className="block truncate text-xs text-stone-500">{displayOperatorName(park.operator)} · {park.region}</span>
                         </span>
                         <span className="shrink-0 text-xs font-semibold text-forest-700">{park.available_sites.toLocaleString()} open</span>
                       </button>
@@ -865,28 +1108,6 @@ export function SearchPage() {
                 )}
               </button>
             </div>
-
-            {selectedParks.length > 0 && (
-              <div className="mt-1.5 flex flex-wrap gap-1.5 border-t border-stone-100 pt-1.5">
-                {selectedParks.map((park) => (
-                  <span
-                    key={park.slug}
-                    className="inline-flex min-h-7 max-w-full items-center gap-1.5 rounded-full bg-forest-50 px-2.5 py-1 text-xs font-semibold text-forest-800 ring-1 ring-forest-200"
-                  >
-                    <MapPin size={12} className="shrink-0" />
-                    <span className="truncate">{park.name}</span>
-                    <button
-                      type="button"
-                      onClick={() => removeParkFilter(park.slug)}
-                      className="rounded-full p-0.5 text-forest-700 transition hover:bg-forest-100"
-                      aria-label={`Remove ${park.name}`}
-                    >
-                      <X size={12} />
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
 
             <div className="mt-1.5 grid grid-cols-3 gap-1.5">
               <details className="group rounded-md bg-stone-50 ring-1 ring-stone-200">
@@ -994,13 +1215,13 @@ export function SearchPage() {
                       min={MIN_SEARCH_RADIUS_KM}
                       max={MAX_SEARCH_RADIUS_KM}
                       step={10}
-                      value={state.radius_km}
-                      onChange={(e) => setState({ radius_km: Number(e.target.value), page: 1 })}
-                      onBlur={(e) => setState({ radius_km: normalizeSearchRadiusKm(e.currentTarget.value), page: 1 })}
+                      value={radiusInput}
+                      onChange={(e) => setRadiusInput(e.target.value)}
+                      onBlur={(e) => commitRadiusInput(e.currentTarget.value)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {
                           e.preventDefault();
-                          void setState({ radius_km: normalizeSearchRadiusKm(e.currentTarget.value), page: 1 }).then(() => runSearch());
+                          void runSearch();
                         }
                       }}
                     />
@@ -1203,7 +1424,7 @@ export function SearchPage() {
                         >
                           <span className="min-w-0">
                             <span className="block truncate text-sm font-semibold text-stone-950">{park.name}</span>
-                            <span className="block truncate text-xs text-stone-500">{park.operator} · {park.region}</span>
+                            <span className="block truncate text-xs text-stone-500">{displayOperatorName(park.operator)} · {park.region}</span>
                           </span>
                           <span className="shrink-0 text-xs font-semibold text-forest-700">{park.available_sites.toLocaleString()} open</span>
                         </button>
@@ -1215,28 +1436,6 @@ export function SearchPage() {
                     </div>
                   )}
                 </div>
-
-                {selectedParks.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {selectedParks.map((park) => (
-                      <span
-                        key={park.slug}
-                        className="inline-flex min-h-7 max-w-full items-center gap-1.5 rounded-full bg-forest-50 px-2.5 py-1 text-xs font-semibold text-forest-800 ring-1 ring-forest-200"
-                      >
-                        <MapPin size={12} className="shrink-0" />
-                        <span className="truncate">{park.name}</span>
-                        <button
-                          type="button"
-                          onClick={() => removeParkFilter(park.slug)}
-                          className="rounded-full p-0.5 text-forest-700 transition hover:bg-forest-100"
-                          aria-label={`Remove ${park.name}`}
-                        >
-                          <X size={12} />
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                )}
 
                 <div className="grid grid-cols-2 gap-2">
                   <label className="rounded-md bg-stone-50 px-3 py-2 ring-1 ring-stone-200 focus-within:bg-white focus-within:ring-forest-600">
@@ -1360,9 +1559,9 @@ export function SearchPage() {
                         min={MIN_SEARCH_RADIUS_KM}
                         max={MAX_SEARCH_RADIUS_KM}
                         step={10}
-                        value={state.radius_km}
-                        onChange={(e) => setState({ radius_km: Number(e.target.value), page: 1 })}
-                        onBlur={(e) => setState({ radius_km: normalizeSearchRadiusKm(e.currentTarget.value), page: 1 })}
+                        value={radiusInput}
+                        onChange={(e) => setRadiusInput(e.target.value)}
+                        onBlur={(e) => commitRadiusInput(e.currentTarget.value)}
                       />
                       <span className="text-stone-500">km</span>
                     </span>
@@ -1561,9 +1760,25 @@ export function SearchPage() {
                   Type a location, choose dates and equipment, then search. Results land here with map context beside them.
                 </div>
               )}
-              {groupedMode ? groupedResults.map((group) => (
-                <details key={group.key} className="group overflow-hidden rounded-lg bg-stone-50 ring-1 ring-stone-200">
-                  <summary className="cursor-pointer list-none transition hover:bg-white">
+              {groupedMode ? groupedResults.map((group) => {
+                const groupFocusSlug = state.group_by === "park" ? group.key : group.results[0]?.park.slug;
+                const activeInMap = groupFocusSlug != null && activeMapGroup?.key === groupFocusSlug;
+                const groupRenderKey = `${state.group_by}:${group.key}`;
+                const visibleResultCount = visibleResultCountForGroup(groupRenderKey, group);
+                const hiddenLoadedCount = group.results.length - visibleResultCount;
+                return (
+                <details
+                  key={group.key}
+                  className={`group overflow-hidden rounded-lg bg-stone-50 ring-1 transition ${
+                    activeInMap ? "ring-forest-300" : "ring-stone-200"
+                  }`}
+                  onMouseEnter={() => focusMapPark(groupFocusSlug)}
+                  onFocus={() => focusMapPark(groupFocusSlug)}
+                >
+                  <summary
+                    className={`cursor-pointer list-none transition ${activeInMap ? "bg-forest-50/70" : "hover:bg-white"}`}
+                    onClick={() => focusMapPark(groupFocusSlug)}
+                  >
                     {state.group_by === "park" && group.hero_image_url && (
                       <div className="relative h-8 overflow-hidden bg-stone-200 sm:h-9">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1584,39 +1799,64 @@ export function SearchPage() {
                         <div className="truncate text-sm font-semibold text-stone-950">{group.label}</div>
                         <div className="truncate text-xs text-stone-500">
                           {group.detail}
-                          {group.distance != null ? ` · ${group.distance.toFixed(0)} km away` : ""}
                         </div>
                       </div>
-                      <span className="rounded-full bg-white px-1.5 py-0.5 text-[11px] font-semibold text-stone-600 ring-1 ring-stone-200">
-                        {group.result_count.toLocaleString()}
-                      </span>
-                    </div>
-                  </summary>
-                  <div className="space-y-2 border-t border-stone-200 p-2">
-                    {group.results.map((r, index) => (
-                      <ResultCard
-                        key={`${r.site.id}-${r.availability.nights.join("-")}-${r.stay?.mode ?? "single"}-${index}`}
-                        result={r}
-                        onOpenResult={openResult}
-                        onOpenSiteDetails={openSiteDetails}
-                        loadingSiteId={loadingSiteId}
-                      />
-                    ))}
-                    {group.result_count > group.results.length && (
-                      <div className="rounded-md bg-white px-3 py-2 text-xs text-stone-500 ring-1 ring-stone-200">
-                        Showing first {group.results.length} results in this group. Refine filters to narrow it further.
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        {state.group_by === "park" && group.distance != null && Number.isFinite(group.distance) && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-white px-1.5 py-0.5 text-[11px] font-semibold text-stone-600 ring-1 ring-stone-200">
+                            <MapPin size={10} /> {group.distance.toFixed(0)} km
+                          </span>
+                        )}
+                        <span className="rounded-full bg-white px-1.5 py-0.5 text-[11px] font-semibold text-stone-600 ring-1 ring-stone-200">
+                          {group.result_count.toLocaleString()}
+                        </span>
                       </div>
+                    </div>
+	                  </summary>
+	                  <div className="space-y-2 border-t border-stone-200 p-2">
+	                    {group.results.slice(0, visibleResultCount).map((r, index) => (
+	                      <div
+	                        key={`${r.site.id}-${r.availability.nights.join("-")}-${r.stay?.mode ?? "single"}-${index}`}
+	                        onMouseEnter={() => focusMapPark(r.park.slug)}
+                        onFocus={() => focusMapPark(r.park.slug)}
+                      >
+                        <ResultCard
+                          result={r}
+                          onOpenResult={openResult}
+                          onOpenSiteDetails={openSiteDetails}
+                          loadingSiteId={loadingSiteId}
+	                        />
+	                      </div>
+	                    ))}
+	                    {hiddenLoadedCount > 0 && (
+	                      <button
+	                        type="button"
+	                        onClick={() => loadMoreGroupResults(groupRenderKey, group.results.length)}
+	                        className="flex w-full items-center justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-stone-700 ring-1 ring-stone-200 transition hover:bg-stone-50"
+	                      >
+	                        Load more {Math.min(GROUP_RESULTS_INCREMENT, hiddenLoadedCount).toLocaleString()} of {hiddenLoadedCount.toLocaleString()}
+	                      </button>
+	                    )}
+	                    {visibleResultCount >= group.results.length && group.result_count > group.results.length && (
+	                      <div className="rounded-md bg-white px-3 py-2 text-xs text-stone-500 ring-1 ring-stone-200">
+	                        Showing first {group.results.length} results in this group. Refine filters to narrow it further.
+	                      </div>
                     )}
                   </div>
                 </details>
-              )) : data?.results.map((r, index) => (
-                <ResultCard
+              );}) : data?.results.map((r, index) => (
+                <div
                   key={`${r.site.id}-${r.availability.nights.join("-")}-${r.stay?.mode ?? "single"}-${index}`}
-                  result={r}
-                  onOpenResult={openResult}
-                  onOpenSiteDetails={openSiteDetails}
-                  loadingSiteId={loadingSiteId}
-                />
+                  onMouseEnter={() => focusMapPark(r.park.slug)}
+                  onFocus={() => focusMapPark(r.park.slug)}
+                >
+                  <ResultCard
+                    result={r}
+                    onOpenResult={openResult}
+                    onOpenSiteDetails={openSiteDetails}
+                    loadingSiteId={loadingSiteId}
+                  />
+                </div>
               ))}
 
               {data && (hasPreviousPage || hasNextPage) && !loading && (
@@ -1656,14 +1896,222 @@ export function SearchPage() {
             }`}
           >
             <OntarioMap
-              parks={mapParks}
+              parks={data ? searchMapParks : mapParks}
               anchor={effectiveAnchor}
               radiusKm={state.radius_km}
-              matchedSlugs={matchedSlugs}
+              matchedSlugs={data ? null : matchedSlugs}
+              mode={data ? "search" : "explore"}
+              resultLabel={resultWord}
+              showCategoryFilters={!data}
+              fitToMarkers={Boolean(data?.results.length)}
+              focusedSlug={activeMapGroup?.key ?? null}
+              focusZoom={9.1}
+              onParkSelect={(slug) => {
+                const index = mapParkGroups.findIndex((group) => group.key === slug);
+                if (index >= 0) setActiveMapGroupIndex(index);
+              }}
             />
+            {data && (
+              <div className="pointer-events-none absolute bottom-2 left-2 right-2 z-20 sm:bottom-3 sm:left-3 sm:right-3 lg:hidden">
+                <div className="pointer-events-auto max-h-[36dvh] overflow-y-auto rounded-lg bg-white/95 p-2 shadow-xl shadow-stone-950/10 ring-1 ring-stone-200 backdrop-blur">
+                  <div className="flex items-center justify-between gap-3 px-1 pb-2 text-xs">
+                    <div className="min-w-0">
+                      <div className="truncate font-semibold text-stone-950">Matching parks</div>
+                      <div className="text-[11px] text-stone-500">
+                        {visibleMapPageStart}-{visibleMapPageEnd} of {mapParkGroups.length.toLocaleString()}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-stone-500">
+                      <button
+                        type="button"
+                        onClick={() => setActiveMapGroupIndex((index) => Math.max(0, index - MAP_GROUPS_PER_PAGE))}
+                        disabled={activeMapPage === 0}
+                        className="inline-flex h-6 w-6 items-center justify-center rounded bg-white text-stone-600 ring-1 ring-stone-200 transition hover:bg-stone-50 disabled:opacity-35"
+                        aria-label="Previous map result page"
+                      >
+                        <ChevronRight size={12} className="rotate-180" />
+                      </button>
+                      <span className="min-w-11 text-center text-[11px] font-semibold text-stone-500">
+                        {clampedActiveMapGroupIndex + 1}/{Math.max(1, mapParkGroups.length)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setActiveMapGroupIndex((index) => Math.min(mapParkGroups.length - 1, index + MAP_GROUPS_PER_PAGE))}
+                        disabled={visibleMapPageEnd >= mapParkGroups.length}
+                        className="inline-flex h-6 w-6 items-center justify-center rounded bg-white text-stone-600 ring-1 ring-stone-200 transition hover:bg-stone-50 disabled:opacity-35"
+                        aria-label="Next map result page"
+                      >
+                        <ChevronRight size={12} />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    {visibleMapParkGroups.length > 0 ? visibleMapParkGroups.map((group, localIndex) => {
+                      const groupIndex = activeMapPage * MAP_GROUPS_PER_PAGE + localIndex;
+                      const active = group.key === activeMapGroup?.key;
+                      return (
+                        <div
+                          key={group.key}
+                          className={`group/map-row flex w-full items-center gap-1.5 rounded-md p-1.5 text-left ring-1 transition hover:bg-stone-50 hover:ring-stone-300 ${
+                            active ? "bg-forest-50 ring-forest-300" : "bg-white ring-stone-200"
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => setActiveMapGroupIndex(groupIndex)}
+                            className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                          >
+                            {group.hero_image_url ? (
+                              <span className="relative h-10 w-12 shrink-0 overflow-hidden rounded bg-stone-100">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={imageProxyUrl(group.hero_image_url, "thumb") ?? group.hero_image_url}
+                                  alt=""
+                                  className="absolute inset-0 h-full w-full object-cover"
+                                  loading="lazy"
+                                  decoding="async"
+                                  fetchPriority="low"
+                                />
+                              </span>
+                            ) : (
+                              <span className="flex h-10 w-12 shrink-0 items-center justify-center rounded bg-forest-50 text-forest-700">
+                                <MapPin size={15} />
+                              </span>
+                            )}
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm font-semibold text-stone-950">{group.label}</span>
+                              <span className="mt-0.5 flex min-w-0 items-center gap-2 text-[11px] text-stone-500">
+                                {group.distance != null && Number.isFinite(group.distance) && (
+                                  <span className="inline-flex shrink-0 items-center gap-1">
+                                    <MapPin size={10} /> {group.distance.toFixed(0)} km
+                                  </span>
+                                )}
+                                <span className="truncate">{group.detail}</span>
+                              </span>
+                            </span>
+                          </button>
+                          <span className="shrink-0 rounded-full bg-stone-50 px-2 py-0.5 text-[11px] font-semibold text-stone-600 ring-1 ring-stone-200">
+                            {group.result_count.toLocaleString()}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveMapGroupIndex(groupIndex);
+                              setExpandedMapGroup(group);
+                            }}
+                            className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md ring-1 transition ${
+                              active
+                                ? "bg-forest-700 text-white ring-forest-700"
+                                : "bg-white text-stone-600 ring-stone-200 hover:bg-stone-50"
+                            }`}
+                            aria-label={`Show sites at ${group.label}`}
+                          >
+                            <ChevronRight size={15} />
+                          </button>
+                        </div>
+                    );}) : (
+                      <div className="rounded-md border border-dashed border-stone-300 bg-stone-50 p-4 text-center text-xs text-stone-500">
+                        No mapped parks on this page.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </section>
         </div>
       </div>
+
+      {expandedMapGroup && (
+        <div
+          className="fixed inset-0 z-[45] flex flex-col bg-stone-50 lg:hidden"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="mobile-map-park-title"
+        >
+          <header className="shrink-0 bg-white shadow-sm ring-1 ring-stone-200">
+            {expandedMapGroup.hero_image_url && (
+              <div className="relative h-24 overflow-hidden bg-stone-200">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={imageProxyUrl(expandedMapGroup.hero_image_url, "strip") ?? expandedMapGroup.hero_image_url}
+                  alt=""
+                  className="absolute inset-0 h-full w-full object-cover"
+                  loading="lazy"
+                  decoding="async"
+                  fetchPriority="low"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-stone-950/35 via-transparent to-transparent" />
+              </div>
+            )}
+            <div className="px-4 py-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-stone-500">
+                    {expandedMapGroup.result_count.toLocaleString()} {resultWord}
+                    {expandedMapGroup.distance != null && Number.isFinite(expandedMapGroup.distance)
+                      ? ` · ${expandedMapGroup.distance.toFixed(0)} km`
+                      : ""}
+                  </div>
+                  <h2 id="mobile-map-park-title" className="mt-0.5 truncate text-xl font-semibold text-stone-950">
+                    {expandedMapGroup.label}
+                  </h2>
+                  <div className="mt-0.5 truncate text-sm text-stone-500">{expandedMapGroup.detail}</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setExpandedMapGroup(null)}
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-stone-100 text-stone-700 transition hover:bg-stone-200"
+                  aria-label="Close park sites"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                <Link
+                  href={`/park/${expandedMapGroup.key}`}
+                  className="inline-flex h-9 items-center justify-center rounded-md bg-stone-900 px-3 text-sm font-semibold text-white transition hover:bg-stone-800"
+                >
+                  Park page
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => setExpandedMapGroup(null)}
+                  className="inline-flex h-9 items-center justify-center rounded-md bg-white px-3 text-sm font-semibold text-stone-700 ring-1 ring-stone-200 transition hover:bg-stone-50"
+                >
+                  Back to map
+                </button>
+              </div>
+            </div>
+          </header>
+
+          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3 pb-6">
+            {expandedMapGroup.results.slice(0, expandedMapVisibleResultCount).map((result, index) => (
+              <ResultCard
+                key={`${result.site.id}-${result.availability.nights.join("-")}-${result.stay?.mode ?? "single"}-${index}`}
+                result={result}
+                onOpenResult={openResult}
+                onOpenSiteDetails={openSiteDetails}
+                loadingSiteId={loadingSiteId}
+              />
+            ))}
+            {expandedMapGroup.results.length > expandedMapVisibleResultCount && (
+              <button
+                type="button"
+                onClick={() => loadMoreGroupResults(expandedMapGroupKey, expandedMapGroup.results.length)}
+                className="flex w-full items-center justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-stone-700 ring-1 ring-stone-200 transition hover:bg-stone-50"
+              >
+                Load more {Math.min(GROUP_RESULTS_INCREMENT, expandedMapGroup.results.length - expandedMapVisibleResultCount).toLocaleString()} of {(expandedMapGroup.results.length - expandedMapVisibleResultCount).toLocaleString()}
+              </button>
+            )}
+            {expandedMapVisibleResultCount >= expandedMapGroup.results.length && expandedMapGroup.result_count > expandedMapGroup.results.length && (
+              <div className="rounded-md bg-white px-3 py-2 text-xs text-stone-500 ring-1 ring-stone-200">
+                Showing first {expandedMapGroup.results.length} results in this park. Refine filters to narrow it further.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       <SiteDetailFlyout
         details={selectedSiteDetails}

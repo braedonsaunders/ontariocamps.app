@@ -57,6 +57,10 @@ function decodeAvailability(row: { availability: number; processedAvailability?:
   return "reserved";
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 type FetchTarget = {
   site_id: string;
   vendor_site_id: string;
@@ -241,7 +245,10 @@ export async function refreshAvailability(
         const cacheKey = `${t.operator_id}:${t.vendor_park_id}:${night}`;
         let promise = campspotAvailabilityCache.get(cacheKey);
         if (!promise) {
-          promise = client.getAvailability({ parkId: t.vendor_park_id, startDate: night });
+          promise = (async () => {
+            if (requestDelayMs > 0) await sleep(requestDelayMs + Math.floor(Math.random() * 100));
+            return client.getAvailability({ parkId: t.vendor_park_id, startDate: night });
+          })();
           campspotAvailabilityCache.set(cacheKey, promise);
         }
         const rows = await promise;

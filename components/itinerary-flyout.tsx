@@ -4,6 +4,7 @@ import Link from "next/link";
 import { AnimatePresence, motion } from "motion/react";
 import { ArrowUpRight, Calendar, ChevronLeft, MapPin, Route, X } from "lucide-react";
 import type { SearchResult, SearchResultSegment } from "@/lib/types";
+import { displayOperatorName } from "@/lib/display";
 import { imageProxyUrl } from "@/lib/image-proxy";
 
 type Props = {
@@ -146,7 +147,7 @@ export function ItineraryFlyout({ result, onClose, onOpenSiteDetails }: Props) {
                           >
                             {segment.park.name}
                           </Link>
-                          <span className="text-sm text-stone-500">{segment.park.operator}</span>
+                          <span className="text-sm text-stone-500">{displayOperatorName(segment.park.operator)}</span>
                         </div>
                         <div className="mt-0.5 text-sm text-stone-600">
                           {segment.campground.name} / Site {segment.site.name}

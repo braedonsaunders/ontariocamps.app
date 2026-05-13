@@ -27,8 +27,8 @@ export const SEARCH_EQUIPMENT_OPTIONS: SearchEquipmentOption[] = [
     id: "tent",
     label: "Tent",
     shortLabel: "Tent",
-    description: "Tent-friendly campsites",
-    siteTypes: ["tent"],
+    description: "Tent-friendly campsites, including standard drive-in sites",
+    siteTypes: ["tent", "rv", "backcountry"],
   },
   {
     id: "small_rv",

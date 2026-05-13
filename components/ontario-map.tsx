@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
+import { displayOperatorName } from "@/lib/display";
 import { Tent, MapPin, ChevronUp, Circle, Diamond, Square, type LucideIcon } from "lucide-react";
 
 const MAP_STYLE = "https://tiles.openfreemap.org/styles/positron";
@@ -24,6 +25,8 @@ export type Park = {
   total_sites: number;
   available_sites: number;
   availability_pct: number;
+  match_count?: number;
+  distance_km?: number;
 };
 
 type ParkCategory = (typeof CATEGORY_ORDER)[number];
@@ -37,6 +40,13 @@ type OntarioMapProps = {
   anchor?: { lat: number; lng: number } | null;
   radiusKm?: number;
   matchedSlugs?: Set<string> | null;
+  mode?: "explore" | "search";
+  resultLabel?: string;
+  showCategoryFilters?: boolean;
+  fitToMarkers?: boolean;
+  focusedSlug?: string | null;
+  focusZoom?: number;
+  onParkSelect?: (slug: string) => void;
 };
 
 const CATEGORY_META: Record<ParkCategory, {
@@ -102,7 +112,7 @@ function safeImageUrl(value: string | null | undefined): string {
 function parkPreviewDescription(park: Pick<Park, "description" | "operator">): string {
   const description = normalizeText(park.description);
   if (description) return truncateText(description, 220);
-  return `Browse campsite availability, site details, and booking links from ${park.operator}.`;
+  return `Browse campsite availability, site details, and booking links from ${displayOperatorName(park.operator)}.`;
 }
 
 function categoryForOperator(operatorId: string): ParkCategory {
@@ -112,10 +122,23 @@ function categoryForOperator(operatorId: string): ParkCategory {
   return "conservation";
 }
 
-export function OntarioMap({ parks, anchor = null, radiusKm = 0, matchedSlugs = null }: OntarioMapProps) {
+export function OntarioMap({
+  parks,
+  anchor = null,
+  radiusKm = 0,
+  matchedSlugs = null,
+  mode = "explore",
+  resultLabel = "matches",
+  showCategoryFilters = true,
+  fitToMarkers = false,
+  focusedSlug = null,
+  focusZoom = 9,
+  onParkSelect,
+}: OntarioMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const selectedRef = useRef<SelectedPark | null>(null);
+  const onParkSelectRef = useRef(onParkSelect);
   const [selected, setSelected] = useState<SelectedPark | null>(null);
   const [enabledCategories, setEnabledCategories] = useState<Record<ParkCategory, boolean>>({
     provincial: true,
@@ -147,12 +170,14 @@ export function OntarioMap({ parks, anchor = null, radiusKm = 0, matchedSlugs = 
             name: p.name,
             description,
             hero_image_url: safeImageUrl(p.hero_image_url),
-            operator: p.operator,
+            operator: displayOperatorName(p.operator),
             operator_id: p.operator_id,
             region: p.region,
             total_sites: p.total_sites,
             available_sites: p.available_sites,
             availability_pct: p.availability_pct,
+            match_count: p.match_count ?? p.available_sites,
+            distance_km: p.distance_km ?? null,
             color: colorForAvailability(p.availability_pct),
             category,
             category_label: meta.shortLabel,
@@ -170,6 +195,10 @@ export function OntarioMap({ parks, anchor = null, radiusKm = 0, matchedSlugs = 
   }, [selected]);
 
   useEffect(() => {
+    onParkSelectRef.current = onParkSelect;
+  }, [onParkSelect]);
+
+  useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
     const map = new maplibregl.Map({
       container: containerRef.current,
@@ -178,6 +207,7 @@ export function OntarioMap({ parks, anchor = null, radiusKm = 0, matchedSlugs = 
       zoom: INITIAL_ZOOM,
       attributionControl: { compact: true },
     });
+    mapRef.current = map;
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
     map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
     // Force a resize after the layout settles. If the container had 0 height
@@ -420,6 +450,7 @@ export function OntarioMap({ parks, anchor = null, radiusKm = 0, matchedSlugs = 
           category,
         };
         setSelected(park);
+        onParkSelectRef.current?.(park.slug);
         const sel = map.getSource("selected-park") as maplibregl.GeoJSONSource | undefined;
         sel?.setData({
           type: "FeatureCollection",
@@ -502,7 +533,6 @@ export function OntarioMap({ parks, anchor = null, radiusKm = 0, matchedSlugs = 
         map.getCanvas().style.cursor = "";
       });
 
-      mapRef.current = map;
       // Initial source push (features may have been computed before "load" finished)
       const src = map.getSource("parks") as maplibregl.GeoJSONSource | undefined;
       src?.setData({ type: "FeatureCollection", features });
@@ -523,6 +553,73 @@ export function OntarioMap({ parks, anchor = null, radiusKm = 0, matchedSlugs = 
     const src = map.getSource("parks") as maplibregl.GeoJSONSource | undefined;
     if (src) src.setData({ type: "FeatureCollection", features });
   }, [features]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !fitToMarkers || focusedSlug || features.length === 0) return;
+    const apply = () => {
+      const coordinates = features.map((feature) => feature.geometry.coordinates as [number, number]);
+      if (coordinates.length === 0) return;
+      const bounds = coordinates.reduce(
+        (next, coordinate) => next.extend(coordinate),
+        new maplibregl.LngLatBounds(coordinates[0], coordinates[0]),
+      );
+      map.fitBounds(bounds, {
+        duration: 450,
+        maxZoom: 8.5,
+        padding: window.innerWidth < 768
+          ? { top: 96, right: 28, bottom: 210, left: 28 }
+          : { top: 92, right: 360, bottom: 72, left: 72 },
+      });
+    };
+    if (map.isStyleLoaded()) apply();
+    else map.once("load", apply);
+  }, [features, fitToMarkers, focusedSlug]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !focusedSlug) return;
+    const feature = features.find((item) => String(item.properties.slug) === focusedSlug);
+    const parkRow = parks.find((park) => park.slug === focusedSlug);
+    if (!feature || !parkRow) return;
+    const [lng, lat] = feature.geometry.coordinates as [number, number];
+    const category = categoryForOperator(String(parkRow.operator_id));
+    const selectedPark: SelectedPark = {
+      ...parkRow,
+      description: parkRow.description ?? "",
+      hero_image_url: safeImageUrl(parkRow.hero_image_url),
+      category,
+    };
+    setSelected(selectedPark);
+
+    const apply = () => {
+      const isMobileSearch = mode === "search" && window.innerWidth < 1024;
+      const verticalOffset = isMobileSearch ? -Math.round(window.innerHeight * 0.18) : 0;
+      map.easeTo({
+        center: [lng, lat],
+        zoom: Math.max(map.getZoom(), focusZoom),
+        duration: 450,
+        offset: [0, verticalOffset],
+      });
+      const sel = map.getSource("selected-park") as maplibregl.GeoJSONSource | undefined;
+      sel?.setData({
+        type: "FeatureCollection",
+        features: [
+          {
+            type: "Feature",
+            properties: {
+              color: colorForAvailability(selectedPark.availability_pct),
+              category_glyph: CATEGORY_META[selectedPark.category].glyph,
+              category: selectedPark.category,
+            },
+            geometry: { type: "Point", coordinates: [lng, lat] },
+          },
+        ],
+      });
+    };
+    if (map.isStyleLoaded()) apply();
+    else map.once("load", apply);
+  }, [features, focusedSlug, focusZoom, mode, parks]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -550,18 +647,20 @@ export function OntarioMap({ parks, anchor = null, radiusKm = 0, matchedSlugs = 
           },
         ],
       });
-      const radiusDeg = Math.max(1, radiusKm) / 111;
-      map.fitBounds(
-        [
-          [anchor.lng - radiusDeg * 1.5, anchor.lat - radiusDeg],
-          [anchor.lng + radiusDeg * 1.5, anchor.lat + radiusDeg],
-        ],
-        { padding: 60, duration: 400, maxZoom: 9 },
-      );
+      if (!focusedSlug) {
+        const radiusDeg = Math.max(1, radiusKm) / 111;
+        map.fitBounds(
+          [
+            [anchor.lng - radiusDeg * 1.5, anchor.lat - radiusDeg],
+            [anchor.lng + radiusDeg * 1.5, anchor.lat + radiusDeg],
+          ],
+          { padding: 60, duration: 400, maxZoom: 9 },
+        );
+      }
     };
     if (map.isStyleLoaded()) apply();
     else map.once("load", apply);
-  }, [anchor, radiusKm]);
+  }, [anchor, focusedSlug, radiusKm]);
 
   useEffect(() => {
     if (!selected || enabledCategories[selected.category]) return;
@@ -585,6 +684,7 @@ export function OntarioMap({ parks, anchor = null, radiusKm = 0, matchedSlugs = 
         ref={containerRef}
         style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0 }}
       />
+      {showCategoryFilters && (
       <div className="absolute left-3 right-3 top-3 z-10 sm:left-4 sm:right-auto">
         <div className="inline-flex max-w-full flex-wrap items-center gap-1.5 rounded-lg bg-stone-50/95 p-1.5 text-xs shadow-lg shadow-stone-950/10 ring-1 ring-stone-200 backdrop-blur">
           {CATEGORY_ORDER.map((category) => {
@@ -628,7 +728,8 @@ export function OntarioMap({ parks, anchor = null, radiusKm = 0, matchedSlugs = 
           </span>
         </div>
       </div>
-      {selected && (
+      )}
+      {selected && mode !== "search" && (
         <div className="absolute bottom-4 left-4 right-4 z-10 max-h-[calc(100dvh-10rem)] overflow-y-auto sm:right-auto sm:w-[28rem] card shadow-xl">
           {selectedImage && (
             <Link href={`/park/${selected.slug}`} className="relative block h-40 overflow-hidden bg-stone-100">
@@ -695,8 +796,12 @@ export function OntarioMap({ parks, anchor = null, radiusKm = 0, matchedSlugs = 
             </p>
             <div className="mt-4 grid grid-cols-3 gap-3 text-xs">
               <div>
-                <div className="text-stone-500 flex items-center gap-1"><Tent size={10} /> Sites</div>
-                <div className="font-semibold tabular-nums">{selected.total_sites.toLocaleString()}</div>
+                <div className="text-stone-500 flex items-center gap-1">
+                  <Tent size={10} /> Sites
+                </div>
+                <div className="font-semibold tabular-nums">
+                  {selected.total_sites.toLocaleString()}
+                </div>
               </div>
               <div>
                 <div className="text-stone-500">Open</div>
@@ -708,8 +813,12 @@ export function OntarioMap({ parks, anchor = null, radiusKm = 0, matchedSlugs = 
                 </div>
               </div>
               <div>
-                <div className="text-stone-500 flex items-center gap-1"><MapPin size={10} /> Location</div>
-                <div className="font-semibold tabular-nums">{selected.lat.toFixed(4)}, {selected.lng.toFixed(4)}</div>
+                <div className="text-stone-500 flex items-center gap-1">
+                  <MapPin size={10} /> Location
+                </div>
+                <div className="font-semibold tabular-nums">
+                  {selected.lat.toFixed(4)}, {selected.lng.toFixed(4)}
+                </div>
               </div>
             </div>
             <Link

@@ -9,6 +9,7 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "qa:search": "tsx scripts/search-qa.ts",
+    "discover:campspot-ontario": "tsx scripts/discover-campspot-ontario.ts",
     "ingest": "tsx scripts/ingest.ts",
     "ingest:metadata": "tsx scripts/ingest-metadata.ts",
     "ingest:availability": "tsx scripts/ingest-availability.ts"

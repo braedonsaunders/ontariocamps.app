@@ -7,6 +7,8 @@
 import { sql } from "./db/client";
 import { PRESET_LOCATIONS } from "./locations";
 import { buildBookingUrl } from "./booking-url";
+import { displayOperatorName } from "./display";
+import { allowedEquipmentSupportsLength } from "./equipment-normalization";
 import type {
   SearchResponse,
   SearchResult,
@@ -38,6 +40,7 @@ export type SearchParams = {
   min_nights?: number;
   flexible?: boolean;
   party_size?: number;
+  equipment?: string;
   site_types?: string[];
   amenities?: string[];
   operators?: string[];
@@ -54,7 +57,7 @@ export type SearchParams = {
 };
 
 const DEFAULT_LIMIT = 30;
-const SEASONAL_SITE_LABEL_PATTERN = "(^|[^a-z])seasonal([^a-z]|$)";
+const SEASONAL_SITE_LABEL_PATTERN = "(^|[^a-z])(seasonal|full[-\\s]?season|monthly|annual|permanent|long[-\\s]?term)([^a-z]|$)";
 
 function emptySearchResponse(): SearchResponse {
   return {
@@ -78,8 +81,10 @@ type SearchRow = {
   site_name: string;
   site_type: string;
   site_type_label: string | null;
+  site_max_equipment_length_ft: number | null;
   site_amenities: string[];
   site_rule_summary: unknown;
+  site_allowed_equipment: unknown;
   site_photos: unknown;
   campground_id: string;
   campground_name: string;
@@ -182,6 +187,23 @@ function prepareRow(r: SearchRow, params: SearchParams): PreparedRow {
       distance_km,
     },
   };
+}
+
+function ruleSiteLengthFt(raw: unknown): number | null {
+  if (!raw || typeof raw !== "object") return null;
+  const setup = (raw as { setup?: { siteLengthM?: unknown } }).setup;
+  const metres = setup?.siteLengthM;
+  return typeof metres === "number" && Number.isFinite(metres) ? Math.round(metres * 3.28084) : null;
+}
+
+function supportsRequestedEquipmentLength(row: SearchRow, requestedLengthFt: number | null | undefined): boolean {
+  if (!requestedLengthFt || requestedLengthFt <= 0) return true;
+  const allowedSignal = allowedEquipmentSupportsLength(row.site_allowed_equipment, requestedLengthFt);
+  if (allowedSignal != null) return allowedSignal;
+  if (typeof row.site_max_equipment_length_ft === "number") return row.site_max_equipment_length_ft >= requestedLengthFt;
+  const siteLengthFt = ruleSiteLengthFt(row.site_rule_summary);
+  if (siteLengthFt != null) return siteLengthFt >= requestedLengthFt;
+  return true;
 }
 
 function buildSegment(row: PreparedRow, nights: string[], params: SearchParams): SearchResultSegment {
@@ -397,10 +419,70 @@ function resultSegments(result: SearchResult): SearchResultSegment[] {
   return result.stay?.segments ?? [result];
 }
 
+type RecommendationStats = {
+  parkResultCounts: Map<string, number>;
+  operatorResultCounts: Map<string, number>;
+  newestCheckedAt: number;
+};
+
+function buildRecommendationStats(results: SearchResult[]): RecommendationStats {
+  const parkResultCounts = new Map<string, number>();
+  const operatorResultCounts = new Map<string, number>();
+  let newestCheckedAt = 0;
+
+  for (const result of results) {
+    parkResultCounts.set(result.park.slug, (parkResultCounts.get(result.park.slug) ?? 0) + 1);
+    operatorResultCounts.set(result.park.operator_id, (operatorResultCounts.get(result.park.operator_id) ?? 0) + 1);
+    newestCheckedAt = Math.max(newestCheckedAt, new Date(result.availability.last_checked_at).getTime());
+  }
+
+  return { parkResultCounts, operatorResultCounts, newestCheckedAt };
+}
+
+function recommendedScore(result: SearchResult, params: SearchParams, stats: RecommendationStats): number {
+  const routeKm = result.stay?.route_distance_km ?? result.park.distance_km;
+  const radiusKm = Math.max(25, params.radius_km ?? 250);
+  const distancePenalty = routeKm != null ? Math.min(routeKm / radiusKm, 1.4) * 62 : 18;
+  const parkMatches = stats.parkResultCounts.get(result.park.slug) ?? 1;
+  const operatorMatches = stats.operatorResultCounts.get(result.park.operator_id) ?? 1;
+  const availabilityBonus = Math.min(34, Math.log1p(parkMatches) * 6.5);
+  const operatorDepthBonus = Math.min(10, Math.log1p(operatorMatches) * 1.5);
+  const nightBonus = Math.min(12, result.availability.nights.length * 3);
+  const movesPenalty = (result.stay?.move_count ?? 0) * 2.5;
+  const checkedAt = new Date(result.availability.last_checked_at).getTime();
+  const freshnessPenalty =
+    stats.newestCheckedAt > 0 && Number.isFinite(checkedAt)
+      ? Math.min(8, Math.max(0, stats.newestCheckedAt - checkedAt) / 3_600_000)
+      : 0;
+
+  return distancePenalty + movesPenalty + freshnessPenalty - availabilityBonus - operatorDepthBonus - nightBonus;
+}
+
+function diversifyRecommendedGroups(groups: SearchResultGroup[]): SearchResultGroup[] {
+  const remaining = [...groups];
+  const output: SearchResultGroup[] = [];
+
+  while (remaining.length > 0) {
+    const recentOperators = new Set(output.slice(-2).map((group) => group.results[0]?.park.operator_id).filter(Boolean));
+    const candidateIndex = remaining.findIndex((group, index) => {
+      if (index > 6) return false;
+      const operatorId = group.results[0]?.park.operator_id;
+      return operatorId ? !recentOperators.has(operatorId) : true;
+    });
+    const index = candidateIndex > 0 ? candidateIndex : 0;
+    output.push(remaining.splice(index, 1)[0]);
+  }
+
+  return output;
+}
+
 function groupSearchResults(
   results: SearchResult[],
   groupBy: SearchGroupMode,
   resultLimit: number,
+  sortKey: SearchSortMode,
+  params: SearchParams,
+  stats: RecommendationStats,
 ): SearchResultGroup[] {
   const groups = new Map<string, SearchResultGroup>();
 
@@ -412,14 +494,14 @@ function groupSearchResults(
       const parks = Array.from(new Set(resultSegments(result).map((segment) => segment.park.name)));
       key = result.park.slug;
       label = result.park.name;
-      detail = parks.length > 1 ? `${parks.length} parks on route` : `${result.park.operator} / ${result.campground.name}`;
+      detail = parks.length > 1 ? `${parks.length} parks on route` : `${displayOperatorName(result.park.operator)} / ${result.campground.name}`;
     } else if (groupBy === "campground") {
       key = result.campground.id;
       label = result.campground.name;
-      detail = `${result.park.name} / ${result.park.operator}`;
+      detail = `${result.park.name} / ${displayOperatorName(result.park.operator)}`;
     } else if (groupBy === "operator") {
       key = result.park.operator_id;
-      label = result.park.operator;
+      label = displayOperatorName(result.park.operator);
       detail = "Operator network";
     }
 
@@ -442,7 +524,19 @@ function groupSearchResults(
     }
   }
 
-  return Array.from(groups.values());
+  const grouped = Array.from(groups.values());
+  if (sortKey !== "recommended") return grouped;
+
+  const sorted = grouped.sort((a, b) => {
+    const aFirst = a.results[0];
+    const bFirst = b.results[0];
+    if (!aFirst || !bFirst) return a.label.localeCompare(b.label);
+    return recommendedScore(aFirst, params, stats) - recommendedScore(bFirst, params, stats)
+      || (b.result_count - a.result_count)
+      || a.label.localeCompare(b.label);
+  });
+
+  return diversifyRecommendedGroups(sorted);
 }
 
 export async function runSearch(params: SearchParams): Promise<SearchResponse> {
@@ -498,8 +592,10 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
         s.name AS site_name,
         s.site_type,
         s.site_type_label,
+        s.max_equipment_length_ft AS site_max_equipment_length_ft,
         s.amenities AS site_amenities,
         s.rule_summary AS site_rule_summary,
+        s.allowed_equipment AS site_allowed_equipment,
         s.photos AS site_photos,
         s.campground_id,
         c.name AS campground_name,
@@ -521,7 +617,10 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
         ${params.operators && params.operators.length > 0 ? client`AND p.operator_id = ANY(${params.operators})` : client``}
         ${params.party_size && params.party_size > 0 ? client`AND s.max_party_size >= ${params.party_size}` : client``}
         ${params.site_types && params.site_types.length > 0 ? client`AND s.site_type = ANY(${params.site_types})` : client``}
-        AND NOT (COALESCE(s.site_type_label, s.site_type, '') ~* ${SEASONAL_SITE_LABEL_PATTERN})
+        AND NOT (concat_ws(' ', s.name, s.site_type_label, s.site_type, s.description) ~* ${SEASONAL_SITE_LABEL_PATTERN})
+        ${params.equipment === "tent"
+          ? client`AND COALESCE((s.rule_summary->'policies'->>'noTents')::boolean, false) IS NOT TRUE`
+          : client``}
         ${params.equipment_length_ft && params.equipment_length_ft > 0
           ? client`AND (s.max_equipment_length_ft IS NULL OR s.max_equipment_length_ft >= ${params.equipment_length_ft})`
           : client``}
@@ -539,8 +638,10 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
         s.name,
         s.site_type,
         s.site_type_label,
+        s.max_equipment_length_ft,
         s.amenities,
         s.rule_summary,
+        s.allowed_equipment,
         s.photos,
         s.campground_id,
         c.name
@@ -552,6 +653,7 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
   const freshnessSamples: number[] = [];
   const preparedRows: PreparedRow[] = [];
   for (const row of rows) {
+    if (!supportsRequestedEquipmentLength(row, params.equipment_length_ft)) continue;
     const prepared = prepareRow(row, params);
     if (params.amenities && params.amenities.length > 0) {
       let ok = true;
@@ -618,13 +720,20 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
     }
   }
 
-  const sortKey = params.sort ?? (hasAnchor ? "distance" : "freshness");
+  const sortKey = params.sort ?? "recommended";
+  const recommendationStats = buildRecommendationStats(results);
   const routeMetric = (result: SearchResult) => result.stay?.route_distance_km ?? result.park.distance_km ?? Number.POSITIVE_INFINITY;
   results.sort((a, b) => {
     const aMoves = a.stay?.move_count ?? 0;
     const bMoves = b.stay?.move_count ?? 0;
     const aParks = a.stay?.park_count ?? 1;
     const bParks = b.stay?.park_count ?? 1;
+    if (sortKey === "recommended") {
+      return recommendedScore(a, params, recommendationStats) - recommendedScore(b, params, recommendationStats)
+        || aParks - bParks
+        || aMoves - bMoves
+        || a.park.name.localeCompare(b.park.name);
+    }
     if (sortKey === "distance" && a.park.distance_km != null && b.park.distance_km != null) {
       return a.park.distance_km - b.park.distance_km || aParks - bParks || aMoves - bMoves;
     }
@@ -651,7 +760,7 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
     const groupOffset = Math.max(0, params.group_offset ?? 0);
     const groupLimit = Math.max(1, params.group_limit ?? 10);
     const groupResultLimit = Math.max(1, params.group_result_limit ?? 60);
-    const groups = groupSearchResults(results, groupBy, groupResultLimit);
+    const groups = groupSearchResults(results, groupBy, groupResultLimit, sortKey, params, recommendationStats);
     const visibleGroups = groups.slice(groupOffset, groupOffset + groupLimit);
 
     return {

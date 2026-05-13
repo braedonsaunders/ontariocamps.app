@@ -2,6 +2,13 @@ type Env = {
   SUPABASE_URL: string;
   SUPABASE_SERVICE_ROLE_KEY: string;
   REFRESH_API_KEY: string;
+  SCHEDULED_OPERATOR_IDS?: string;
+  SCHEDULED_MAX_SITES?: string;
+  SCHEDULED_CONCURRENCY?: string;
+  SCHEDULED_DELAY_MS?: string;
+  SCHEDULED_DAYS?: string;
+  SCHEDULED_MODE?: string;
+  SCHEDULED_DISABLE_HOT_FALLBACK?: string;
 };
 
 type ScheduledEvent = { cron?: string; scheduledTime?: number };
@@ -118,6 +125,7 @@ type RefreshResult = {
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:121.0) Gecko/20100101 Firefox/121.0";
+const CAMPSPOT_REQUEST_DELAY_MS = 150;
 const IMAGE_CACHE_SECONDS = 60 * 60 * 24 * 30;
 const IMAGE_ALLOWED_HOSTS = new Set([
   "images.unsplash.com",
@@ -203,6 +211,33 @@ function addDays(date: string, days: number): string {
 function clampInt(value: number | undefined, fallback: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return fallback;
   return Math.max(min, Math.min(max, Math.floor(value as number)));
+}
+
+function envInt(value: string | undefined, min: number, max: number): number | undefined {
+  if (value == null || value.trim() === "") return undefined;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return undefined;
+  return Math.max(min, Math.min(max, Math.floor(parsed)));
+}
+
+function envCsv(value: string | undefined): string[] {
+  return (value ?? "")
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function envRefreshMode(value: string | undefined): RefreshMode | undefined {
+  if (
+    value === "hot"
+    || value === "near"
+    || value === "planning"
+    || value === "deep"
+    || value === "ondemand"
+  ) {
+    return value;
+  }
+  return undefined;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -570,13 +605,15 @@ async function fetchCampspotRows(target: FetchTarget, night: string, caches: Pro
     url.searchParams.set("guests", "guests0,2,0");
     url.searchParams.set("useCustomParkData", "true");
     url.searchParams.set("includeUnavailable", "true");
-    promise = fetch(url, {
-      headers: campspotHeaders(baseUrl, target.park_slug),
-      signal: AbortSignal.timeout(20_000),
-    }).then(async (response) => {
+    promise = (async () => {
+      await sleep(CAMPSPOT_REQUEST_DELAY_MS + Math.floor(Math.random() * 100));
+      const response = await fetch(url, {
+        headers: campspotHeaders(baseUrl, target.park_slug),
+        signal: AbortSignal.timeout(20_000),
+      });
       if (!response.ok) throw new Error(`Campspot HTTP ${response.status} at ${url.hostname}${url.pathname}`);
       return await response.json() as CampspotAvailabilityRow[];
-    });
+    })();
     caches.campspotAvailability.set(cacheKey, promise);
   }
   return promise;
@@ -853,13 +890,24 @@ export default {
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
     const minute = new Date().getUTCMinutes();
     const hour = new Date().getUTCHours();
-    const mode: RefreshMode = minute === 0
+    const mode: RefreshMode = envRefreshMode(env.SCHEDULED_MODE) ?? (minute === 0
       ? (hour % 2 === 0 ? "planning" : "deep")
-      : (minute === 15 || minute === 45 ? "near" : "hot");
+      : (minute === 15 || minute === 45 ? "near" : "hot"));
+    const operatorIds = envCsv(env.SCHEDULED_OPERATOR_IDS);
+    const scheduledOptions: RefreshOptions = {
+      mode,
+      skipRollups: true,
+      operatorIds: operatorIds.length ? operatorIds : undefined,
+      maxSites: envInt(env.SCHEDULED_MAX_SITES, 0, 1000),
+      concurrency: envInt(env.SCHEDULED_CONCURRENCY, 1, 8),
+      delayMs: envInt(env.SCHEDULED_DELAY_MS, 0, 5000),
+      days: envInt(env.SCHEDULED_DAYS, 1, 180),
+    };
     const run = (async () => {
-      const primary = await refreshAvailability(env, { mode, skipRollups: true });
-      if (mode !== "hot" && primary.sitesSeen === 0) {
-        const fallback = await refreshAvailability(env, { mode: "hot", skipRollups: true });
+      const primary = await refreshAvailability(env, scheduledOptions);
+      const hotFallbackDisabled = env.SCHEDULED_DISABLE_HOT_FALLBACK === "true";
+      if (mode !== "hot" && primary.sitesSeen === 0 && !hotFallbackDisabled) {
+        const fallback = await refreshAvailability(env, { ...scheduledOptions, mode: "hot" });
         return { primary, fallback };
       }
       return { primary };

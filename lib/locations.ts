@@ -11,6 +11,7 @@ export const PRESET_LOCATIONS: Record<string, { lat: number; lng: number; label:
   sudbury: { lat: 46.4917, lng: -80.993, label: "Sudbury" },
   kingston: { lat: 44.2312, lng: -76.481, label: "Kingston" },
   barrie: { lat: 44.3894, lng: -79.6903, label: "Barrie" },
+  nobel: { lat: 45.4167, lng: -80.1, label: "Nobel" },
   thunder_bay: { lat: 48.3809, lng: -89.2477, label: "Thunder Bay" },
   windsor: { lat: 42.3149, lng: -83.0364, label: "Windsor" },
 };

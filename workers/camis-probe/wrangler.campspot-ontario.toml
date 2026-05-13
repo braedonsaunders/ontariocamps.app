@@ -1,0 +1,13 @@
+name = "ontariocamps-availability-campspot-ontario"
+main = "src/index.ts"
+compatibility_date = "2026-05-12"
+workers_dev = true
+
+[vars]
+SCHEDULED_OPERATOR_IDS = "campspot_ontario_private"
+SCHEDULED_MAX_SITES = "160"
+SCHEDULED_CONCURRENCY = "3"
+SCHEDULED_DELAY_MS = "300"
+
+[triggers]
+crons = ["2,12,22,32,42,52 * * * *"]
