@@ -14,6 +14,7 @@ const nextConfig: NextConfig = {
       // Operator marketing-site logos.
       { protocol: "https", hostname: "www.ontarioparks.ca" },
       { protocol: "https", hostname: "parks.canada.ca" },
+      { protocol: "https", hostname: "pcweb2.azureedge.net" },
       { protocol: "https", hostname: "www.grandriver.ca" },
       { protocol: "https", hostname: "trca.ca" },
       { protocol: "https", hostname: "npca.ca" },
