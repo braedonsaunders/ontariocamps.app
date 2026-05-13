@@ -51,6 +51,18 @@ function todayPlus(days: number) {
   return d.toISOString().slice(0, 10);
 }
 
+function addIsoDays(value: string, days: number): string {
+  const date = new Date(`${value}T00:00:00Z`);
+  if (!Number.isFinite(date.getTime())) return value;
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function normalizeCheckoutDate(startDate: string, endDate: string): string {
+  if (!startDate || !Number.isFinite(Date.parse(`${startDate}T00:00:00Z`))) return endDate;
+  return !endDate || endDate <= startDate ? addIsoDays(startDate, 1) : endDate;
+}
+
 export function HomeSearch() {
   const router = useRouter();
   const [locationQuery, setLocationQuery] = useState("");
@@ -69,6 +81,12 @@ export function HomeSearch() {
 
   const selectedEquipment = useMemo(() => searchEquipmentById(equipment), [equipment]);
   const EquipmentIcon = EQUIPMENT_ICONS[selectedEquipment.id];
+  const minimumEndDate = start ? addIsoDays(start, 1) : undefined;
+
+  function updateStartDate(nextStart: string) {
+    setStart(nextStart);
+    setEnd((currentEnd) => normalizeCheckoutDate(nextStart, currentEnd));
+  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -293,7 +311,7 @@ export function HomeSearch() {
             type="date"
             className="w-full min-w-0 bg-transparent text-sm font-semibold text-stone-950 outline-none [color-scheme:light]"
             value={start}
-            onChange={(e) => setStart(e.target.value)}
+            onChange={(e) => updateStartDate(e.target.value)}
           />
         </label>
 
@@ -304,8 +322,9 @@ export function HomeSearch() {
           <input
             type="date"
             className="w-full min-w-0 bg-transparent text-sm font-semibold text-stone-950 outline-none [color-scheme:light]"
+            min={minimumEndDate}
             value={end}
-            onChange={(e) => setEnd(e.target.value)}
+            onChange={(e) => setEnd(normalizeCheckoutDate(start, e.target.value))}
           />
         </label>
 

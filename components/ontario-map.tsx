@@ -45,6 +45,7 @@ type OntarioMapProps = {
   mode?: "explore" | "search";
   resultLabel?: string;
   showCategoryFilters?: boolean;
+  showCompactCategoryLegend?: boolean;
   showPrivateFilter?: boolean;
   fitToMarkers?: boolean;
   focusedSlug?: string | null;
@@ -140,6 +141,7 @@ export function OntarioMap({
   mode = "explore",
   resultLabel = "matches",
   showCategoryFilters = true,
+  showCompactCategoryLegend = false,
   showPrivateFilter = false,
   fitToMarkers = false,
   focusedSlug = null,
@@ -165,6 +167,8 @@ export function OntarioMap({
     for (const park of parks) counts[categoryForPark(park)] += 1;
     return counts;
   }, [parks]);
+
+  const compactLegendCategories = CATEGORY_ORDER.filter((category) => categoryCounts[category] > 0);
 
   const filteredParks = useMemo(
     () => parks.filter((park) => enabledCategories[categoryForPark(park)]),
@@ -706,49 +710,65 @@ export function OntarioMap({
         style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0 }}
       />
       {showCategoryFilters && (
-      <div className="absolute left-3 right-3 top-3 z-10 sm:left-4 sm:right-auto">
-        <div className="inline-flex max-w-full flex-wrap items-center gap-1.5 rounded-lg bg-stone-50/95 p-1.5 text-xs shadow-lg shadow-stone-950/10 ring-1 ring-stone-200 backdrop-blur">
-          {filterCategories.map((category) => {
-            const meta = CATEGORY_META[category];
-            const Icon = meta.icon;
-            const enabled = enabledCategories[category];
-            return (
-              <label
-                key={category}
-                className={`inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-md px-2.5 font-medium transition ${
-                  enabled
-                    ? "bg-white text-stone-900 shadow-sm ring-1 ring-stone-300"
-                    : "text-stone-500 hover:bg-white/80 hover:text-stone-900"
-                }`}
-                title={meta.label}
-              >
-                <input
-                  type="checkbox"
-                  className="sr-only"
-                  checked={enabled}
-                  onChange={(event) =>
-                    setEnabledCategories((current) => ({
-                      ...current,
-                      [category]: event.target.checked,
-                    }))
-                  }
-                />
-                <Icon
-                  size={13}
-                  fill="none"
-                />
-                <span>{meta.shortLabel}</span>
-                <span className={enabled ? "text-stone-500" : "text-stone-400"}>
-                  {categoryCounts[category]}
-                </span>
-              </label>
-            );
-          })}
-          <span className="hidden px-2 text-stone-400 sm:inline">
-            {visibleCount} shown
-          </span>
+        <div className="absolute left-3 right-3 top-3 z-10 sm:left-4 sm:right-auto">
+          <div className="inline-flex max-w-full flex-wrap items-center gap-1.5 rounded-lg bg-stone-50/95 p-1.5 text-xs shadow-lg shadow-stone-950/10 ring-1 ring-stone-200 backdrop-blur">
+            {filterCategories.map((category) => {
+              const meta = CATEGORY_META[category];
+              const Icon = meta.icon;
+              const enabled = enabledCategories[category];
+              return (
+                <label
+                  key={category}
+                  className={`inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-md px-2.5 font-medium transition ${
+                    enabled
+                      ? "bg-white text-stone-900 shadow-sm ring-1 ring-stone-300"
+                      : "text-stone-500 hover:bg-white/80 hover:text-stone-900"
+                  }`}
+                  title={meta.label}
+                >
+                  <input
+                    type="checkbox"
+                    className="sr-only"
+                    checked={enabled}
+                    onChange={(event) =>
+                      setEnabledCategories((current) => ({
+                        ...current,
+                        [category]: event.target.checked,
+                      }))
+                    }
+                  />
+                  <Icon
+                    size={13}
+                    fill="none"
+                  />
+                  <span>{meta.shortLabel}</span>
+                  <span className={enabled ? "text-stone-500" : "text-stone-400"}>
+                    {categoryCounts[category]}
+                  </span>
+                </label>
+              );
+            })}
+            <span className="hidden px-2 text-stone-400 sm:inline">
+              {visibleCount} shown
+            </span>
+          </div>
         </div>
-      </div>
+      )}
+      {showCompactCategoryLegend && compactLegendCategories.length > 0 && (
+        <div className="pointer-events-none absolute left-2 top-2 z-10 max-w-[calc(100%-1rem)] sm:left-3 sm:top-3">
+          <div className="inline-flex max-w-full flex-wrap items-center gap-x-2 gap-y-1 rounded-md bg-white/90 px-2 py-1.5 text-[10px] font-semibold text-stone-700 shadow-lg shadow-stone-950/10 ring-1 ring-stone-200 backdrop-blur">
+            {compactLegendCategories.map((category) => {
+              const meta = CATEGORY_META[category];
+              const Icon = meta.icon;
+              return (
+                <span key={category} className="inline-flex items-center gap-1 whitespace-nowrap" title={meta.label}>
+                  <Icon size={10} fill="none" />
+                  {meta.shortLabel}
+                </span>
+              );
+            })}
+          </div>
+        </div>
       )}
       {selected && mode !== "search" && (
         <div className="absolute bottom-4 left-4 right-4 z-10 max-h-[calc(100dvh-10rem)] overflow-y-auto sm:right-auto sm:w-[28rem] card shadow-xl">

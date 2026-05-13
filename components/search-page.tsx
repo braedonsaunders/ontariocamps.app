@@ -133,8 +133,14 @@ function rangeNights(start: string, end: string): number | null {
 
 function addIsoDays(value: string, days: number): string {
   const date = new Date(`${value}T00:00:00Z`);
+  if (!Number.isFinite(date.getTime())) return value;
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
+}
+
+function normalizeCheckoutDate(startDate: string, endDate: string): string {
+  if (!startDate || !Number.isFinite(Date.parse(`${startDate}T00:00:00Z`))) return endDate;
+  return !endDate || endDate <= startDate ? addIsoDays(startDate, 1) : endDate;
 }
 
 function sameDayCheckInMessage(startDate: string): string | null {
@@ -318,6 +324,13 @@ export function SearchPage() {
   useEffect(() => {
     setPartyInput(String(state.party_size));
   }, [state.party_size]);
+
+  useEffect(() => {
+    const repairedEndDate = normalizeCheckoutDate(state.start_date, state.end_date);
+    if (repairedEndDate !== state.end_date) {
+      void setState({ end_date: repairedEndDate, page: 1 });
+    }
+  }, [setState, state.end_date, state.start_date]);
 
   // Fetch the full parks rollup once on mount. Used to render every park on
   // the map regardless of the current search filters.
@@ -712,6 +725,21 @@ export function SearchPage() {
       equipment: option.id,
       equipment_length_ft: option.equipmentLengthFt ?? null,
       site_types: option.siteTypes,
+      page: 1,
+    });
+  }
+
+  function updateStartDate(nextStartDate: string) {
+    setState({
+      start_date: nextStartDate,
+      end_date: normalizeCheckoutDate(nextStartDate, state.end_date),
+      page: 1,
+    });
+  }
+
+  function updateEndDate(nextEndDate: string) {
+    setState({
+      end_date: normalizeCheckoutDate(state.start_date, nextEndDate),
       page: 1,
     });
   }
@@ -1299,7 +1327,7 @@ export function SearchPage() {
                   className="w-full min-w-0 bg-transparent text-sm font-semibold text-stone-950 outline-none"
                   min={minimumCheckInDate}
                   value={state.start_date}
-                  onChange={(e) => setState({ start_date: e.target.value, page: 1 })}
+                  onChange={(e) => updateStartDate(e.target.value)}
                 />
               </div>
 
@@ -1312,7 +1340,7 @@ export function SearchPage() {
                   className="w-full min-w-0 bg-transparent text-sm font-semibold text-stone-950 outline-none"
                   min={minimumCheckOutDate}
                   value={state.end_date}
-                  onChange={(e) => setState({ end_date: e.target.value, page: 1 })}
+                  onChange={(e) => updateEndDate(e.target.value)}
                 />
               </div>
 
@@ -1725,7 +1753,7 @@ export function SearchPage() {
                       className="w-full min-w-0 bg-transparent text-sm font-semibold text-stone-950 outline-none"
                       min={minimumCheckInDate}
                       value={state.start_date}
-                      onChange={(e) => setState({ start_date: e.target.value, page: 1 })}
+                      onChange={(e) => updateStartDate(e.target.value)}
                     />
                   </label>
                   <label className="rounded-md bg-stone-50 px-3 py-2 ring-1 ring-stone-200 focus-within:bg-white focus-within:ring-forest-600">
@@ -1737,7 +1765,7 @@ export function SearchPage() {
                       className="w-full min-w-0 bg-transparent text-sm font-semibold text-stone-950 outline-none"
                       min={minimumCheckOutDate}
                       value={state.end_date}
-                      onChange={(e) => setState({ end_date: e.target.value, page: 1 })}
+                      onChange={(e) => updateEndDate(e.target.value)}
                     />
                   </label>
                 </div>
@@ -2197,6 +2225,7 @@ export function SearchPage() {
               mode={data ? "search" : "explore"}
               resultLabel={resultWord}
               showCategoryFilters={false}
+              showCompactCategoryLegend
               fitToMarkers={Boolean(data?.results.length)}
               focusedSlug={activeMapGroup?.key ?? null}
               focusZoom={9.1}
