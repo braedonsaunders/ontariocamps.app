@@ -54,6 +54,7 @@ export type SearchParams = {
 };
 
 const DEFAULT_LIMIT = 30;
+const SEASONAL_SITE_LABEL_PATTERN = "(^|[^a-z])seasonal([^a-z]|$)";
 
 function emptySearchResponse(): SearchResponse {
   return {
@@ -517,6 +518,7 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
         ${params.operators && params.operators.length > 0 ? client`AND p.operator_id = ANY(${params.operators})` : client``}
         ${params.party_size && params.party_size > 0 ? client`AND s.max_party_size >= ${params.party_size}` : client``}
         ${params.site_types && params.site_types.length > 0 ? client`AND s.site_type = ANY(${params.site_types})` : client``}
+        AND NOT (COALESCE(s.site_type_label, s.site_type, '') ~* ${SEASONAL_SITE_LABEL_PATTERN})
         ${params.equipment_length_ft && params.equipment_length_ft > 0
           ? client`AND (s.max_equipment_length_ft IS NULL OR s.max_equipment_length_ft >= ${params.equipment_length_ft})`
           : client``}

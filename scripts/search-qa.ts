@@ -12,6 +12,7 @@ type Scenario = {
 type SiteFact = {
   id: string;
   site_type: string;
+  site_type_label: string | null;
   max_party_size: number;
   max_equipment_length_ft: number | null;
   amenities: string[];
@@ -251,6 +252,7 @@ async function validateAgainstDatabase(scenario: Scenario, results: SearchResult
     SELECT
       s.id,
       s.site_type,
+      s.site_type_label,
       s.max_party_size,
       s.max_equipment_length_ft,
       s.amenities,
@@ -280,6 +282,10 @@ async function validateAgainstDatabase(scenario: Scenario, results: SearchResult
     const fact = facts.get(segment.site.id);
     assert(fact, `${scenario.name}: missing fact for ${segment.site.id}`);
     assert(fact.park_slug === segment.park.slug, `${scenario.name}: result park slug does not match DB for ${segment.site.id}`);
+    assert(
+      !/\bseasonal\b/i.test(fact.site_type_label ?? fact.site_type),
+      `${scenario.name}: seasonal site leaked into results (${segment.site.id})`,
+    );
     assert(fact.max_party_size >= (scenario.params.party_size ?? 1), `${scenario.name}: party size exceeds site max for ${segment.site.id}`);
     if (scenario.params.site_types?.length) {
       assert(scenario.params.site_types.includes(fact.site_type), `${scenario.name}: site type filter leaked ${fact.site_type}`);
