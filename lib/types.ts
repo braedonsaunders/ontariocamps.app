@@ -257,6 +257,7 @@ export type SearchResultPark = {
   name: string;
   operator: string;
   operator_id: string;
+  hero_image_url?: string | null;
   location: { lat: number; lng: number };
   distance_km?: number;
 };
@@ -292,6 +293,7 @@ export type SearchResultGroup = {
   key: string;
   label: string;
   detail: string;
+  hero_image_url?: string | null;
   result_count: number;
   distance?: number;
   results: SearchResult[];

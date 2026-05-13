@@ -1,9 +1,8 @@
 "use client";
-import Link from "next/link";
 import { motion } from "motion/react";
 import type { SearchResult } from "@/lib/types";
 import { AMENITIES } from "@/lib/types";
-import { formatPrice, timeAgo } from "@/lib/utils";
+import { timeAgo } from "@/lib/utils";
 import { ArrowUpRight, MapPin, Calendar, Wifi, Droplet, Flame, Tent, Caravan, Route, Loader2 } from "lucide-react";
 
 function SiteIcon({ type }: { type: string }) {
@@ -16,6 +15,12 @@ function AmenityIcon({ code }: { code: string }) {
   if (code === "water" || code === "sewer" || code === "waterfront" || code === "lake_swim") return <Droplet size={12} />;
   if (code === "fire_pit") return <Flame size={12} />;
   return null;
+}
+
+function shortDate(value: string) {
+  const date = new Date(`${value}T00:00:00`);
+  if (!Number.isFinite(date.getTime())) return value;
+  return new Intl.DateTimeFormat("en-CA", { month: "short", day: "numeric" }).format(date);
 }
 
 function ruleToneClass(tone?: string) {
@@ -40,6 +45,10 @@ export function ResultCard({
   const segments = result.stay?.segments ?? [result];
   const isRoute = segments.length > 1;
   const thumbnail = result.site.thumbnail_url;
+  const firstNight = result.availability.nights[0];
+  const lastNight = result.availability.nights[result.availability.nights.length - 1];
+  const compactRules = result.site.rule_highlights?.slice(0, 2) ?? [];
+  const compactAmenities = result.site.amenities.slice(0, Math.max(0, 3 - compactRules.length));
   const canOpen = Boolean(onOpenResult || onOpenSiteDetails);
   const openLabel = isRoute
     ? `Open all sites for ${result.stay?.label ?? "this route"} starting at ${result.park.name} site ${result.site.name}`
@@ -60,7 +69,7 @@ export function ResultCard({
 
   return (
     <motion.div
-      className={`card overflow-hidden transition-shadow hover:ring-stone-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-forest-600 ${
+      className={`card relative overflow-hidden transition-shadow hover:ring-stone-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-forest-600 ${
         canOpen ? "cursor-pointer" : ""
       }`}
       onClick={openResult}
@@ -79,47 +88,39 @@ export function ResultCard({
       transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
       whileHover={{ y: -2, boxShadow: "0 8px 24px -8px rgba(0,0,0,0.08)" }}
     >
-      <div className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-3 p-3">
-        <div className="relative h-full min-h-[8rem] overflow-hidden rounded-md bg-stone-100 ring-1 ring-stone-200">
-          {thumbnail ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={thumbnail} alt={`${result.park.name} site ${result.site.name}`} className="absolute inset-0 h-full w-full object-cover" />
-          ) : (
-            <div className="absolute inset-0 flex items-center justify-center text-forest-700">
-              <SiteIcon type={result.site.site_type} />
-            </div>
-          )}
-          {result.stay && result.stay.segment_count > 1 && (
-            <span className="absolute left-1.5 top-1.5 rounded-full bg-white/95 px-2 py-0.5 text-[10px] font-semibold text-stone-700 shadow-sm ring-1 ring-stone-200">
-              {result.stay.segment_count} stops
-            </span>
-          )}
-        </div>
+      {thumbnail ? (
+        <>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={thumbnail} alt="" className="absolute inset-0 h-full w-full object-cover" />
+          <div className="absolute inset-0 bg-gradient-to-br from-white/95 via-white/70 to-white/20" />
+          <div className="absolute inset-0 bg-gradient-to-tr from-white/90 via-white/50 to-transparent" />
+          <div className="absolute bottom-0 left-0 h-2/3 w-2/3 bg-white/30 blur-xl" />
+        </>
+      ) : (
+        <div className="absolute inset-0 bg-gradient-to-br from-forest-50 via-white to-lake-50" />
+      )}
 
+      <div className="relative z-10 p-2.5 sm:p-3">
         <div className="min-w-0">
-          <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <div className="flex items-center gap-2 mb-1 flex-wrap">
-                <span className={`chip ring-1 ${operatorClass}`}>{result.park.operator}</span>
+              <div className="mb-0.5 flex min-w-0 items-center gap-1.5 text-[11px] text-stone-500">
+                <span className={`hidden shrink-0 rounded-full px-1.5 py-0.5 font-medium ring-1 sm:inline-flex ${operatorClass}`}>{result.park.operator}</span>
                 {result.stay && (
-                  <span className="chip bg-stone-100 text-stone-700 ring-1 ring-stone-200">
+                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-stone-100 px-1.5 py-0.5 font-medium text-stone-700 ring-1 ring-stone-200">
                     <Route size={11} /> {result.stay.label}
                   </span>
                 )}
                 {result.park.distance_km != null && (
-                  <span className="text-xs text-stone-500 flex items-center gap-1">
+                  <span className="inline-flex min-w-0 items-center gap-1 truncate">
                     <MapPin size={11} /> {result.park.distance_km.toFixed(0)} km away
                   </span>
                 )}
               </div>
-              <Link
-                href={`/park/${result.park.slug}`}
-                className="font-semibold hover:text-forest-700"
-                onClick={(e) => e.stopPropagation()}
-              >
+              <div className="block truncate text-sm font-semibold leading-tight text-stone-950 sm:text-base">
                 {result.park.name}
-              </Link>
-              <div className="text-sm text-stone-600 mt-0.5">
+              </div>
+              <div className="mt-0.5 truncate text-xs text-stone-600 sm:text-sm">
                 {result.campground.name} ·{" "}
                 <span className="inline-flex items-center gap-1">
                   <SiteIcon type={result.site.site_type} /> Site {result.site.name}
@@ -127,19 +128,27 @@ export function ResultCard({
                 </span>
               </div>
             </div>
-            <div className="text-right shrink-0">
-              <div className="text-lg font-semibold">{formatPrice(result.availability.price_cents)}</div>
-              <div className="text-[11px] text-stone-500">/ night</div>
+            <div className="shrink-0 text-right">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-stone-500">Site</div>
+              <div className="mt-0.5 rounded-md bg-white/80 px-2 py-1 text-base font-semibold leading-none text-stone-950 shadow-sm ring-1 ring-stone-200 sm:text-lg">
+                {result.site.name}
+              </div>
             </div>
           </div>
 
+          {result.stay && result.stay.segment_count > 1 && (
+            <span className="mt-1 inline-flex rounded-full bg-white/85 px-2 py-0.5 text-[10px] font-semibold text-stone-700 shadow-sm ring-1 ring-stone-200">
+              {result.stay.segment_count} stops
+            </span>
+          )}
+
           {result.availability.nights.length > 0 && (
-            <div className="mt-2 flex items-center gap-2 text-sm text-stone-700">
-              <Calendar size={14} className="text-forest-700 shrink-0" />
+            <div className="mt-1.5 flex items-center gap-1.5 text-xs text-stone-700 sm:text-sm">
+              <Calendar size={13} className="shrink-0 text-forest-700 sm:size-[14px]" />
               <span className="font-medium">{result.availability.nights.length} night{result.availability.nights.length > 1 ? "s" : ""}</span>
               <span className="text-stone-400">·</span>
               <span className="text-stone-600 truncate">
-                {result.availability.nights[0]} → {result.availability.nights[result.availability.nights.length - 1]}
+                {shortDate(firstNight)} → {shortDate(lastNight)}
               </span>
             </div>
           )}
@@ -168,21 +177,26 @@ export function ResultCard({
             </div>
           )}
 
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {result.site.rule_highlights?.slice(0, 3).map((rule) => (
-              <span key={rule.label} className={`chip ring-1 ${ruleToneClass(rule.tone)}`}>
+          <div className="mt-1.5 flex max-w-full items-center gap-1 overflow-hidden">
+            {compactRules.map((rule) => (
+              <span key={rule.label} className={`chip shrink-0 ring-1 ${ruleToneClass(rule.tone)}`}>
                 {rule.label}
               </span>
             ))}
-            {result.site.amenities.slice(0, 4).map((code) => (
-              <span key={code} className="chip bg-stone-100 text-stone-700">
+            {compactAmenities.map((code) => (
+              <span key={code} className="chip shrink-0 bg-stone-100 text-stone-700">
                 <AmenityIcon code={code} />
                 {AMENITIES[code]?.label ?? code}
               </span>
             ))}
+            {(result.site.rule_highlights?.length ?? 0) + result.site.amenities.length > compactRules.length + compactAmenities.length && (
+              <span className="chip shrink-0 bg-stone-50 text-stone-500 ring-1 ring-stone-200">
+                +{(result.site.rule_highlights?.length ?? 0) + result.site.amenities.length - compactRules.length - compactAmenities.length}
+              </span>
+            )}
           </div>
 
-          <div className="mt-3 flex items-center justify-between gap-3 text-xs text-stone-500">
+          <div className="mt-2 flex items-center justify-between gap-2 text-xs text-stone-500">
             <span className="inline-flex min-w-0 items-center gap-1">
               <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
               <span className="truncate">Checked {timeAgo(result.availability.last_checked_at)}</span>
@@ -196,19 +210,7 @@ export function ResultCard({
             >
               Book <ArrowUpRight size={13} />
             </a>
-            {onOpenSiteDetails && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  openResult();
-                }}
-                className="inline-flex shrink-0 items-center gap-1 font-medium text-stone-600 hover:text-stone-950"
-              >
-                {loadingSiteId === result.site.id ? <Loader2 size={13} className="animate-spin" /> : null}
-                {isRoute ? "View sites" : "Details"}
-              </button>
-            )}
+            {loadingSiteId === result.site.id && <Loader2 size={13} className="shrink-0 animate-spin text-stone-500" />}
           </div>
         </div>
       </div>

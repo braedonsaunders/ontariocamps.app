@@ -189,11 +189,13 @@ function groupResults(results: SearchResult[], groupBy: (typeof GROUP_OPTIONS)[n
       existing.result_count += 1;
       existing.results.push(result);
       if (result.park.distance_km != null) existing.distance = Math.min(existing.distance ?? Infinity, result.park.distance_km);
+      existing.hero_image_url ??= result.park.hero_image_url;
     } else {
       groups.set(key, {
         key,
         label,
         detail,
+        hero_image_url: groupBy === "park" ? result.park.hero_image_url : null,
         result_count: 1,
         results: [result],
         distance: result.park.distance_km,
@@ -1560,18 +1562,31 @@ export function SearchPage() {
               )}
               {groupedMode ? groupedResults.map((group) => (
                 <details key={group.key} className="group overflow-hidden rounded-lg bg-stone-50 ring-1 ring-stone-200">
-                  <summary className="flex cursor-pointer list-none items-center gap-3 px-3 py-2.5 transition hover:bg-white">
-                    <ChevronRight size={14} className="shrink-0 text-stone-400 transition-transform group-open:rotate-90" />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-semibold text-stone-950">{group.label}</div>
-                      <div className="truncate text-xs text-stone-500">
-                        {group.detail}
-                        {group.distance != null ? ` · ${group.distance.toFixed(0)} km away` : ""}
+                  <summary className="cursor-pointer list-none transition hover:bg-white">
+                    {state.group_by === "park" && group.hero_image_url && (
+                      <div className="relative h-8 overflow-hidden bg-stone-200 sm:h-9">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={group.hero_image_url}
+                          alt=""
+                          className="absolute inset-0 h-full w-full object-cover"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-r from-stone-950/30 via-transparent to-stone-950/10" />
                       </div>
+                    )}
+                    <div className="flex items-center gap-2.5 px-2.5 py-1.5">
+                      <ChevronRight size={14} className="shrink-0 text-stone-400 transition-transform group-open:rotate-90" />
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-semibold text-stone-950">{group.label}</div>
+                        <div className="truncate text-xs text-stone-500">
+                          {group.detail}
+                          {group.distance != null ? ` · ${group.distance.toFixed(0)} km away` : ""}
+                        </div>
+                      </div>
+                      <span className="rounded-full bg-white px-1.5 py-0.5 text-[11px] font-semibold text-stone-600 ring-1 ring-stone-200">
+                        {group.result_count.toLocaleString()}
+                      </span>
                     </div>
-                    <span className="rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-stone-600 ring-1 ring-stone-200">
-                      {group.result_count.toLocaleString()}
-                    </span>
                   </summary>
                   <div className="space-y-2 border-t border-stone-200 p-2">
                     {group.results.map((r, index) => (

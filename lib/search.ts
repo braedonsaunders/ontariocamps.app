@@ -177,6 +177,7 @@ function prepareRow(r: SearchRow, params: SearchParams): PreparedRow {
       name: r.park_name,
       operator: r.operator_name,
       operator_id: r.operator_id,
+      hero_image_url: r.park_hero_image_url,
       location: { lat: r.park_lat, lng: r.park_lng },
       distance_km,
     },
@@ -427,11 +428,13 @@ function groupSearchResults(
       existing.result_count += 1;
       if (existing.results.length < resultLimit) existing.results.push(result);
       if (result.park.distance_km != null) existing.distance = Math.min(existing.distance ?? Infinity, result.park.distance_km);
+      existing.hero_image_url ??= result.park.hero_image_url;
     } else {
       groups.set(key, {
         key,
         label,
         detail,
+        hero_image_url: groupBy === "park" ? result.park.hero_image_url : null,
         result_count: 1,
         distance: result.park.distance_km,
         results: resultLimit > 0 ? [result] : [],
