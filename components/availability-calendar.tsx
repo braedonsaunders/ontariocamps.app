@@ -178,6 +178,10 @@ export function AvailabilityCalendar({
     [selectedRange, visibleDates],
   );
   const hasSelectedRange = Boolean(selectedRange && focusDates.length > 0);
+  const selectedDateSet = useMemo(
+    () => new Set(hasSelectedRange ? focusDates : []),
+    [focusDates, hasSelectedRange],
+  );
   const canGoBack = Boolean(window.earliest && visibleDates[0] > window.earliest);
   const canGoForward = useMemo(() => {
     if (!window.latest) return false;
@@ -347,6 +351,13 @@ export function AvailabilityCalendar({
           </button>
         </div>
 
+        {hasSelectedRange && selectedRange && (
+          <span className="inline-flex h-7 items-center gap-1.5 rounded-md bg-forest-50 px-2.5 text-xs font-semibold text-forest-800 ring-1 ring-forest-200">
+            <span className="h-2.5 w-2.5 rounded-sm bg-forest-600 ring-2 ring-white" />
+            Selected {fmtRange(selectedRange.from, selectedRange.to)}
+          </span>
+        )}
+
         <label className="chip cursor-pointer ring-1 ring-stone-300 select-none hover:bg-stone-50">
           <input
             type="checkbox"
@@ -433,13 +444,25 @@ export function AvailabilityCalendar({
                 const dt = new Date(d + "T00:00:00Z");
                 const dow = dt.getUTCDay();
                 const isWeekend = dow === 5 || dow === 6;
+                const isSelected = selectedDateSet.has(d);
                 return (
                   <th
                     key={d}
-                    className={`p-1 font-normal text-center min-w-[36px] ${isWeekend ? "bg-stone-100" : ""}`}
+                    className={`p-1 font-normal text-center min-w-[36px] ${
+                      isSelected
+                        ? "bg-forest-50 text-forest-800 ring-1 ring-inset ring-forest-200"
+                        : isWeekend
+                          ? "bg-stone-100"
+                          : ""
+                    }`}
                   >
-                    <div className="text-[10px] leading-tight">{DAY_LABELS[dow]}</div>
-                    <div className="font-semibold text-stone-700 leading-tight tabular-nums">{dt.getUTCDate()}</div>
+                    <div className={`text-[10px] leading-tight ${isSelected ? "font-semibold text-forest-700" : ""}`}>
+                      {DAY_LABELS[dow]}
+                    </div>
+                    <div className={`font-semibold leading-tight tabular-nums ${isSelected ? "text-forest-950" : "text-stone-700"}`}>
+                      {dt.getUTCDate()}
+                    </div>
+                    {isSelected && <div className="mx-auto mt-0.5 h-1 w-1 rounded-full bg-forest-700" />}
                   </th>
                 );
               })}
@@ -518,16 +541,19 @@ export function AvailabilityCalendar({
                         </td>
                         {visibleDates.map((d) => {
                           const status = row.nights[d] ?? "unknown";
+                          const isSelected = selectedDateSet.has(d);
                           const url = status === "available" && !checkingLive && buildBookingUrl ? buildBookingUrl(row.site.id, d) : null;
                           const cellBg = STATUS_BG[status];
                           const cell = (
                             <span
-                              className={`block h-6 mx-px rounded-sm ${cellBg} transition-colors`}
-                              title={`Site ${row.site.name} · ${d} · ${STATUS_LABEL[status]}`}
+                              className={`block h-6 mx-px rounded-sm ${cellBg} transition-colors ${
+                                isSelected ? "ring-2 ring-inset ring-forest-950/45 shadow-sm" : ""
+                              }`}
+                              title={`${isSelected ? "Selected date · " : ""}Site ${row.site.name} · ${d} · ${STATUS_LABEL[status]}`}
                             />
                           );
                           return (
-                            <td key={d} className="p-0.5 align-middle">
+                            <td key={d} className={`p-0.5 align-middle ${isSelected ? "bg-forest-50/60" : ""}`}>
                               {url ? (
                                 <a
                                   href={url}
@@ -568,6 +594,11 @@ export function AvailabilityCalendar({
         <span className="inline-flex items-center gap-1.5">
           <span className="h-3 w-3 rounded-sm bg-stone-200" /> Unknown
         </span>
+        {hasSelectedRange && (
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-3 w-3 rounded-sm bg-forest-50 ring-2 ring-inset ring-forest-700" /> Selected dates
+          </span>
+        )}
         <span className="ml-auto text-stone-500">
           {checkingLive ? "Live check in progress" : "Click any green cell to book that night"}
           {rows.length < totalSites && (
