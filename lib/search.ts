@@ -542,10 +542,6 @@ function groupSearchResults(
       key = result.park.slug;
       label = result.park.name;
       detail = parks.length > 1 ? `${parks.length} parks on route` : `${displayOperatorName(result.park.operator)} / ${result.campground.name}`;
-    } else if (groupBy === "campground") {
-      key = result.campground.id;
-      label = result.campground.name;
-      detail = `${result.park.name} / ${displayOperatorName(result.park.operator)}`;
     } else if (groupBy === "operator") {
       key = result.park.operator_id;
       label = displayOperatorName(result.park.operator);
@@ -563,7 +559,7 @@ function groupSearchResults(
         key,
         label,
         detail,
-        hero_image_url: groupBy === "park" ? result.park.hero_image_url : null,
+        hero_image_url: groupBy === "park" || groupBy === "operator" ? result.park.hero_image_url : null,
         result_count: 1,
         distance: result.park.distance_km,
         results: resultLimit > 0 ? [result] : [],

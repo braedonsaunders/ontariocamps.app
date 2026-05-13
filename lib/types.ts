@@ -238,7 +238,7 @@ export type AvailabilityRow = {
 
 export type SearchStayMode = "same_site" | "same_park" | "anywhere";
 export type SearchSortMode = "recommended" | "distance" | "route" | "moves" | "freshness" | "name" | "availability" | "price";
-export type SearchGroupMode = "park" | "campground" | "operator" | "none";
+export type SearchGroupMode = "park" | "operator" | "none";
 export type ParkType = "provincial" | "conservation" | "federal" | "private";
 
 export type SearchResultSite = {

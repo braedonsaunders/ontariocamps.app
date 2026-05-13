@@ -14,6 +14,17 @@ type DailyWeather = {
   uv_index_max?: number[];
 };
 
+type WeatherDay = {
+  date: string;
+  label: string;
+  high_c: number | null;
+  low_c: number | null;
+  rain_probability_pct: number | null;
+  precipitation_mm: number | null;
+  wind_gust_kmh: number | null;
+  uv_index: number | null;
+};
+
 function validDate(value: string | null): value is string {
   return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(new Date(`${value}T00:00:00Z`).getTime()));
 }
@@ -50,6 +61,28 @@ function sum(values: Array<number | undefined> | undefined): number | null {
   return clean.length ? clean.reduce((acc, v) => acc + v, 0) : null;
 }
 
+function roundOrNull(value: number | null): number | null {
+  return value == null ? null : Math.round(value);
+}
+
+function normalizeDaily(daily: DailyWeather): WeatherDay[] {
+  return (daily.time ?? []).map((date, index) => {
+    const precipitation = daily.precipitation_sum?.[index];
+    return {
+      date,
+      label: weatherLabel(daily.weather_code?.[index] ?? null),
+      high_c: roundOrNull(daily.temperature_2m_max?.[index] ?? null),
+      low_c: roundOrNull(daily.temperature_2m_min?.[index] ?? null),
+      rain_probability_pct: roundOrNull(daily.precipitation_probability_max?.[index] ?? null),
+      precipitation_mm: typeof precipitation === "number" && Number.isFinite(precipitation)
+        ? Math.round(precipitation * 10) / 10
+        : null,
+      wind_gust_kmh: roundOrNull(daily.wind_gusts_10m_max?.[index] ?? null),
+      uv_index: roundOrNull(daily.uv_index_max?.[index] ?? null),
+    };
+  });
+}
+
 export async function GET(req: NextRequest) {
   const lat = Number(req.nextUrl.searchParams.get("lat"));
   const lng = Number(req.nextUrl.searchParams.get("lng"));
@@ -70,6 +103,7 @@ export async function GET(req: NextRequest) {
       available: false,
       reason: "forecast_window",
       forecast_window: { from: today, to: maxForecastDate },
+      date_range: { requested_from: fromRaw, requested_to: toRaw },
     });
   }
 
@@ -101,6 +135,7 @@ export async function GET(req: NextRequest) {
 
   const json = (await response.json()) as { daily?: DailyWeather };
   const daily = json.daily ?? {};
+  const days = normalizeDaily(daily);
   const weatherCode = max(daily.weather_code);
   const high = max(daily.temperature_2m_max);
   const low = min(daily.temperature_2m_min);
@@ -124,6 +159,7 @@ export async function GET(req: NextRequest) {
       wind_gust_kmh: windGust == null ? null : Math.round(windGust),
       uv_index: uv == null ? null : Math.round(uv),
     },
+    daily: days,
   }, {
     headers: {
       "Cache-Control": "public, max-age=0, s-maxage=3600, stale-while-revalidate=7200",

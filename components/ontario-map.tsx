@@ -49,6 +49,7 @@ type OntarioMapProps = {
   showPrivateFilter?: boolean;
   fitToMarkers?: boolean;
   focusedSlug?: string | null;
+  focusSignal?: number;
   focusZoom?: number;
   onParkSelect?: (slug: string) => void;
 };
@@ -145,6 +146,7 @@ export function OntarioMap({
   showPrivateFilter = false,
   fitToMarkers = false,
   focusedSlug = null,
+  focusSignal = 0,
   focusZoom = 9,
   onParkSelect,
 }: OntarioMapProps) {
@@ -644,7 +646,7 @@ export function OntarioMap({
     };
     if (map.isStyleLoaded()) apply();
     else map.once("load", apply);
-  }, [features, focusedSlug, focusZoom, mode, parks]);
+  }, [features, focusedSlug, focusSignal, focusZoom, mode, parks]);
 
   useEffect(() => {
     const map = mapRef.current;

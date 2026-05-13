@@ -62,7 +62,7 @@ type ParkSummary = Omit<MapPark, "description" | "hero_image_url">;
 const SITE_TYPES = ["tent", "rv", "cabin", "yurt", "backcountry"] as const;
 const STAY_MODES = ["same_site", "same_park", "anywhere"] as const;
 const VIEW_MODES = ["list", "map"] as const;
-const GROUP_OPTIONS = ["park", "campground", "operator", "none"] as const;
+const GROUP_OPTIONS = ["park", "operator", "none"] as const;
 const PARK_TYPE_IDS = PARK_TYPE_OPTIONS.map((option) => option.id);
 const SORT_OPTIONS = ["recommended", "distance", "route", "moves", "availability", "freshness", "name", "price"] as const;
 const RAW_RESULTS_PER_PAGE = 60;
@@ -85,7 +85,6 @@ const SORT_LABELS: Record<(typeof SORT_OPTIONS)[number], string> = {
 
 const GROUP_LABELS: Record<(typeof GROUP_OPTIONS)[number], string> = {
   park: "Park",
-  campground: "Campground",
   operator: "Operator",
   none: "No grouping",
 };
@@ -196,10 +195,6 @@ function groupResults(results: SearchResult[], groupBy: (typeof GROUP_OPTIONS)[n
       key = result.park.slug;
       label = result.park.name;
       detail = parks.length > 1 ? `${parks.length} parks on route` : `${displayOperatorName(result.park.operator)} · ${result.campground.name}`;
-    } else if (groupBy === "campground") {
-      key = result.campground.id;
-      label = result.campground.name;
-      detail = `${result.park.name} · ${displayOperatorName(result.park.operator)}`;
     } else if (groupBy === "operator") {
       key = result.park.operator_id;
       label = displayOperatorName(result.park.operator);
@@ -217,7 +212,7 @@ function groupResults(results: SearchResult[], groupBy: (typeof GROUP_OPTIONS)[n
         key,
         label,
         detail,
-        hero_image_url: groupBy === "park" ? result.park.hero_image_url : null,
+        hero_image_url: groupBy === "park" || groupBy === "operator" ? result.park.hero_image_url : null,
         result_count: 1,
         results: [result],
         distance: result.park.distance_km,
@@ -289,6 +284,7 @@ export function SearchPage() {
   const [allParks, setAllParks] = useState<ParkSummary[]>([]);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [activeMapGroupIndex, setActiveMapGroupIndex] = useState(0);
+  const [mapFocusSignal, setMapFocusSignal] = useState(0);
   const [expandedMapGroup, setExpandedMapGroup] = useState<SearchResultGroup | null>(null);
   const [visibleGroupResultCounts, setVisibleGroupResultCounts] = useState<Record<string, number>>({});
   const [submittedState, setSubmittedState] = useState<typeof state | null>(null);
@@ -1025,7 +1021,22 @@ export function SearchPage() {
   function focusMapPark(slug: string | undefined) {
     if (!slug) return;
     const index = mapParkGroups.findIndex((group) => group.key === slug);
-    if (index >= 0) setActiveMapGroupIndex(index);
+    if (index >= 0) {
+      setActiveMapGroupIndex(index);
+      setMapFocusSignal((signal) => signal + 1);
+    }
+  }
+
+  function focusSlugForGroup(group: SearchResultGroup) {
+    if (state.group_by === "park") return group.key;
+    const byDistance = group.results
+      .filter((result) => result.park.distance_km != null && Number.isFinite(result.park.distance_km))
+      .sort((a, b) => (a.park.distance_km ?? Infinity) - (b.park.distance_km ?? Infinity))[0];
+    return byDistance?.park.slug ?? group.results[0]?.park.slug;
+  }
+
+  function resultKey(result: SearchResult, index: number, prefix = "") {
+    return `${prefix}${result.site.id}-${result.availability.nights.join("-")}-${result.stay?.mode ?? "single"}-${index}`;
   }
 
   function visibleResultCountForGroup(renderKey: string, group: SearchResultGroup) {
@@ -1044,7 +1055,7 @@ export function SearchPage() {
     ? visibleResultCountForGroup(expandedMapGroupKey, expandedMapGroup)
     : 0;
   const groupTotal = data?.group_total ?? groupedResults.length;
-  const groupUnit = state.group_by === "park" ? "parks" : state.group_by === "campground" ? "campgrounds" : "operators";
+  const groupUnit = state.group_by === "park" ? "parks" : "operators";
   const pageStart = data
     ? groupedMode
       ? Math.min((state.page - 1) * GROUPS_PER_PAGE + 1, groupTotal)
@@ -2083,11 +2094,14 @@ export function SearchPage() {
                 </div>
               )}
               {groupedMode ? groupedResults.map((group) => {
-                const groupFocusSlug = state.group_by === "park" ? group.key : group.results[0]?.park.slug;
+                const groupFocusSlug = focusSlugForGroup(group);
                 const activeInMap = groupFocusSlug != null && activeMapGroup?.key === groupFocusSlug;
                 const groupRenderKey = `${state.group_by}:${group.key}`;
-                const visibleResultCount = visibleResultCountForGroup(groupRenderKey, group);
-                const hiddenLoadedCount = group.results.length - visibleResultCount;
+                const isOperatorGroup = state.group_by === "operator";
+                const visibleResultCount = isOperatorGroup ? group.results.length : visibleResultCountForGroup(groupRenderKey, group);
+                const visibleResults = group.results.slice(0, visibleResultCount);
+                const hiddenLoadedCount = isOperatorGroup ? 0 : group.results.length - visibleResultCount;
+                const operatorParkGroups = isOperatorGroup ? groupResults(group.results, "park") : [];
                 return (
                 <details
                   key={group.key}
@@ -2095,13 +2109,13 @@ export function SearchPage() {
                     activeInMap ? "ring-forest-300" : "ring-stone-200"
                   }`}
                   onMouseEnter={() => focusMapPark(groupFocusSlug)}
-                  onFocus={() => focusMapPark(groupFocusSlug)}
                 >
                   <summary
                     className={`cursor-pointer list-none transition ${activeInMap ? "bg-forest-50/70" : "hover:bg-white"}`}
                     onClick={() => focusMapPark(groupFocusSlug)}
+                    onFocus={() => focusMapPark(groupFocusSlug)}
                   >
-                    {state.group_by === "park" && group.hero_image_url && (
+                    {group.hero_image_url && (
                       <div className="relative h-8 overflow-hidden bg-stone-200 sm:h-9">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
@@ -2124,7 +2138,7 @@ export function SearchPage() {
                         </div>
                       </div>
                       <div className="flex shrink-0 items-center gap-1.5">
-                        {state.group_by === "park" && group.distance != null && Number.isFinite(group.distance) && (
+                        {group.distance != null && Number.isFinite(group.distance) && (
                           <span className="inline-flex items-center gap-1 rounded-full bg-white px-1.5 py-0.5 text-[11px] font-semibold text-stone-600 ring-1 ring-stone-200">
                             <MapPin size={10} /> {group.distance.toFixed(0)} km
                           </span>
@@ -2134,49 +2148,132 @@ export function SearchPage() {
                         </span>
                       </div>
                     </div>
-	                  </summary>
-	                  <div className="space-y-2 border-t border-stone-200 p-2">
-	                    {group.results.slice(0, visibleResultCount).map((r, index) => (
-	                      <div
-	                        key={`${r.site.id}-${r.availability.nights.join("-")}-${r.stay?.mode ?? "single"}-${index}`}
-	                        onMouseEnter={() => focusMapPark(r.park.slug)}
-                        onFocus={() => focusMapPark(r.park.slug)}
-                      >
-                        <ResultCard
-                          result={r}
-                          onOpenResult={openResult}
-                          onOpenSiteDetails={openSiteDetails}
-                          loadingSiteId={loadingSiteId}
-	                        />
-	                      </div>
-	                    ))}
-	                    {hiddenLoadedCount > 0 && (
-	                      <button
-	                        type="button"
+		                  </summary>
+		                  <div className="space-y-2 border-t border-stone-200 p-2">
+                        {isOperatorGroup ? operatorParkGroups.map((parkGroup) => {
+                          const parkActiveInMap = activeMapGroup?.key === parkGroup.key;
+                          const parkRenderKey = `${groupRenderKey}:park:${parkGroup.key}`;
+                          const visibleParkResultCount = visibleResultCountForGroup(parkRenderKey, parkGroup);
+                          const hiddenParkLoadedCount = parkGroup.results.length - visibleParkResultCount;
+                          return (
+                            <details
+                              key={`${group.key}:${parkGroup.key}`}
+                              className={`group/park overflow-hidden rounded-md bg-white ring-1 transition ${
+                                parkActiveInMap ? "ring-forest-300" : "ring-stone-200"
+                              }`}
+                              onMouseEnter={() => focusMapPark(parkGroup.key)}
+                            >
+                              <summary
+                                className={`cursor-pointer list-none transition ${parkActiveInMap ? "bg-forest-50/70" : "hover:bg-stone-50"}`}
+                                onClick={() => focusMapPark(parkGroup.key)}
+                                onFocus={() => focusMapPark(parkGroup.key)}
+                              >
+                                {parkGroup.hero_image_url && (
+                                  <div className="relative h-8 overflow-hidden bg-stone-200 sm:h-9">
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img
+                                      src={imageProxyUrl(parkGroup.hero_image_url, "strip") ?? parkGroup.hero_image_url}
+                                      alt=""
+                                      className="absolute inset-0 h-full w-full object-cover"
+                                      loading="lazy"
+                                      decoding="async"
+                                      fetchPriority="low"
+                                    />
+                                    <div className="absolute inset-0 bg-gradient-to-r from-stone-950/30 via-transparent to-stone-950/10" />
+                                  </div>
+                                )}
+                                <div className="flex items-center gap-2.5 px-2.5 py-1.5">
+                                  <ChevronRight size={14} className="shrink-0 text-stone-400 transition-transform group-open/park:rotate-90" />
+                                  <div className="min-w-0 flex-1">
+                                    <div className="truncate text-sm font-semibold text-stone-950">{parkGroup.label}</div>
+                                    <div className="truncate text-xs text-stone-500">{parkGroup.detail}</div>
+                                  </div>
+                                  <div className="flex shrink-0 items-center gap-1.5">
+                                    {parkGroup.distance != null && Number.isFinite(parkGroup.distance) && (
+                                      <span className="inline-flex items-center gap-1 rounded-full bg-white px-1.5 py-0.5 text-[11px] font-semibold text-stone-600 ring-1 ring-stone-200">
+                                        <MapPin size={10} /> {parkGroup.distance.toFixed(0)} km
+                                      </span>
+                                    )}
+                                    <span className="rounded-full bg-stone-50 px-1.5 py-0.5 text-[11px] font-semibold text-stone-600 ring-1 ring-stone-200">
+                                      {parkGroup.result_count.toLocaleString()}
+                                    </span>
+                                  </div>
+                                </div>
+                              </summary>
+                              <div className="space-y-2 border-t border-stone-200 p-2">
+                                {parkGroup.results.slice(0, visibleParkResultCount).map((r, index) => (
+                                  <div
+                                    key={resultKey(r, index, `${group.key}:${parkGroup.key}:`)}
+                                    onMouseEnter={() => focusMapPark(r.park.slug)}
+                                    onFocus={() => focusMapPark(r.park.slug)}
+                                    onClickCapture={() => focusMapPark(r.park.slug)}
+                                  >
+                                    <ResultCard
+                                      result={r}
+                                      onOpenResult={openResult}
+                                      onOpenSiteDetails={openSiteDetails}
+                                      loadingSiteId={loadingSiteId}
+                                      dense
+                                    />
+                                  </div>
+                                ))}
+                                {hiddenParkLoadedCount > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => loadMoreGroupResults(parkRenderKey, parkGroup.results.length)}
+                                    className="flex w-full items-center justify-center rounded-md bg-stone-50 px-3 py-2 text-sm font-semibold text-stone-700 ring-1 ring-stone-200 transition hover:bg-white"
+                                  >
+                                    Load more {Math.min(GROUP_RESULTS_INCREMENT, hiddenParkLoadedCount).toLocaleString()} of {hiddenParkLoadedCount.toLocaleString()}
+                                  </button>
+                                )}
+                              </div>
+                            </details>
+                          );
+                        }) : visibleResults.map((r, index) => (
+                          <div
+                            key={resultKey(r, index)}
+                            onMouseEnter={() => focusMapPark(r.park.slug)}
+                            onFocus={() => focusMapPark(r.park.slug)}
+                            onClickCapture={() => focusMapPark(r.park.slug)}
+                          >
+                            <ResultCard
+                              result={r}
+                              onOpenResult={openResult}
+                              onOpenSiteDetails={openSiteDetails}
+                              loadingSiteId={loadingSiteId}
+                              dense
+                            />
+                          </div>
+		                    ))}
+		                    {hiddenLoadedCount > 0 && (
+		                      <button
+		                        type="button"
 	                        onClick={() => loadMoreGroupResults(groupRenderKey, group.results.length)}
 	                        className="flex w-full items-center justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-stone-700 ring-1 ring-stone-200 transition hover:bg-stone-50"
 	                      >
 	                        Load more {Math.min(GROUP_RESULTS_INCREMENT, hiddenLoadedCount).toLocaleString()} of {hiddenLoadedCount.toLocaleString()}
 	                      </button>
 	                    )}
-	                    {visibleResultCount >= group.results.length && group.result_count > group.results.length && (
+	                    {group.result_count > group.results.length && (
 	                      <div className="rounded-md bg-white px-3 py-2 text-xs text-stone-500 ring-1 ring-stone-200">
-	                        Showing first {group.results.length} results in this group. Refine filters to narrow it further.
+	                        Showing first {group.results.length} results in this {isOperatorGroup ? "operator" : "group"}. Refine filters to narrow it further.
 	                      </div>
                     )}
                   </div>
                 </details>
               );}) : data?.results.map((r, index) => (
                 <div
-                  key={`${r.site.id}-${r.availability.nights.join("-")}-${r.stay?.mode ?? "single"}-${index}`}
+                  key={resultKey(r, index)}
                   onMouseEnter={() => focusMapPark(r.park.slug)}
                   onFocus={() => focusMapPark(r.park.slug)}
+                  onClickCapture={() => focusMapPark(r.park.slug)}
                 >
                   <ResultCard
                     result={r}
                     onOpenResult={openResult}
                     onOpenSiteDetails={openSiteDetails}
                     loadingSiteId={loadingSiteId}
+                    dense
                   />
                 </div>
               ))}
@@ -2228,6 +2325,7 @@ export function SearchPage() {
               showCompactCategoryLegend
               fitToMarkers={Boolean(data?.results.length)}
               focusedSlug={activeMapGroup?.key ?? null}
+              focusSignal={mapFocusSignal}
               focusZoom={9.1}
               onParkSelect={(slug) => {
                 const index = mapParkGroups.findIndex((group) => group.key === slug);

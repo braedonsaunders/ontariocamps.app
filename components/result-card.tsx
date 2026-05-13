@@ -40,11 +40,13 @@ export function ResultCard({
   onOpenResult,
   onOpenSiteDetails,
   loadingSiteId,
+  dense = false,
 }: {
   result: SearchResult;
   onOpenResult?: (result: SearchResult) => void;
   onOpenSiteDetails?: (siteId: string, bookingUrl?: string) => void;
   loadingSiteId?: string | null;
+  dense?: boolean;
 }) {
   const segments = result.stay?.segments ?? [result];
   const isRoute = segments.length > 1;
@@ -112,7 +114,7 @@ export function ResultCard({
         <div className="absolute inset-0 bg-gradient-to-br from-forest-50 via-white to-lake-50" />
       )}
 
-      <div className="relative z-10 p-2.5 sm:p-3">
+      <div className={`relative z-10 ${dense ? "p-2 sm:p-2 lg:p-2" : "p-2.5 sm:p-3"}`}>
         <div className="min-w-0">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
@@ -129,10 +131,10 @@ export function ResultCard({
                   </span>
                 )}
               </div>
-              <div className="block truncate text-sm font-semibold leading-tight text-stone-950 sm:text-base">
+              <div className={`block truncate text-sm font-semibold leading-tight text-stone-950 ${dense ? "sm:text-base lg:text-sm" : "sm:text-base"}`}>
                 {result.park.name}
               </div>
-              <div className="mt-0.5 truncate text-xs text-stone-600 sm:text-sm">
+              <div className={`mt-0.5 truncate text-xs text-stone-600 ${dense ? "sm:text-sm lg:text-xs" : "sm:text-sm"}`}>
                 {result.campground.name} ·{" "}
                 <span className="inline-flex items-center gap-1">
                   <SiteIcon type={result.site.site_type} /> Site {result.site.name}
@@ -142,7 +144,9 @@ export function ResultCard({
             </div>
             <div className="shrink-0 text-right">
               <div className="text-[10px] font-semibold uppercase tracking-wide text-stone-500">Site</div>
-              <div className="mt-0.5 rounded-md bg-white/80 px-2 py-1 text-base font-semibold leading-none text-stone-950 shadow-sm ring-1 ring-stone-200 sm:text-lg">
+              <div className={`mt-0.5 rounded-md bg-white/80 px-2 font-semibold leading-none text-stone-950 shadow-sm ring-1 ring-stone-200 ${
+                dense ? "py-0.5 text-base sm:text-lg lg:text-base" : "py-1 text-base sm:text-lg"
+              }`}>
                 {result.site.name}
               </div>
             </div>
@@ -155,31 +159,31 @@ export function ResultCard({
           )}
 
           {result.availability.nights.length > 0 && (
-            <div className="mt-1.5 flex items-center gap-1.5 text-xs text-stone-700 sm:text-sm">
+            <div className={`mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-stone-700 ${dense ? "sm:text-sm lg:text-xs" : "sm:text-sm"}`}>
               <Calendar size={13} className="shrink-0 text-forest-700 sm:size-[14px]" />
               <span className="font-medium">{result.availability.nights.length} night{result.availability.nights.length > 1 ? "s" : ""}</span>
               <span className="text-stone-400">·</span>
               <span className="text-stone-600 truncate">
                 {shortDate(firstNight)} → {shortDate(lastNight)}
               </span>
+              <WeatherStrip
+                lat={result.park.location.lat}
+                lng={result.park.location.lng}
+                from={firstNight}
+                to={lastNight}
+                compact
+                className="ml-0.5"
+              />
             </div>
           )}
 
-          {result.availability.nights.length > 0 && (
-            <WeatherStrip
-              lat={result.park.location.lat}
-              lng={result.park.location.lng}
-              from={firstNight}
-              to={lastNight}
+          <div className={dense ? "lg:hidden" : undefined}>
+            <ParkAlertsStrip
+              operatorId={result.park.operator_id}
+              parkName={result.park.name}
               compact
             />
-          )}
-
-          <ParkAlertsStrip
-            operatorId={result.park.operator_id}
-            parkName={result.park.name}
-            compact
-          />
+          </div>
 
           {segments.length > 1 && (
             <div className="mt-2 grid gap-1.5">
@@ -205,7 +209,7 @@ export function ResultCard({
             </div>
           )}
 
-          <div className="mt-1.5 flex max-w-full items-center gap-1 overflow-hidden">
+          <div className={`mt-1.5 flex max-w-full items-center gap-1 overflow-hidden ${dense ? "lg:hidden" : ""}`}>
             {compactRules.map((rule) => (
               <span key={rule.label} className={`chip shrink-0 ring-1 ${ruleToneClass(rule.tone)}`}>
                 {rule.label}
