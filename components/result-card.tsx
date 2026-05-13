@@ -7,6 +7,7 @@ import { imageProxyUrl } from "@/lib/image-proxy";
 import { timeAgo } from "@/lib/utils";
 import { WeatherStrip } from "@/components/weather-strip";
 import { ParkAlertsStrip } from "@/components/park-alerts-strip";
+import Link from "next/link";
 import { ArrowUpRight, MapPin, Calendar, Wifi, Droplet, Flame, Tent, Caravan, Route, Loader2 } from "lucide-react";
 
 function SiteIcon({ type }: { type: string }) {
@@ -57,6 +58,8 @@ export function ResultCard({
   const compactAmenities = result.site.amenities.slice(0, Math.max(0, 3 - compactRules.length));
   const operatorName = displayOperatorName(result.park.operator);
   const canOpen = Boolean(onOpenResult || onOpenSiteDetails);
+  const operatorHref = `/operator/${result.park.operator_id}`;
+  const parkHref = `/park/${result.park.slug}`;
   const openLabel = isRoute
     ? `Open all sites for ${result.stay?.label ?? "this route"} starting at ${result.park.name} site ${result.site.name}`
     : `Open details for ${result.park.name} site ${result.site.name}`;
@@ -119,7 +122,13 @@ export function ResultCard({
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
               <div className="mb-0.5 flex min-w-0 items-center gap-1.5 text-[11px] text-stone-500">
-                <span className={`hidden shrink-0 rounded-full px-1.5 py-0.5 font-medium ring-1 sm:inline-flex ${operatorClass}`}>{operatorName}</span>
+                <Link
+                  href={operatorHref}
+                  onClick={(event) => event.stopPropagation()}
+                  className={`hidden shrink-0 rounded-full px-1.5 py-0.5 font-medium ring-1 hover:opacity-80 sm:inline-flex ${operatorClass}`}
+                >
+                  {operatorName}
+                </Link>
                 {result.stay && (
                   <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-stone-100 px-1.5 py-0.5 font-medium text-stone-700 ring-1 ring-stone-200">
                     <Route size={11} /> {result.stay.label}
@@ -132,7 +141,9 @@ export function ResultCard({
                 )}
               </div>
               <div className={`block truncate text-sm font-semibold leading-tight text-stone-950 ${dense ? "sm:text-base lg:text-sm" : "sm:text-base"}`}>
-                {result.park.name}
+                <Link href={parkHref} onClick={(event) => event.stopPropagation()} className="hover:text-stone-900">
+                  {result.park.name}
+                </Link>
               </div>
               <div className={`mt-0.5 truncate text-xs text-stone-600 ${dense ? "sm:text-sm lg:text-xs" : "sm:text-sm"}`}>
                 {result.campground.name} ·{" "}

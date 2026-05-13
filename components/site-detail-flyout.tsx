@@ -170,7 +170,9 @@ export function SiteDetailFlyout({ details, onClose, checkingLive = false }: Pro
 	                    {operatorName}
 	                  </Link>
                   <span>/</span>
-                  <span>{details.parkName}</span>
+                  <Link href={`/park/${details.parkSlug}`} className="hover:text-stone-900">
+                    {details.parkName}
+                  </Link>
                   <span>/</span>
                   <span className="text-stone-700">Site {details.site.name}</span>
                 </div>
@@ -191,7 +193,10 @@ export function SiteDetailFlyout({ details, onClose, checkingLive = false }: Pro
                         Site {details.site.name}
                       </h2>
                       <div className="mt-1 text-sm text-stone-600">
-                        {details.site.site_type_label ?? details.site.site_type.toUpperCase()} / {details.parkName}
+                        {details.site.site_type_label ?? details.site.site_type.toUpperCase()} /
+                        <Link href={`/park/${details.parkSlug}`} className="ml-1 text-stone-700 hover:text-stone-900">
+                          {details.parkName}
+                        </Link>
                         {details.lastCheckedAt && <> / checked {timeAgo(details.lastCheckedAt)}</>}
                       </div>
                     </div>
