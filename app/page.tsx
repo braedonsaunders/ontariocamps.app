@@ -27,16 +27,24 @@ const homeHeroBackgroundIds: HomeHeroBackgroundId[] = [
 
 const popularParksCopy = [
   {
-    heading: "Popular parks",
-    description: "Reliable starting points across the province.",
+    heading: "Ontario campsites with main-character energy",
+    description: "Lake dips, pine shade, and the details you need before you book.",
   },
   {
-    heading: "Parks to start with",
-    description: "A few dependable picks for planning your next trip.",
+    heading: "Weekend-worthy places to pitch in",
+    description: "Fresh picks from across the province, ready for your next night outside.",
   },
   {
-    heading: "Campgrounds people check first",
-    description: "Familiar Ontario options with campsite details ready.",
+    heading: "Campgrounds on the Ontario short list",
+    description: "Beloved bases for canoe mornings, campfire nights, and easy planning.",
+  },
+  {
+    heading: "Pines, lakes, and prime campsites",
+    description: "A quick-launch lineup for finding your next Ontario stay.",
+  },
+  {
+    heading: "The good spots people whisper about",
+    description: "Popular Ontario camping picks, from lakefront classics to quiet forest bases.",
   },
 ];
 
