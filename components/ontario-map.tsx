@@ -5,12 +5,13 @@ import Link from "next/link";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { displayOperatorName } from "@/lib/display";
-import { Tent, MapPin, ChevronUp, Circle, Diamond, Square, type LucideIcon } from "lucide-react";
+import { Tent, MapPin, ChevronUp, Circle, Diamond, Square, Triangle, type LucideIcon } from "lucide-react";
 
 const MAP_STYLE = "https://tiles.openfreemap.org/styles/positron";
 const BARRIE_CENTER: [number, number] = [-79.6903, 44.3894];
 const INITIAL_ZOOM = 6.55;
-const CATEGORY_ORDER = ["provincial", "conservation", "federal"] as const;
+const BASE_CATEGORY_ORDER = ["provincial", "conservation", "federal"] as const;
+const CATEGORY_ORDER = [...BASE_CATEGORY_ORDER, "private"] as const;
 
 export type Park = {
   slug: string;
@@ -19,6 +20,7 @@ export type Park = {
   hero_image_url: string | null;
   operator: string;
   operator_id: string;
+  operator_vendor?: string;
   region: string;
   lat: number;
   lng: number;
@@ -43,6 +45,7 @@ type OntarioMapProps = {
   mode?: "explore" | "search";
   resultLabel?: string;
   showCategoryFilters?: boolean;
+  showPrivateFilter?: boolean;
   fitToMarkers?: boolean;
   focusedSlug?: string | null;
   focusZoom?: number;
@@ -72,6 +75,12 @@ const CATEGORY_META: Record<ParkCategory, {
     shortLabel: "Federal",
     glyph: "■",
     icon: Square,
+  },
+  private: {
+    label: "Private campgrounds",
+    shortLabel: "Private",
+    glyph: "▲",
+    icon: Triangle,
   },
 };
 
@@ -115,10 +124,11 @@ function parkPreviewDescription(park: Pick<Park, "description" | "operator">): s
   return `Browse campsite availability, site details, and booking links from ${displayOperatorName(park.operator)}.`;
 }
 
-function categoryForOperator(operatorId: string): ParkCategory {
-  if (operatorId === "ontario_parks") return "provincial";
-  if (operatorId === "st_lawrence_parks") return "provincial";
-  if (operatorId === "parks_canada") return "federal";
+function categoryForPark(park: Pick<Park, "operator_id" | "operator_vendor">): ParkCategory {
+  if (park.operator_id === "ontario_parks") return "provincial";
+  if (park.operator_id === "st_lawrence_parks") return "provincial";
+  if (park.operator_id === "parks_canada") return "federal";
+  if (park.operator_id.includes("_private") || park.operator_vendor === "campspot") return "private";
   return "conservation";
 }
 
@@ -130,6 +140,7 @@ export function OntarioMap({
   mode = "explore",
   resultLabel = "matches",
   showCategoryFilters = true,
+  showPrivateFilter = false,
   fitToMarkers = false,
   focusedSlug = null,
   focusZoom = 9,
@@ -144,23 +155,26 @@ export function OntarioMap({
     provincial: true,
     conservation: true,
     federal: true,
+    private: true,
   });
 
+  const filterCategories = showPrivateFilter ? CATEGORY_ORDER : BASE_CATEGORY_ORDER;
+
   const categoryCounts = useMemo(() => {
-    const counts: Record<ParkCategory, number> = { provincial: 0, conservation: 0, federal: 0 };
-    for (const park of parks) counts[categoryForOperator(park.operator_id)] += 1;
+    const counts: Record<ParkCategory, number> = { provincial: 0, conservation: 0, federal: 0, private: 0 };
+    for (const park of parks) counts[categoryForPark(park)] += 1;
     return counts;
   }, [parks]);
 
   const filteredParks = useMemo(
-    () => parks.filter((park) => enabledCategories[categoryForOperator(park.operator_id)]),
+    () => parks.filter((park) => enabledCategories[categoryForPark(park)]),
     [enabledCategories, parks],
   );
 
   const features = useMemo(
     () =>
       filteredParks.map((p) => {
-        const category = categoryForOperator(p.operator_id);
+        const category = categoryForPark(p);
         const meta = CATEGORY_META[category];
         const description = parkPreviewDescription(p);
         return {
@@ -172,6 +186,7 @@ export function OntarioMap({
             hero_image_url: safeImageUrl(p.hero_image_url),
             operator: displayOperatorName(p.operator),
             operator_id: p.operator_id,
+            operator_vendor: p.operator_vendor ?? null,
             region: p.region,
             total_sites: p.total_sites,
             available_sites: p.available_sites,
@@ -433,7 +448,10 @@ export function OntarioMap({
         tooltip.remove();
         const p = f.properties as Park;
         const [lng, lat] = (f.geometry as unknown as { coordinates: [number, number] }).coordinates;
-        const category = categoryForOperator(String(p.operator_id));
+        const category = categoryForPark({
+          operator_id: String(p.operator_id),
+          operator_vendor: typeof p.operator_vendor === "string" ? p.operator_vendor : undefined,
+        });
         const park: SelectedPark = {
           slug: p.slug,
           name: p.name,
@@ -488,7 +506,10 @@ export function OntarioMap({
         const pct = Number(p.availability_pct);
         const open = Number(p.available_sites);
         const total = Number(p.total_sites);
-        const category = categoryForOperator(String(p.operator_id));
+        const category = categoryForPark({
+          operator_id: String(p.operator_id),
+          operator_vendor: typeof p.operator_vendor === "string" ? p.operator_vendor : undefined,
+        });
         const meta = CATEGORY_META[category];
         const imageUrl = safeImageUrl(String(p.hero_image_url ?? ""));
         const description = parkPreviewDescription({
@@ -583,7 +604,7 @@ export function OntarioMap({
     const parkRow = parks.find((park) => park.slug === focusedSlug);
     if (!feature || !parkRow) return;
     const [lng, lat] = feature.geometry.coordinates as [number, number];
-    const category = categoryForOperator(String(parkRow.operator_id));
+    const category = categoryForPark(parkRow);
     const selectedPark: SelectedPark = {
       ...parkRow,
       description: parkRow.description ?? "",
@@ -687,7 +708,7 @@ export function OntarioMap({
       {showCategoryFilters && (
       <div className="absolute left-3 right-3 top-3 z-10 sm:left-4 sm:right-auto">
         <div className="inline-flex max-w-full flex-wrap items-center gap-1.5 rounded-lg bg-stone-50/95 p-1.5 text-xs shadow-lg shadow-stone-950/10 ring-1 ring-stone-200 backdrop-blur">
-          {CATEGORY_ORDER.map((category) => {
+          {filterCategories.map((category) => {
             const meta = CATEGORY_META[category];
             const Icon = meta.icon;
             const enabled = enabledCategories[category];

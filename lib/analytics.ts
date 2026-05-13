@@ -8,6 +8,7 @@
  */
 
 import { sql } from "./db/client";
+import { appDate } from "./app-time";
 
 export type StatusBreakdown = { status: string; count: number };
 export type OperatorStatusRow = {
@@ -190,6 +191,7 @@ export async function getAnalyticsSnapshot(): Promise<AnalyticsSnapshot> {
 }
 
 async function loadParkNightSeries(): Promise<ParkNightSeries> {
+  const today = appDate();
   const rows = await sql()<Array<{
     park_id: string;
     slug: string;
@@ -206,6 +208,7 @@ async function loadParkNightSeries(): Promise<ParkNightSeries> {
     SELECT park_id, slug, park_name, operator_id, operator, region, total_sites,
            night_date, available, reserved, closed
       FROM analytics_park_night
+     WHERE night_date >= ${today}::date
      ORDER BY park_id, night_date
   `;
 

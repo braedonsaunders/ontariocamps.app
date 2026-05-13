@@ -16,6 +16,7 @@ type ParkRow = {
   hero_image_url: string | null;
   operator: string;
   operator_id: string;
+  operator_vendor: string;
   region: string;
   lat: number;
   lng: number;
@@ -28,7 +29,7 @@ export default async function MapPage() {
   const parks = await sql()<ParkRow[]>`
     SELECT p.slug, p.name, COALESCE(p.ai_description, p.description) AS description,
            COALESCE(p.hero_image_url, o.hero_image_url) AS hero_image_url,
-           p.operator_id, o.name AS operator,
+           p.operator_id, o.name AS operator, o.vendor AS operator_vendor,
            p.region, p.lat, p.lng,
            p.total_sites, p.available_sites,
            CASE WHEN p.total_sites > 0
@@ -74,7 +75,7 @@ export default async function MapPage() {
           </div>
         </div>
         <div className="flex-1 relative min-h-0">
-          <OntarioMap parks={parks} />
+          <OntarioMap parks={parks} showPrivateFilter />
         </div>
       </div>
       {/* Spacer so the footer renders below the (fixed) map viewport */}
