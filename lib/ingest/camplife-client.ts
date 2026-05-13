@@ -102,12 +102,14 @@ export type CamplifeAvailabilityResponse = {
   closed?: boolean;
 };
 
-function closedAvailabilityError(data: CamplifeAvailabilityResponse): boolean {
+function closedAvailabilityError(data: CamplifeAvailabilityResponse, status: number): boolean {
   const messages = [
     ...(data.errors?.general ?? []),
     ...(data.warnings?.general ?? []),
   ].map((m) => m.message ?? "").join(" ").toLowerCase();
-  return /\b(closed|not open|choose different dates|outside|not available|no availability|not accepting)\b/.test(messages);
+  if (!messages) return false;
+  if (status === 400) return true;
+  return /\b(closed|not open|choose different dates|select different dates|different dates|outside|not available|no availability|not accepting|park is open|open from|open season)\b/.test(messages);
 }
 
 export class CamplifeClient {
@@ -197,7 +199,7 @@ export class CamplifeClient {
     });
     const data = await response.json().catch(() => ({})) as CamplifeAvailabilityResponse;
     if (!response.ok) {
-      if (closedAvailabilityError(data)) return { ...data, closed: true };
+      if (closedAvailabilityError(data, response.status)) return { ...data, closed: true };
       const message = data.errors?.general?.map((e) => e.message).filter(Boolean).join("; ");
       throw new Error(`CampLife availability ${args.campgroundId}: HTTP ${response.status}${message ? `: ${message}` : ""}`);
     }

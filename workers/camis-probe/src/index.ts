@@ -305,12 +305,14 @@ function camplifeHeaders(campgroundId: string): HeadersInit {
   };
 }
 
-function camplifeClosedAvailability(data: CamplifeAvailabilityResponse): boolean {
+function camplifeClosedAvailability(data: CamplifeAvailabilityResponse, status: number): boolean {
   const messages = [
     ...(data.errors?.general ?? []),
     ...(data.warnings?.general ?? []),
   ].map((m) => m.message ?? "").join(" ").toLowerCase();
-  return /\b(closed|not open|choose different dates|outside|not available|no availability|not accepting)\b/.test(messages);
+  if (!messages) return false;
+  if (status === 400) return true;
+  return /\b(closed|not open|choose different dates|select different dates|different dates|outside|not available|no availability|not accepting|park is open|open from|open season)\b/.test(messages);
 }
 
 function decodeCamplifeStatus(siteId: string, response: CamplifeAvailabilityResponse): AvailabilityCode {
@@ -773,7 +775,7 @@ async function fetchCamplifeResponse(target: FetchTarget, night: string, caches:
       });
       const data = await response.json().catch(() => ({})) as CamplifeAvailabilityResponse;
       if (!response.ok) {
-        if (camplifeClosedAvailability(data)) return { ...data, closed: true };
+        if (camplifeClosedAvailability(data, response.status)) return { ...data, closed: true };
         const message = data.errors?.general?.map((e) => e.message).filter(Boolean).join("; ");
         throw new Error(`CampLife availability HTTP ${response.status}${message ? `: ${message}` : ""}`);
       }

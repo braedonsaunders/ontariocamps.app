@@ -249,22 +249,24 @@ function centerForElement(tagName: string, attrs: Record<string, string>, matrix
   return center ? transformPoint(center, matrix) : null;
 }
 
-function parseDimensions(svg: string): { width: number; height: number } {
+function parseDimensions(svg: string): { minX: number; minY: number; width: number; height: number } {
   const svgTag = svg.match(/<svg\b[\s\S]*?>/i)?.[0];
-  if (!svgTag) return { width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT };
+  if (!svgTag) return { minX: 0, minY: 0, width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT };
   const attrs = attrsFor(svgTag);
   const viewBox = pointNumbers(attrs.viewBox ?? attrs.viewbox);
   if (viewBox.length >= 4 && viewBox[2] > 0 && viewBox[3] > 0) {
-    return { width: viewBox[2], height: viewBox[3] };
+    return { minX: viewBox[0], minY: viewBox[1], width: viewBox[2], height: viewBox[3] };
   }
   return {
+    minX: 0,
+    minY: 0,
     width: numberFrom(attrs.width) ?? DEFAULT_WIDTH,
     height: numberFrom(attrs.height) ?? DEFAULT_HEIGHT,
   };
 }
 
 export function parseSvgMap(svg: string): ParsedSvgMap {
-  const { width, height } = parseDimensions(svg);
+  const { minX, minY, width, height } = parseDimensions(svg);
   const anchors = new Map<string, SvgAnchor>();
   const stack: Matrix[] = [IDENTITY];
 
@@ -283,7 +285,7 @@ export function parseSvgMap(svg: string): ParsedSvgMap {
       || tagName === "polygon" || tagName === "polyline" || tagName === "path";
     if (id && isShape) {
       const center = centerForElement(tagName, attrs, matrix);
-      if (center) anchors.set(id, center);
+      if (center) anchors.set(id, { x: center.x - minX, y: center.y - minY });
     }
     if (!fullTag.endsWith("/>")) stack.push(matrix);
   }
