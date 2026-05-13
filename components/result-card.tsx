@@ -92,9 +92,9 @@ export function ResultCard({
         <>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={thumbnail} alt="" className="absolute inset-0 h-full w-full object-cover" />
-          <div className="absolute inset-0 bg-gradient-to-br from-white/95 via-white/70 to-white/20" />
-          <div className="absolute inset-0 bg-gradient-to-tr from-white/90 via-white/50 to-transparent" />
-          <div className="absolute bottom-0 left-0 h-2/3 w-2/3 bg-white/30 blur-xl" />
+          <div className="absolute inset-0 bg-gradient-to-br from-white/[0.93] via-white/[0.65] to-white/[0.15]" />
+          <div className="absolute inset-0 bg-gradient-to-tr from-white/[0.85] via-white/[0.45] to-transparent" />
+          <div className="absolute bottom-0 left-0 h-2/3 w-2/3 bg-white/25 blur-xl" />
         </>
       ) : (
         <div className="absolute inset-0 bg-gradient-to-br from-forest-50 via-white to-lake-50" />
