@@ -1231,12 +1231,12 @@ export function SearchPage() {
 
               <div className="relative col-span-2 rounded-md bg-stone-50 px-3 py-2 ring-1 ring-stone-200 transition focus-within:bg-white focus-within:ring-forest-600 sm:col-span-3 lg:col-span-1 lg:min-w-0">
                 <label className="mb-0.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-stone-500">
-                  <Search size={12} /> Park filter
+                  <Search size={12} /> Limit to parks
                 </label>
                 <input
                   type="text"
                   className="w-full min-w-0 bg-transparent text-sm font-semibold text-stone-950 outline-none placeholder:text-stone-400"
-                  placeholder={selectedParks.length ? "Add another park" : "Search any park"}
+                  placeholder={selectedParks.length ? "Add another park" : "Add exact park"}
                   value={parkInput}
                   autoComplete="off"
                   onChange={(e) => setParkInput(e.target.value)}
@@ -1656,12 +1656,12 @@ export function SearchPage() {
 
                 <div className="relative rounded-md bg-stone-50 px-3 py-2 ring-1 ring-stone-200 focus-within:bg-white focus-within:ring-forest-600">
                   <label className="mb-0.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-stone-500">
-                    <Search size={12} /> Park filter
+                    <Search size={12} /> Limit to parks
                   </label>
                   <input
                     type="text"
                     className="w-full min-w-0 bg-transparent text-sm font-semibold text-stone-950 outline-none placeholder:text-stone-400"
-                    placeholder={selectedParks.length ? "Add another park" : "Search any park"}
+                    placeholder={selectedParks.length ? "Add another park" : "Add exact park"}
                     value={parkInput}
                     autoComplete="off"
                     onChange={(e) => setParkInput(e.target.value)}
@@ -2049,7 +2049,7 @@ export function SearchPage() {
               )}
               {!data && !loading && !routeNeedsDates && (
                 <div className="rounded-lg border border-dashed border-stone-300 bg-stone-50 p-8 text-center text-sm text-stone-500">
-                  Search results will appear here, with matching parks highlighted on the map.
+                  Start a search to see results.
                 </div>
               )}
               {groupedMode ? groupedResults.map((group) => {

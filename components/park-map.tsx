@@ -49,6 +49,12 @@ function availabilityColor(pct: number): string {
   return "#ef4444";                  // red-500
 }
 
+function parkCategory(park: Pick<ParkSummary, "operator_id">): "provincial" | "federal" | "conservation" {
+  if (park.operator_id === "ontario_parks" || park.operator_id === "st_lawrence_parks") return "provincial";
+  if (park.operator_id === "parks_canada") return "federal";
+  return "conservation";
+}
+
 export function ParkMap({ anchor, radiusKm, allParks, matchedSlugs }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -68,6 +74,7 @@ export function ParkMap({ anchor, radiusKm, allParks, matchedSlugs }: Props) {
         total_sites: p.total_sites,
         availability_pct: p.availability_pct,
         color: availabilityColor(p.availability_pct),
+        category: parkCategory(p),
         matched: matchedSlugs ? (matchedSlugs.has(p.slug) ? 1 : 0) : 1,
       },
       geometry: { type: "Point" as const, coordinates: [p.lng, p.lat] },
@@ -176,12 +183,24 @@ export function ParkMap({ anchor, radiusKm, allParks, matchedSlugs }: Props) {
         filter: ["!", ["has", "point_count"]],
         paint: {
           "circle-radius": [
-            "interpolate",
-            ["linear"],
-            ["get", "total_sites"],
-            1, 6,
-            500, 12,
-            5000, 18,
+            "case",
+            ["==", ["get", "category"], "provincial"],
+            [
+              "interpolate",
+              ["linear"],
+              ["get", "total_sites"],
+              1, 10,
+              500, 17,
+              5000, 24,
+            ],
+            [
+              "interpolate",
+              ["linear"],
+              ["get", "total_sites"],
+              1, 6,
+              500, 12,
+              5000, 18,
+            ],
           ],
           "circle-color": ["get", "color"],
           "circle-stroke-color": "#ffffff",
