@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from "motion/react";
 import type { Site, CampMap, EquipmentOption, ParkReview, SiteReviewAggregate, ParkReviewAggregate, OperatorRuleSource } from "@/lib/types";
 import { AvailabilityCalendar, type CalendarRow } from "@/components/availability-calendar";
 import { CampgroundMap } from "@/components/campground-map";
+import { ParkLocationMap } from "@/components/park-location-map";
 import { ParkReviewAggregateDisplay, ParkReviewList, ParkReviewForm } from "@/components/reviews";
 import { SiteFieldNotes, type SiteStatsEntry } from "@/components/site-field-notes";
 import { SiteDetailFlyout, type SiteFlyoutDetails } from "@/components/site-detail-flyout";
@@ -926,42 +927,45 @@ export function ParkTabs(props: Props) {
         </div>
 
         <aside className="min-w-0 space-y-4">
-          <div className="card p-5">
-            <div className="text-xs text-stone-500 uppercase tracking-wide">At a glance</div>
-            <dl className="mt-3 grid grid-cols-2 gap-y-3 text-sm">
-              <dt className="text-stone-500">Operator</dt>
-              <dd>
-                <Link href={`/operator/${operatorId}`} className="text-stone-900 hover:text-forest-700">
-                  {operatorName}
-                </Link>
-              </dd>
-              <dt className="text-stone-500">Vendor</dt>
-              <dd className="text-stone-700">{operatorVendor}</dd>
-              <dt className="text-stone-500">Sites</dt>
-              <dd className="font-medium tabular-nums">{totalSites.toLocaleString()}</dd>
-              <dt className="text-stone-500">Sections</dt>
-              <dd className="font-medium tabular-nums">{campMapSummaries.length}</dd>
-              <dt className="text-stone-500">Avg open</dt>
-              <dd className="font-medium tabular-nums">{avgAvailability}%</dd>
-              <dt className="text-stone-500">Coordinates</dt>
-              <dd className="text-stone-700">
-                {parkLocation.lat.toFixed(3)}, {parkLocation.lng.toFixed(3)}
-              </dd>
-            </dl>
-            <a
-              href={vendorUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn-primary mt-5 w-full justify-center"
-            >
-              Book on {operatorName} <ArrowUpRight size={14} />
-            </a>
-            <Link
-              href={`/search?lat=${parkLocation.lat}&lng=${parkLocation.lng}&radius_km=40&operators=${operatorId}`}
-              className="btn-secondary mt-2 w-full justify-center"
-            >
-              Search sites nearby
-            </Link>
+          <div className="card overflow-hidden">
+            <ParkLocationMap parkName={parkName} location={parkLocation} />
+            <div className="p-5">
+              <div className="text-xs text-stone-500 uppercase tracking-wide">At a glance</div>
+              <dl className="mt-3 grid grid-cols-2 gap-y-3 text-sm">
+                <dt className="text-stone-500">Operator</dt>
+                <dd>
+                  <Link href={`/operator/${operatorId}`} className="text-stone-900 hover:text-forest-700">
+                    {operatorName}
+                  </Link>
+                </dd>
+                <dt className="text-stone-500">Vendor</dt>
+                <dd className="text-stone-700">{operatorVendor}</dd>
+                <dt className="text-stone-500">Sites</dt>
+                <dd className="font-medium tabular-nums">{totalSites.toLocaleString()}</dd>
+                <dt className="text-stone-500">Sections</dt>
+                <dd className="font-medium tabular-nums">{campMapSummaries.length}</dd>
+                <dt className="text-stone-500">Avg open</dt>
+                <dd className="font-medium tabular-nums">{avgAvailability}%</dd>
+                <dt className="text-stone-500">Coordinates</dt>
+                <dd className="text-stone-700">
+                  {parkLocation.lat.toFixed(3)}, {parkLocation.lng.toFixed(3)}
+                </dd>
+              </dl>
+              <a
+                href={vendorUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-primary mt-5 w-full justify-center"
+              >
+                Book on {operatorName} <ArrowUpRight size={14} />
+              </a>
+              <Link
+                href={`/search?lat=${parkLocation.lat}&lng=${parkLocation.lng}&radius_km=40&operators=${operatorId}`}
+                className="btn-secondary mt-2 w-full justify-center"
+              >
+                Search sites nearby
+              </Link>
+            </div>
           </div>
 
           {equipmentOptions.length > 0 && (
