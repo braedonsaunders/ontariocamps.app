@@ -57,6 +57,12 @@ type Tab = "photos" | "calendar" | "rules" | "reviews";
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+function ratingNumber(value: number | string | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
 function statusBadge(status: string, checkingLive = false) {
   if (status === "available" && checkingLive) {
     return { cls: "bg-amber-50 text-amber-900 ring-amber-200", label: "Last seen open" };
@@ -121,6 +127,7 @@ export function SiteTabs(props: Props) {
   } = props;
 
   const [activeTab, setActiveTab] = useState<Tab>("photos");
+  const ratingAvg = ratingNumber(reviewAggregate.rating_avg);
 
   const TABS: Array<{ id: Tab; label: string; icon: typeof Camera }> = [
     { id: "photos", label: "Photos", icon: Camera },
@@ -430,7 +437,7 @@ export function SiteTabs(props: Props) {
                             key={i}
                             size={12}
                             className={
-                              reviewAggregate.rating_avg && i <= Math.round(reviewAggregate.rating_avg)
+                              ratingAvg && i <= Math.round(ratingAvg)
                                 ? "fill-amber-400 text-amber-400"
                                 : "text-stone-300"
                             }
@@ -438,7 +445,7 @@ export function SiteTabs(props: Props) {
                         ))}
                       </span>
                       <span className="text-xs font-medium text-stone-700 tabular-nums">
-                        {reviewAggregate.rating_avg?.toFixed(1)}
+                        {ratingAvg?.toFixed(1)}
                       </span>
                       <span className="text-xs text-stone-500 tabular-nums">
                         ({reviewAggregate.review_count} {reviewAggregate.review_count === 1 ? "review" : "reviews"})

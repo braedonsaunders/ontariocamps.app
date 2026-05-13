@@ -706,6 +706,17 @@ function rowToParkReview(r: ParkReviewRow): ParkReview {
   };
 }
 
+function toNullableNumber(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function toInteger(value: unknown): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.trunc(n) : 0;
+}
+
 export async function getSiteReviews(siteId: string, limit = 20, offset = 0): Promise<SiteReview[]> {
   const rows = await sql()<SiteReviewRow[]>`
     SELECT id, site_id, author_handle, overall, privacy, cleanliness, noise, site_size, shade,
@@ -721,16 +732,28 @@ export async function getSiteReviews(siteId: string, limit = 20, offset = 0): Pr
 
 export async function getSiteReviewAggregate(siteId: string): Promise<SiteReviewAggregate> {
   const rows = await sql()<Array<{
-    review_count: number; rating_avg: number | null;
-    rating_privacy: number | null; rating_cleanliness: number | null;
-    rating_noise: number | null; rating_site_size: number | null; rating_shade: number | null;
-    rating_cell_service: number | null;
+    review_count: number | string; rating_avg: number | string | null;
+    rating_privacy: number | string | null; rating_cleanliness: number | string | null;
+    rating_noise: number | string | null; rating_site_size: number | string | null; rating_shade: number | string | null;
+    rating_cell_service: number | string | null;
   }>>`
     SELECT review_count, rating_avg, rating_privacy, rating_cleanliness,
            rating_noise, rating_site_size, rating_shade, rating_cell_service
       FROM sites WHERE id = ${siteId}
   `;
-  return rows[0] ?? { review_count: 0, rating_avg: null, rating_privacy: null, rating_cleanliness: null, rating_noise: null, rating_site_size: null, rating_shade: null, rating_cell_service: null };
+  const row = rows[0];
+  return row
+    ? {
+        review_count: toInteger(row.review_count),
+        rating_avg: toNullableNumber(row.rating_avg),
+        rating_privacy: toNullableNumber(row.rating_privacy),
+        rating_cleanliness: toNullableNumber(row.rating_cleanliness),
+        rating_noise: toNullableNumber(row.rating_noise),
+        rating_site_size: toNullableNumber(row.rating_site_size),
+        rating_shade: toNullableNumber(row.rating_shade),
+        rating_cell_service: toNullableNumber(row.rating_cell_service),
+      }
+    : { review_count: 0, rating_avg: null, rating_privacy: null, rating_cleanliness: null, rating_noise: null, rating_site_size: null, rating_shade: null, rating_cell_service: null };
 }
 
 export async function getParkReviews(parkId: string, limit = 20, offset = 0): Promise<ParkReview[]> {
@@ -748,16 +771,28 @@ export async function getParkReviews(parkId: string, limit = 20, offset = 0): Pr
 
 export async function getParkReviewAggregate(parkId: string): Promise<ParkReviewAggregate> {
   const rows = await sql()<Array<{
-    review_count: number; rating_avg: number | null;
-    rating_facilities: number | null; rating_trails: number | null;
-    rating_beach: number | null; rating_privacy: number | null; rating_noise: number | null;
-    rating_cell_service: number | null;
+    review_count: number | string; rating_avg: number | string | null;
+    rating_facilities: number | string | null; rating_trails: number | string | null;
+    rating_beach: number | string | null; rating_privacy: number | string | null; rating_noise: number | string | null;
+    rating_cell_service: number | string | null;
   }>>`
     SELECT review_count, rating_avg, rating_facilities, rating_trails,
            rating_beach, rating_privacy, rating_noise, rating_cell_service
       FROM parks WHERE id = ${parkId}
   `;
-  return rows[0] ?? { review_count: 0, rating_avg: null, rating_facilities: null, rating_trails: null, rating_beach: null, rating_privacy: null, rating_noise: null, rating_cell_service: null };
+  const row = rows[0];
+  return row
+    ? {
+        review_count: toInteger(row.review_count),
+        rating_avg: toNullableNumber(row.rating_avg),
+        rating_facilities: toNullableNumber(row.rating_facilities),
+        rating_trails: toNullableNumber(row.rating_trails),
+        rating_beach: toNullableNumber(row.rating_beach),
+        rating_privacy: toNullableNumber(row.rating_privacy),
+        rating_noise: toNullableNumber(row.rating_noise),
+        rating_cell_service: toNullableNumber(row.rating_cell_service),
+      }
+    : { review_count: 0, rating_avg: null, rating_facilities: null, rating_trails: null, rating_beach: null, rating_privacy: null, rating_noise: null, rating_cell_service: null };
 }
 
 export async function getRecentSiteReviewsForPark(parkId: string, limit = 5): Promise<Array<SiteReview & { site_name: string }>> {
@@ -777,13 +812,17 @@ export async function getRecentSiteReviewsForPark(parkId: string, limit = 5): Pr
 }
 
 export async function getSiteReviewStatsForPark(parkId: string): Promise<Array<{ site_id: string; review_count: number; rating_avg: number | null }>> {
-  const rows = await sql()<Array<{ site_id: string; review_count: number; rating_avg: number | null }>>`
+  const rows = await sql()<Array<{ site_id: string; review_count: number | string; rating_avg: number | string | null }>>`
     SELECT s.id AS site_id, COALESCE(s.review_count, 0) AS review_count, s.rating_avg
       FROM sites s
       JOIN campgrounds c ON c.id = s.campground_id
      WHERE c.park_id = ${parkId}
   `;
-  return rows;
+  return rows.map((row) => ({
+    site_id: row.site_id,
+    review_count: toInteger(row.review_count),
+    rating_avg: toNullableNumber(row.rating_avg),
+  }));
 }
 
 // ─── Review writes ────────────────────────────────────────────────────────────

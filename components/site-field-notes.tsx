@@ -27,17 +27,24 @@ type Props = {
 };
 
 function StarRating({ rating }: { rating: number }) {
+  const value = Number.isFinite(Number(rating)) ? Number(rating) : 0;
   return (
     <span className="inline-flex items-center gap-0.5">
       {[1, 2, 3, 4, 5].map((i) => (
         <Star
           key={i}
           size={12}
-          className={i <= Math.round(rating) ? "fill-amber-400 text-amber-400" : "text-stone-300"}
+          className={i <= Math.round(value) ? "fill-amber-400 text-amber-400" : "text-stone-300"}
         />
       ))}
     </span>
   );
+}
+
+function ratingNumber(value: number | string | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
 }
 
 function MiniStat({
@@ -88,7 +95,7 @@ export function SiteFieldNotes({
     .sort((a, b) => b.bookingRate - a.bookingRate);
 
   const bestRated = [...withReviews].sort(
-    (a, b) => (b.ratingAvg ?? 0) - (a.ratingAvg ?? 0),
+    (a, b) => (ratingNumber(b.ratingAvg) ?? 0) - (ratingNumber(a.ratingAvg) ?? 0),
   );
 
   const electricCount = siteStats.filter((s) => s.hasElectric).length;
@@ -161,7 +168,7 @@ export function SiteFieldNotes({
           }
           sub={
             topRated
-              ? `${topRated.ratingAvg!.toFixed(1)} \u2605 \u00B7 ${topRated.reviewCount} review${topRated.reviewCount !== 1 ? "s" : ""}`
+              ? `${ratingNumber(topRated.ratingAvg)!.toFixed(1)} \u2605 \u00B7 ${topRated.reviewCount} review${topRated.reviewCount !== 1 ? "s" : ""}`
               : "No reviews yet"
           }
         />
@@ -233,7 +240,7 @@ export function SiteFieldNotes({
                 <span className="chip bg-stone-100 text-stone-600 shrink-0 hidden sm:inline-flex">
                   {s.siteTypeLabel}
                 </span>
-                <StarRating rating={Math.round(s.ratingAvg!)} />
+                <StarRating rating={Math.round(ratingNumber(s.ratingAvg) ?? 0)} />
                 <span className="text-xs text-stone-500 tabular-nums shrink-0">
                   ({s.reviewCount})
                 </span>

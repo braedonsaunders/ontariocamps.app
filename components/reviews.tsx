@@ -7,25 +7,33 @@ import { SITE_RATING_ATTRS, PARK_RATING_ATTRS } from "@/lib/types";
 
 // ─── Star display ────────────────────────────────────────────────────────────
 
-function Stars({ value, size = 14 }: { value: number; size?: number }) {
+function ratingNumber(value: number | string | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function Stars({ value, size = 14 }: { value: number | string; size?: number }) {
+  const rating = ratingNumber(value) ?? 0;
   return (
-    <span className="inline-flex gap-0.5" aria-label={`${value} out of 5 stars`}>
+    <span className="inline-flex gap-0.5" aria-label={`${rating} out of 5 stars`}>
       {Array.from({ length: 5 }, (_, i) => (
         <Star
           key={i}
           size={size}
-          className={i < Math.round(value) ? "fill-amber-400 text-amber-400" : "text-stone-300"}
+          className={i < Math.round(rating) ? "fill-amber-400 text-amber-400" : "text-stone-300"}
         />
       ))}
     </span>
   );
 }
 
-function NumericRating({ value }: { value: number | null }) {
-  if (value === null) return null;
+function NumericRating({ value }: { value: number | string | null }) {
+  const rating = ratingNumber(value);
+  if (rating === null) return null;
   return (
     <span className="text-sm font-semibold text-stone-900 tabular-nums">
-      {value.toFixed(1)}
+      {rating.toFixed(1)}
     </span>
   );
 }
@@ -35,8 +43,9 @@ function NumericRating({ value }: { value: number | null }) {
 type AttributeRating = { label: string; value: number | null };
 
 function AggregateBar({ label, value }: AttributeRating) {
-  if (value === null) return null;
-  const pct = (value / 5) * 100;
+  const rating = ratingNumber(value);
+  if (rating === null) return null;
+  const pct = (rating / 5) * 100;
   return (
     <div className="flex items-center gap-2 text-sm">
       <span className="w-24 text-stone-600 shrink-0">{label}</span>
@@ -46,7 +55,7 @@ function AggregateBar({ label, value }: AttributeRating) {
           style={{ width: `${pct}%` }}
         />
       </div>
-      <NumericRating value={value} />
+      <NumericRating value={rating} />
     </div>
   );
 }
