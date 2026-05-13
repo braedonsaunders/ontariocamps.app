@@ -12,7 +12,7 @@ type Props = {
   zoom?: number;
 };
 
-export function ParkLocationMap({ parkName, location, zoom = 12.8 }: Props) {
+export function ParkLocationMap({ parkName, location, zoom = 14 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markerRef = useRef<maplibregl.Marker | null>(null);
