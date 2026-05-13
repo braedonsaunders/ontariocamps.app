@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CloudSun, Droplets, Sun, Wind } from "lucide-react";
+import { ChevronDown, CloudSun, Droplets, Sun, Wind } from "lucide-react";
 
 type WeatherPayload = {
   available: boolean;
@@ -23,6 +23,7 @@ type Props = {
   from?: string | null;
   to?: string | null;
   compact?: boolean;
+  className?: string;
 };
 
 const weatherCache = new Map<string, WeatherPayload | null>();
@@ -32,8 +33,9 @@ function value(value: number | null | undefined, suffix: string) {
   return value == null ? null : `${value}${suffix}`;
 }
 
-export function WeatherStrip({ lat, lng, from, to, compact = false }: Props) {
+export function WeatherStrip({ lat, lng, from, to, compact = false, className = "" }: Props) {
   const [payload, setPayload] = useState<WeatherPayload | null>(null);
+  const [expanded, setExpanded] = useState(false);
 
   const url = useMemo(() => {
     if (!from || !to) return null;
@@ -90,6 +92,12 @@ export function WeatherStrip({ lat, lng, from, to, compact = false }: Props) {
   const rain = value(s.rain_probability_pct, "% rain");
   const wind = value(s.wind_gust_kmh, " km/h gusts");
   const uv = value(s.uv_index, " UV");
+  const precip = value(s.precipitation_mm, " mm");
+  const detailItems = [
+    rain || precip ? { icon: Droplets, label: "Precip", value: [rain, precip].filter(Boolean).join(" / ") } : null,
+    wind ? { icon: Wind, label: "Gusts", value: wind } : null,
+    uv ? { icon: Sun, label: "UV", value: uv } : null,
+  ].filter((item): item is { icon: typeof CloudSun; label: string; value: string } => Boolean(item));
 
   if (compact) {
     return (
@@ -103,27 +111,30 @@ export function WeatherStrip({ lat, lng, from, to, compact = false }: Props) {
   }
 
   return (
-    <div className="grid gap-2 rounded-lg bg-lake-50/70 p-3 text-sm text-stone-700 ring-1 ring-lake-100 sm:grid-cols-4">
-      <div className="inline-flex min-w-0 items-center gap-2">
-        <CloudSun size={15} className="shrink-0 text-lake-700" />
-        <span className="truncate font-semibold text-stone-900">{s.label}{temp ? ` / ${temp}` : ""}</span>
-      </div>
-      {rain && (
-        <div className="inline-flex items-center gap-2">
-          <Droplets size={15} className="text-lake-700" />
-          <span>{rain}{s.precipitation_mm ? ` / ${s.precipitation_mm} mm` : ""}</span>
-        </div>
-      )}
-      {wind && (
-        <div className="inline-flex items-center gap-2">
-          <Wind size={15} className="text-stone-600" />
-          <span>{wind}</span>
-        </div>
-      )}
-      {uv && (
-        <div className="inline-flex items-center gap-2">
-          <Sun size={15} className="text-amber-600" />
-          <span>{uv}</span>
+    <div className={`${expanded ? "col-span-2" : ""} overflow-hidden rounded-md bg-white text-xs text-stone-700 ring-1 ring-stone-200 ${className}`}>
+      <button
+        type="button"
+        className="flex min-h-8 w-full min-w-0 items-center gap-1.5 px-2.5 py-1.5 text-left transition hover:bg-stone-50"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((open) => !open)}
+      >
+        <CloudSun size={13} className="shrink-0 text-lake-700" />
+        <span className="shrink-0 font-semibold text-stone-900">{s.label}</span>
+        {temp && <span className="shrink-0 text-stone-500">{temp}</span>}
+        {rain && <span className="min-w-0 truncate text-stone-500">{rain}</span>}
+        {payload.partial && <span className="shrink-0 text-stone-400">partial</span>}
+        <ChevronDown size={13} className={`ml-auto shrink-0 text-stone-400 transition-transform ${expanded ? "rotate-180" : ""}`} />
+      </button>
+
+      {expanded && detailItems.length > 0 && (
+        <div className="grid gap-1.5 border-t border-stone-100 px-2.5 py-2 text-[11px] sm:grid-cols-3">
+          {detailItems.map((item) => (
+            <div key={item.label} className="inline-flex min-w-0 items-center gap-1.5">
+              <item.icon size={12} className="shrink-0 text-stone-500" />
+              <span className="shrink-0 font-medium text-stone-600">{item.label}</span>
+              <span className="min-w-0 truncate text-stone-500">{item.value}</span>
+            </div>
+          ))}
         </div>
       )}
     </div>

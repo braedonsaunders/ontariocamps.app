@@ -644,7 +644,7 @@ export function ParkTabs(props: Props) {
     <section className="mx-auto w-full min-w-0 max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
       <DateFilter ctx={dateContext} />
 
-      <div className="mt-3 grid gap-2">
+      <div className="mt-2 grid grid-cols-2 gap-1.5">
         <WeatherStrip
           lat={parkLocation.lat}
           lng={parkLocation.lng}
