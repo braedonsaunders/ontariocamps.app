@@ -147,6 +147,13 @@ function rangeNights(start: string, end: string): number | null {
   return Math.round((endTime - startTime) / 86_400_000);
 }
 
+function formatShortDate(value: string): string | null {
+  if (!value) return null;
+  const date = new Date(`${value}T00:00:00`);
+  if (!Number.isFinite(date.getTime())) return null;
+  return new Intl.DateTimeFormat("en-CA", { month: "short", day: "numeric" }).format(date);
+}
+
 function stayModeCopy(mode: (typeof STAY_MODES)[number]) {
   return STAY_MODE_OPTIONS.find((option) => option.id === mode) ?? STAY_MODE_OPTIONS[0];
 }
@@ -247,6 +254,7 @@ export function SearchPage() {
   const [selectedItinerary, setSelectedItinerary] = useState<SearchResult | null>(null);
   const [loadingSiteId, setLoadingSiteId] = useState<string | null>(null);
   const [allParks, setAllParks] = useState<ParkSummary[]>([]);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   // `searchKey` bumps every time the user explicitly hits Search.
   // The fetch effect depends on it, NOT on filter state — so changing a chip
   // doesn't auto-fire a query.
@@ -634,12 +642,95 @@ export function SearchPage() {
     (normalizeSearchRadiusKm(state.radius_km) !== DEFAULT_SEARCH_RADIUS_KM ? 1 : 0) +
     (state.flexible ? 1 : 0) +
     (state.party_size !== 2 ? 1 : 0);
+  const dateSummary = state.start_date && state.end_date
+    ? `${formatShortDate(state.start_date) ?? state.start_date}-${formatShortDate(state.end_date) ?? state.end_date}`
+    : "Any dates";
+  const mobileActiveCount =
+    advancedFilterCount +
+    selectedParks.length +
+    (state.stay_mode !== "same_site" ? 1 : 0) +
+    (state.flexible ? 1 : 0) +
+    (state.party_size !== 2 ? 1 : 0) +
+    (normalizeSearchRadiusKm(state.radius_km) !== DEFAULT_SEARCH_RADIUS_KM ? 1 : 0);
+  const mobilePrimarySummary = `${nearInput.trim() || "Ontario"} · ${dateSummary}`;
+  const mobileSecondarySummary = [
+    selectedEquipment.shortLabel,
+    selectedStayMode.label,
+    `${normalizeSearchRadiusKm(state.radius_km)} km`,
+    selectedParks.length ? `${selectedParks.length} park${selectedParks.length === 1 ? "" : "s"}` : null,
+  ].filter(Boolean).join(" · ");
 
   return (
-    <div className="flex h-[calc(100dvh-3.5rem)] min-h-[42rem] flex-col bg-stone-50">
+    <div className="flex h-[calc(100dvh-3.5rem)] min-h-[calc(100dvh-3.5rem)] flex-col bg-stone-50 lg:min-h-[42rem]">
       <div className="sticky top-14 z-40 border-b border-stone-200 bg-white/95 shadow-sm backdrop-blur">
-        <div className="mx-auto w-full max-w-[1600px] px-4 py-2 sm:px-6 lg:px-8">
-          <div className="rounded-lg bg-white p-1.5 ring-1 ring-stone-200">
+        <div className="mx-auto w-full max-w-[1600px] px-3 py-2 sm:px-6 lg:px-8">
+          <div className="lg:hidden">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setMobileFiltersOpen(true)}
+                className="min-w-0 flex-1 rounded-lg bg-white px-3 py-2 text-left shadow-sm ring-1 ring-stone-200 transition active:scale-[0.99]"
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  <MapPin size={15} className="shrink-0 text-forest-700" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold text-stone-950">{mobilePrimarySummary}</span>
+                    <span className="mt-0.5 block truncate text-[11px] font-medium text-stone-500">{mobileSecondarySummary}</span>
+                  </span>
+                  <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-stone-50 text-stone-600 ring-1 ring-stone-200">
+                    <Sliders size={15} />
+                  </span>
+                  {mobileActiveCount > 0 && (
+                    <span className="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-forest-700 px-1.5 text-[10px] font-semibold text-white">
+                      {mobileActiveCount}
+                    </span>
+                  )}
+                </span>
+              </button>
+              <button
+                type="button"
+                className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-forest-700 text-white shadow-sm transition hover:bg-forest-800 disabled:opacity-50"
+                onClick={runSearch}
+                disabled={loading || resolvingNear}
+                aria-label="Search"
+              >
+                {loading || resolvingNear ? <Loader2 size={18} className="animate-spin" /> : <Search size={18} />}
+              </button>
+            </div>
+
+            <div className="mt-2 flex items-center justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto scrollbar-none">
+                {state.flexible && <span className="chip shrink-0 bg-lake-50 text-lake-800 ring-1 ring-lake-200">Flexible</span>}
+                {state.stay_mode !== "same_site" && <span className="chip shrink-0 bg-forest-50 text-forest-800 ring-1 ring-forest-200">{selectedStayMode.label}</span>}
+                {advancedFilterCount > 0 && <span className="chip shrink-0 bg-stone-100 text-stone-700 ring-1 ring-stone-200">{advancedFilterCount} filters</span>}
+                {selectedParks.map((park) => (
+                  <span key={park.slug} className="chip max-w-[10rem] shrink-0 bg-white text-stone-700 ring-1 ring-stone-200">
+                    <span className="truncate">{park.name}</span>
+                  </span>
+                ))}
+              </div>
+              <div className="inline-flex shrink-0 rounded-md bg-stone-100 p-1 ring-1 ring-stone-200">
+                {VIEW_MODES.map((mode) => {
+                  const Icon = mode === "list" ? List : MapIcon;
+                  return (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => setState({ view: mode })}
+                      className={`inline-flex h-8 w-9 items-center justify-center rounded ${
+                        state.view === mode ? "bg-white text-stone-950 shadow-sm" : "text-stone-600"
+                      }`}
+                      aria-label={`Show ${mode}`}
+                    >
+                      <Icon size={14} />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          <div className="hidden rounded-lg bg-white p-1.5 ring-1 ring-stone-200 lg:block">
             <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-[minmax(15rem,1.05fr)_minmax(17rem,1.25fr)_minmax(8.5rem,0.65fr)_minmax(8.5rem,0.65fr)_minmax(11rem,0.75fr)_auto]">
               <div className="relative col-span-2 rounded-md bg-stone-50 px-3 py-2 ring-1 ring-stone-200 transition focus-within:bg-white focus-within:ring-forest-600 sm:col-span-3 lg:col-span-1 lg:min-w-0">
                 <div className="mb-0.5 flex items-center justify-between gap-3">
@@ -1016,37 +1107,385 @@ export function SearchPage() {
             </div>
           </div>
 
-          <div className="mt-2 flex items-center justify-between gap-2 lg:hidden">
-            <div className="text-xs text-stone-500">
-              {selectedStayMode.label}
-              {dateWindowNights ? ` · ${dateWindowNights} night window` : ""}
-            </div>
-            <div className="inline-flex rounded-md bg-stone-100 p-1 ring-1 ring-stone-200">
-              {VIEW_MODES.map((mode) => {
-                const Icon = mode === "list" ? List : MapIcon;
-                return (
-                  <button
-                    key={mode}
-                    type="button"
-                    onClick={() => setState({ view: mode })}
-                    className={`inline-flex h-8 items-center gap-1.5 rounded px-3 text-xs font-semibold capitalize ${
-                      state.view === mode ? "bg-white text-stone-950 shadow-sm" : "text-stone-600"
-                    }`}
-                  >
-                    <Icon size={13} /> {mode}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
           {locationMessage && (
             <div className="mt-1 text-xs text-stone-500">{locationMessage}</div>
           )}
         </div>
       </div>
 
-      <div className="mx-auto flex w-full max-w-[1600px] min-h-0 flex-1 px-4 py-3 sm:px-6 lg:px-8">
+      {mobileFiltersOpen && (
+        <div className="fixed inset-0 z-[90] bg-stone-950/35 lg:hidden" onClick={() => setMobileFiltersOpen(false)}>
+          <div
+            className="absolute inset-x-0 bottom-0 max-h-[90dvh] overflow-hidden rounded-t-lg bg-white shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Search controls"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-stone-200 px-4 py-3">
+              <div className="min-w-0">
+                <div className="text-xs font-semibold uppercase tracking-wide text-stone-500">Search controls</div>
+                <div className="truncate text-sm font-semibold text-stone-950">{mobilePrimarySummary}</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMobileFiltersOpen(false)}
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-stone-100 text-stone-700 transition hover:bg-stone-200"
+                aria-label="Close search controls"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="max-h-[calc(90dvh-8rem)] space-y-4 overflow-y-auto px-4 py-3 pb-24">
+              <section className="space-y-2">
+                <div className="grid grid-cols-[1fr_auto] gap-2">
+                  <label className="min-w-0 rounded-md bg-stone-50 px-3 py-2 ring-1 ring-stone-200 focus-within:bg-white focus-within:ring-forest-600">
+                    <span className="mb-0.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-stone-500">
+                      <MapPin size={12} /> Near
+                    </span>
+                    <input
+                      type="text"
+                      className="w-full min-w-0 bg-transparent text-sm font-semibold text-stone-950 outline-none placeholder:text-stone-400"
+                      placeholder="Town, city, park, or postal code"
+                      value={nearInput}
+                      autoComplete="off"
+                      onChange={(e) => setNearInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          setMobileFiltersOpen(false);
+                          void runSearch();
+                        }
+                      }}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={useDeviceLocation}
+                    className="inline-flex h-[3.5rem] w-12 items-center justify-center rounded-md bg-white text-forest-700 ring-1 ring-stone-200 transition hover:bg-forest-50"
+                    aria-label="Use current location"
+                  >
+                    {resolvingNear ? <Loader2 size={16} className="animate-spin" /> : <LocateFixed size={16} />}
+                  </button>
+                </div>
+
+                <div className="relative rounded-md bg-stone-50 px-3 py-2 ring-1 ring-stone-200 focus-within:bg-white focus-within:ring-forest-600">
+                  <label className="mb-0.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-stone-500">
+                    <Search size={12} /> Park filter
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full min-w-0 bg-transparent text-sm font-semibold text-stone-950 outline-none placeholder:text-stone-400"
+                    placeholder={selectedParks.length ? "Add another park" : "Search any park"}
+                    value={parkInput}
+                    autoComplete="off"
+                    onChange={(e) => setParkInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        const first = parkSuggestions[0];
+                        if (first) addParkFilter(first);
+                      }
+                    }}
+                  />
+                  {parkInput.trim() && (
+                    <div className="absolute left-0 right-0 top-full z-[95] mt-1 max-h-60 overflow-y-auto rounded-md bg-white py-1 shadow-xl ring-1 ring-stone-200">
+                      {parkSuggestions.length > 0 ? parkSuggestions.map((park) => (
+                        <button
+                          key={park.slug}
+                          type="button"
+                          onClick={() => addParkFilter(park)}
+                          className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left transition hover:bg-forest-50"
+                        >
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm font-semibold text-stone-950">{park.name}</span>
+                            <span className="block truncate text-xs text-stone-500">{park.operator} · {park.region}</span>
+                          </span>
+                          <span className="shrink-0 text-xs font-semibold text-forest-700">{park.available_sites.toLocaleString()} open</span>
+                        </button>
+                      )) : (
+                        <div className="px-3 py-2 text-xs text-stone-500">
+                          {allParks.length ? "No park matches that search." : "Loading parks..."}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {selectedParks.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {selectedParks.map((park) => (
+                      <span
+                        key={park.slug}
+                        className="inline-flex min-h-7 max-w-full items-center gap-1.5 rounded-full bg-forest-50 px-2.5 py-1 text-xs font-semibold text-forest-800 ring-1 ring-forest-200"
+                      >
+                        <MapPin size={12} className="shrink-0" />
+                        <span className="truncate">{park.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => removeParkFilter(park.slug)}
+                          className="rounded-full p-0.5 text-forest-700 transition hover:bg-forest-100"
+                          aria-label={`Remove ${park.name}`}
+                        >
+                          <X size={12} />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="rounded-md bg-stone-50 px-3 py-2 ring-1 ring-stone-200 focus-within:bg-white focus-within:ring-forest-600">
+                    <span className="mb-0.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-stone-500">
+                      <Calendar size={12} /> Check-in
+                    </span>
+                    <input
+                      type="date"
+                      className="w-full min-w-0 bg-transparent text-sm font-semibold text-stone-950 outline-none"
+                      value={state.start_date}
+                      onChange={(e) => setState({ start_date: e.target.value, page: 1 })}
+                    />
+                  </label>
+                  <label className="rounded-md bg-stone-50 px-3 py-2 ring-1 ring-stone-200 focus-within:bg-white focus-within:ring-forest-600">
+                    <span className="mb-0.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-stone-500">
+                      <Calendar size={12} /> Check-out
+                    </span>
+                    <input
+                      type="date"
+                      className="w-full min-w-0 bg-transparent text-sm font-semibold text-stone-950 outline-none"
+                      value={state.end_date}
+                      onChange={(e) => setState({ end_date: e.target.value, page: 1 })}
+                    />
+                  </label>
+                </div>
+
+                <label className="block rounded-md bg-stone-50 px-3 py-2 ring-1 ring-stone-200 focus-within:bg-white focus-within:ring-forest-600">
+                  <span className="mb-0.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-stone-500">
+                    <EquipmentIcon size={12} /> Equipment
+                  </span>
+                  <select
+                    className="w-full min-w-0 appearance-none bg-transparent text-sm font-semibold text-stone-950 outline-none"
+                    value={state.equipment}
+                    onChange={(e) => applyEquipment(e.target.value)}
+                  >
+                    {SEARCH_EQUIPMENT_OPTIONS.map((option) => (
+                      <option key={option.id} value={option.id}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+              </section>
+
+              <section className="space-y-2 border-t border-stone-200 pt-3">
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-stone-500">
+                  <Route size={13} /> Trip
+                </div>
+                <div className="grid gap-2">
+                  {STAY_MODE_OPTIONS.map((option) => {
+                    const active = state.stay_mode === option.id;
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => updateStayMode(option.id)}
+                        className={`rounded-md px-3 py-2 text-left ring-1 transition ${
+                          active
+                            ? "bg-forest-700 text-white ring-forest-700"
+                            : "bg-stone-50 text-stone-800 ring-stone-200 hover:bg-white"
+                        }`}
+                      >
+                        <span className="flex items-center gap-1.5 text-sm font-semibold">
+                          <Route size={14} /> {option.label}
+                        </span>
+                        <span className={`mt-0.5 block text-xs leading-tight ${active ? "text-forest-50" : "text-stone-500"}`}>
+                          {option.detail}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {state.stay_mode === "anywhere" && (
+                  <label className="inline-flex h-10 w-full items-center gap-1.5 rounded-md bg-stone-50 px-3 text-sm font-semibold text-stone-700 ring-1 ring-stone-200">
+                    <MapPin size={13} className="shrink-0 text-stone-400" />
+                    <input
+                      type="text"
+                      className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-stone-400"
+                      placeholder="End near (optional)"
+                      value={endInput}
+                      onChange={(e) => setEndInput(e.target.value)}
+                    />
+                  </label>
+                )}
+              </section>
+
+              <section className="space-y-2 border-t border-stone-200 pt-3">
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-stone-500">
+                  <Sliders size={13} /> Planning
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="rounded-md bg-stone-50 px-3 py-2 text-xs font-semibold text-stone-700 ring-1 ring-stone-200">
+                    <span className="block text-stone-500">Group</span>
+                    <select
+                      className="mt-1 w-full bg-transparent text-sm text-stone-950 outline-none"
+                      value={state.group_by}
+                      onChange={(e) => updateGroupBy(e.target.value as typeof state.group_by)}
+                    >
+                      {GROUP_OPTIONS.map((option) => (
+                        <option key={option} value={option}>{GROUP_LABELS[option]}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="rounded-md bg-stone-50 px-3 py-2 text-xs font-semibold text-stone-700 ring-1 ring-stone-200">
+                    <span className="block text-stone-500">Sort</span>
+                    <select
+                      className="mt-1 w-full bg-transparent text-sm text-stone-950 outline-none"
+                      value={state.sort}
+                      onChange={(e) => setState({ sort: e.target.value as typeof state.sort, page: 1 })}
+                    >
+                      {SORT_OPTIONS.map((option) => (
+                        <option key={option} value={option}>{SORT_LABELS[option]}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="rounded-md bg-stone-50 px-3 py-2 text-xs font-semibold text-stone-700 ring-1 ring-stone-200">
+                    <span className="block text-stone-500">Radius</span>
+                    <span className="mt-1 flex items-center gap-1">
+                      <input
+                        type="number"
+                        aria-label="Search radius in kilometers"
+                        className="min-w-0 flex-1 bg-transparent text-sm text-stone-950 outline-none"
+                        min={MIN_SEARCH_RADIUS_KM}
+                        max={MAX_SEARCH_RADIUS_KM}
+                        step={10}
+                        value={state.radius_km}
+                        onChange={(e) => setState({ radius_km: Number(e.target.value), page: 1 })}
+                        onBlur={(e) => setState({ radius_km: normalizeSearchRadiusKm(e.currentTarget.value), page: 1 })}
+                      />
+                      <span className="text-stone-500">km</span>
+                    </span>
+                  </label>
+                  <label className="rounded-md bg-stone-50 px-3 py-2 text-xs font-semibold text-stone-700 ring-1 ring-stone-200">
+                    <span className="block text-stone-500">Party</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={12}
+                      className="mt-1 w-full bg-transparent text-sm text-stone-950 outline-none"
+                      value={state.party_size}
+                      onChange={(e) => setState({ party_size: Number(e.target.value), page: 1 })}
+                    />
+                  </label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setFlexibleDates(!state.flexible)}
+                    className={`inline-flex h-9 items-center gap-2 rounded-md px-3 text-xs font-semibold transition ${
+                      state.flexible ? "bg-lake-700 text-white" : "bg-white text-stone-700 ring-1 ring-stone-200 hover:bg-stone-50"
+                    }`}
+                  >
+                    Flexible window
+                  </button>
+                  <label className="inline-flex h-9 flex-1 items-center gap-2 rounded-md bg-white px-3 text-xs font-semibold text-stone-700 ring-1 ring-stone-200">
+                    <span>Nights</span>
+                    <input
+                      type="number"
+                      min={minRouteNights}
+                      max={dateWindowNights ?? 21}
+                      className="min-w-0 flex-1 bg-transparent text-right outline-none"
+                      value={Math.max(minRouteNights, state.min_nights ?? dateWindowNights ?? minRouteNights)}
+                      onChange={(e) => setState({ min_nights: Math.max(minRouteNights, Number(e.target.value)), flexible: true, page: 1 })}
+                    />
+                  </label>
+                </div>
+              </section>
+
+              <section className="space-y-2 border-t border-stone-200 pt-3">
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-stone-500">
+                  <Sliders size={13} /> Filters
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {SITE_TYPES.map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setState({
+                        site_types: toggle(state.site_types, t),
+                        equipment: "any",
+                        equipment_length_ft: null,
+                        page: 1,
+                      })}
+                      className={`chip ring-1 ${
+                        state.site_types.includes(t)
+                          ? "bg-forest-700 text-white ring-forest-700"
+                          : "bg-white text-stone-700 ring-stone-300 hover:bg-stone-50"
+                      }`}
+                    >
+                      {t.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {Object.entries(AMENITIES).map(([code, a]) => (
+                    <button
+                      key={code}
+                      type="button"
+                      onClick={() => setState({ amenities: toggle(state.amenities, code), page: 1 })}
+                      className={`chip ring-1 ${
+                        state.amenities.includes(code)
+                          ? "bg-lake-700 text-white ring-lake-700"
+                          : "bg-white text-stone-700 ring-stone-300 hover:bg-stone-50"
+                      }`}
+                    >
+                      {a.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {OPERATOR_OPTIONS.map((op) => (
+                    <button
+                      key={op.id}
+                      type="button"
+                      onClick={() => setState({ operators: toggle(state.operators, op.id), page: 1 })}
+                      className={`chip ring-1 ${
+                        state.operators.includes(op.id)
+                          ? "bg-stone-900 text-white ring-stone-900"
+                          : "bg-white text-stone-700 ring-stone-300 hover:bg-stone-50"
+                      }`}
+                    >
+                      {op.label}
+                    </button>
+                  ))}
+                </div>
+              </section>
+            </div>
+
+            <div className="absolute inset-x-0 bottom-0 border-t border-stone-200 bg-white/95 p-3 backdrop-blur">
+              <button
+                type="button"
+                className="btn-primary h-11 w-full text-sm font-semibold"
+                onClick={() => {
+                  setMobileFiltersOpen(false);
+                  void runSearch();
+                }}
+                disabled={loading || resolvingNear}
+              >
+                {loading || resolvingNear ? (
+                  <>
+                    <Loader2 size={15} className="animate-spin" /> Searching
+                  </>
+                ) : (
+                  <>
+                    <Search size={15} /> Search
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="mx-auto flex w-full max-w-[1600px] min-h-0 flex-1 px-3 py-2 sm:px-6 lg:px-8 lg:py-3">
         <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(28rem,0.9fr)_minmax(0,1.1fr)]">
           <section
             className={`min-h-0 flex-col overflow-hidden rounded-lg bg-white ring-1 ring-stone-200 ${
