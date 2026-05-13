@@ -1,5 +1,12 @@
 import { addDays } from "./provider-utils";
 
+export type LetsCampImage = {
+  _id?: string;
+  publicId?: string;
+  url?: string;
+  sizes?: Record<string, string>;
+};
+
 export type LetsCampCamp = {
   _id: string;
   name: string;
@@ -9,8 +16,12 @@ export type LetsCampCamp = {
     lat?: number;
     lng?: number;
     physicalAddress?: string;
+    website?: string;
   };
-  featuredImage?: { url?: string };
+  featuredImage?: LetsCampImage | null;
+  logo?: LetsCampImage | null;
+  map?: LetsCampImage | null;
+  mapId?: string | null;
   siteSearchCriteria?: {
     allowedUnitTypes?: string[];
     allowPets?: boolean;
@@ -138,4 +149,3 @@ export class LetsCampClient {
     return out;
   }
 }
-

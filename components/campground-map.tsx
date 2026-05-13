@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { CampMap, Site, EquipmentOption } from "@/lib/types";
 import { Minus, Plus, RotateCcw, Move, X, ExternalLink, Zap, Tent as TentIcon, Users, Tent, MapPin, CircleDot, Accessibility, Anchor, Bike, BookOpen, Bus, Church, CigaretteOff, Cross, Dog, DollarSign, DoorOpen, Droplet, Droplets, Dumbbell, Eye, Fish, Flag, Flame, Footprints, Heart, House, Info, Landmark, Lightbulb, Lock, Mountain, ParkingCircle, Phone, PlugZap, Radio, Recycle, Sailboat, Ship, ShoppingBag, ShowerHead, Snowflake, Store, TentTree, Theater, TreePine, Trophy, Umbrella, UtensilsCrossed, Volleyball, WashingMachine, Waves, Wifi, Wrench, type LucideIcon } from "lucide-react";
 import { legendTypeLabel, legendTypeIcon } from "@/lib/legend-types";
+import { mapImageUrl } from "@/lib/map-image";
 
 const LEGEND_ICONS: Record<string, LucideIcon> = {
   Accessibility, Anchor, Bike, BookOpen, Bus, Church, CigaretteOff, Cross, Dog, DollarSign, DoorOpen, Droplet, Droplets, Dumbbell, Eye, Fish, Flag, Flame, Footprints, Heart, House, Info, Landmark, Lightbulb, Lock, Mountain, ParkingCircle, Phone, PlugZap, Radio, Recycle, Sailboat, Ship, ShoppingBag, ShowerHead, Snowflake, Store, Tent, TentTree, Theater, TreePine, Trophy, Umbrella, UtensilsCrossed, Volleyball, WashingMachine, Waves, Wifi, Wrench,
@@ -121,10 +122,10 @@ export function CampgroundMap({
   }, [initialMapId, campMaps]);
   const activeMap = campMaps.find((m) => m.id === activeMapId) ?? campMaps[0];
 
-  const sitesOnMap = useMemo(() => {
+  const assignedSites = useMemo(() => {
     if (!activeMap) return [] as SiteOnMap[];
     return sites
-      .filter((s) => s.camp_map_id === activeMap.id && typeof s.map_x === "number" && typeof s.map_y === "number")
+      .filter((s) => s.camp_map_id === activeMap.id)
       .map((s) => {
         const a = availabilitySummary[s.id];
         return {
@@ -135,6 +136,13 @@ export function CampgroundMap({
         };
       });
   }, [activeMap, sites, availabilitySummary]);
+
+  const sitesOnMap = useMemo(
+    () => assignedSites.filter((s) => typeof s.site.map_x === "number" && typeof s.site.map_y === "number"),
+    [assignedSites],
+  );
+  const mapSiteRows = assignedSites.length > 0 ? assignedSites : sitesOnMap;
+  const hasSitePins = sitesOnMap.length > 0;
 
   // For the in-tab counters
   const sitesByMap = useMemo(() => {
@@ -167,16 +175,16 @@ export function CampgroundMap({
     return { types, accessCount, labelCount, total: feats.length };
   }, [activeMap]);
 
-  const availableCount = sitesOnMap.filter((s) => s.status === "available").length;
+  const availableCount = mapSiteRows.filter((s) => s.status === "available").length;
   const electricBreakdown = useMemo(() => {
     let electric = 0;
     let nonElectric = 0;
-    for (const s of sitesOnMap) {
+    for (const s of mapSiteRows) {
       if (s.site.has_electric) electric += 1;
       else nonElectric += 1;
     }
     return { electric, nonElectric };
-  }, [sitesOnMap]);
+  }, [mapSiteRows]);
 
   return (
     <div className="card w-full min-w-0 max-w-full overflow-hidden">
@@ -221,6 +229,7 @@ export function CampgroundMap({
         equipmentOptions={equipmentOptions}
         onOpenSiteDetails={onOpenSiteDetails}
         checkingLive={checkingLive}
+        hasSitePins={hasSitePins}
       />
       <div className="flex w-full min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-stone-100 px-4 py-2.5 text-xs text-stone-600">
         <span className="inline-flex items-center gap-1.5">
@@ -273,9 +282,15 @@ export function CampgroundMap({
             )}
           </>
         )}
-        <span className="inline-flex basis-full items-center gap-1 text-stone-500 sm:ml-auto sm:basis-auto">
-          <Move size={11} /> drag · scroll to zoom · click a site
-        </span>
+        {hasSitePins ? (
+          <span className="inline-flex basis-full items-center gap-1 text-stone-500 sm:ml-auto sm:basis-auto">
+            <Move size={11} /> drag · scroll to zoom · click a site
+          </span>
+        ) : (
+          <span className="inline-flex basis-full items-center gap-1 text-stone-500 sm:ml-auto sm:basis-auto">
+            <Move size={11} /> drag · scroll to zoom
+          </span>
+        )}
       </div>
     </div>
   );
@@ -289,6 +304,7 @@ function PanZoomViewer({
   equipmentOptions,
   onOpenSiteDetails,
   checkingLive,
+  hasSitePins,
 }: {
   campMap: CampMap;
   sites: SiteOnMap[];
@@ -297,6 +313,7 @@ function PanZoomViewer({
   equipmentOptions?: EquipmentOption[];
   onOpenSiteDetails?: (siteId: string) => void;
   checkingLive?: boolean;
+  hasSitePins: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   // Tracks a potential drag — only escalated to "actually dragging" once the
@@ -413,6 +430,7 @@ function PanZoomViewer({
   }
 
   const aspectRatio = `${campMap.x_dimension} / ${campMap.y_dimension}`;
+  const renderedMapImageUrl = mapImageUrl(campMap.image_url);
   const selectedSite = selected ? sites.find((x) => x.site.id === selected) ?? null : null;
   const visibleDot = DOT_PX / transform.scale;
   const visibleHit = HIT_PX / transform.scale;
@@ -437,7 +455,7 @@ function PanZoomViewer({
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={campMap.image_url}
+            src={renderedMapImageUrl}
             alt={campMap.name ?? "Campground map"}
             draggable={false}
             className="absolute inset-0 h-full w-full object-contain pointer-events-none"
@@ -701,6 +719,7 @@ function SitePopover({
   // per CSS pixel and position so the site lands at the thumb's centre.
   const K = 2.5; // CSS-px per image-px
   const THUMB = 96;
+  const renderedMapImageUrl = mapImageUrl(campMap.image_url);
   const bgW = campMap.x_dimension * K;
   const bgH = campMap.y_dimension * K;
   const bgX = `${THUMB / 2 - (site.site.map_x ?? 0) * K}px`;
@@ -735,7 +754,7 @@ function SitePopover({
           style={{
             width: THUMB,
             height: THUMB,
-            backgroundImage: `url(${campMap.image_url})`,
+            backgroundImage: `url(${renderedMapImageUrl})`,
             backgroundSize: `${bgW}px ${bgH}px`,
             backgroundPosition: `${bgX} ${bgY}`,
             backgroundRepeat: "no-repeat",

@@ -2,6 +2,14 @@ import { addDays } from "./provider-utils";
 
 const CLIENT_ID = "60jmeb5kmfgfkeljne4car54vo";
 
+export type CampspotImage = {
+  small?: { url?: string };
+  medium?: { url?: string };
+  large?: { url?: string };
+  extraLarge?: { url?: string };
+  originalImageUrl?: string;
+};
+
 export type CampspotPark = {
   id: number;
   name: string;
@@ -10,8 +18,11 @@ export type CampspotPark = {
   address?: string;
   latitude?: number;
   longitude?: number;
-  media?: { mainImage?: { large?: { url?: string }; medium?: { url?: string }; originalImageUrl?: string } };
+  media?: { mainImage?: CampspotImage };
+  logo?: CampspotImage | null;
+  backgroundImage?: CampspotImage | null;
   mapUrl?: string;
+  marketingSite?: string;
   slug: string;
 };
 
@@ -28,6 +39,7 @@ export type CampspotAvailabilityRow = {
   campsites?: Array<{
     id: number;
     name: string;
+    mapId?: string | null;
     rvInfo?: { rvLengthMin?: number; rvLengthMax?: number; rvTypes?: string[] };
     amenities?: string[];
     availability?: string;

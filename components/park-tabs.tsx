@@ -12,6 +12,7 @@ import { SiteFieldNotes, type SiteStatsEntry } from "@/components/site-field-not
 import { SiteDetailFlyout, type SiteFlyoutDetails } from "@/components/site-detail-flyout";
 import { RulesPanel } from "@/components/rules-panel";
 import { timeAgo } from "@/lib/utils";
+import { mapImageUrl } from "@/lib/map-image";
 import { Info, Map as MapIcon, Calendar, Tent, ArrowUpRight, CalendarRange, MessageSquare, TreePine, ShieldCheck, Loader2 } from "lucide-react";
 
 type SiteAvailability = {
@@ -121,6 +122,108 @@ function DateBanner({ ctx }: { ctx: DateContext }) {
         {" "}Pick a date range in the Calendar tab or via{" "}
         <Link href="/search" className="text-forest-700 hover:underline">search</Link> to refine.
       </span>
+    </div>
+  );
+}
+
+function siteStatusClasses(status: SiteAvailability["status"]): string {
+  if (status === "available") return "bg-emerald-50 text-emerald-700 ring-emerald-200";
+  if (status === "reserved") return "bg-red-50 text-red-700 ring-red-200";
+  if (status === "closed") return "bg-red-100 text-red-900 ring-red-300";
+  return "bg-stone-100 text-stone-600 ring-stone-200";
+}
+
+function SiteDirectoryFallback({
+  sites,
+  availabilitySummary,
+  bookingUrls,
+  operatorName,
+  onOpenSiteDetails,
+}: {
+  sites: Site[];
+  availabilitySummary: Record<string, SiteAvailability>;
+  bookingUrls: Record<string, string>;
+  operatorName: string;
+  onOpenSiteDetails: (siteId: string) => void;
+}) {
+  const visibleSites = sites.slice(0, 36);
+  const availableCount = sites.filter((s) => availabilitySummary[s.id]?.status === "available").length;
+  return (
+    <div className="overflow-hidden rounded-lg bg-white ring-1 ring-stone-200">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-stone-100 px-4 py-3">
+        <div>
+          <h2 className="text-xl font-semibold tracking-tight">Sites</h2>
+          <p className="mt-0.5 text-xs text-stone-500">
+            No operator sitemap is available for this park yet, so the site index is shown here.
+          </p>
+        </div>
+        <span className="text-xs text-stone-500">
+          {availableCount.toLocaleString()} open · {sites.length.toLocaleString()} total
+        </span>
+      </div>
+      <div className="grid gap-2 p-3 sm:grid-cols-2">
+        {visibleSites.map((site) => {
+          const status = availabilitySummary[site.id]?.status ?? "unknown";
+          const photo = (site.photos ?? []).find((p) => p.url || p.avifUrl);
+          return (
+            <div key={site.id} className="flex min-w-0 gap-3 rounded-lg bg-stone-50 p-2.5 ring-1 ring-stone-200">
+              <div className="relative h-16 w-20 shrink-0 overflow-hidden rounded-md bg-stone-200">
+                {photo ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={photo.url ?? photo.avifUrl ?? ""}
+                    alt={`Site ${site.name}`}
+                    className="absolute inset-0 h-full w-full object-cover"
+                    loading="lazy"
+                  />
+                ) : (
+                  <div className="grid h-full w-full place-items-center text-xs font-semibold text-stone-500">
+                    {site.name}
+                  </div>
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold text-stone-900">Site {site.name}</div>
+                    <div className="mt-0.5 truncate text-xs text-stone-500">
+                      {site.site_type_label ?? site.site_type.toUpperCase()}
+                    </div>
+                  </div>
+                  <span className={`chip shrink-0 ring-1 ${siteStatusClasses(status)}`}>{status}</span>
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  {site.has_electric && <span className="chip bg-amber-50 text-amber-800 ring-1 ring-amber-200">Electric</span>}
+                  {site.is_waterfront && <span className="chip bg-lake-50 text-lake-800 ring-1 ring-lake-200">Waterfront</span>}
+                  {site.is_pet_friendly && <span className="chip bg-stone-100 text-stone-700 ring-1 ring-stone-200">Pets</span>}
+                </div>
+                <div className="mt-2 flex items-center gap-2 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => onOpenSiteDetails(site.id)}
+                    className="font-medium text-forest-700 hover:text-forest-800"
+                  >
+                    Details
+                  </button>
+                  <a
+                    href={bookingUrls[site.id]}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 font-medium text-stone-600 hover:text-stone-900"
+                  >
+                    {operatorName} <ArrowUpRight size={10} />
+                  </a>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {sites.length > visibleSites.length && (
+        <div className="border-t border-stone-100 px-4 py-2 text-xs text-stone-500">
+          Showing {visibleSites.length.toLocaleString()} of {sites.length.toLocaleString()} sites. Use Field Notes or Calendar for the full indexed set.
+        </div>
+      )}
     </div>
   );
 }
@@ -251,6 +354,11 @@ export function ParkTabs(props: Props) {
     }
     return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
   }, [sites]);
+
+  const sortedSites = useMemo(
+    () => [...sites].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })),
+    [sites],
+  );
 
   function jumpToSection(campMapId: string) {
     setSelectedSection(campMapId);
@@ -394,7 +502,7 @@ export function ParkTabs(props: Props) {
                           <div className="relative h-28 bg-stone-200 overflow-hidden">
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
-                              src={m.image_url}
+                              src={mapImageUrl(m.image_url)}
                               alt={m.name ?? "Campground section"}
                               className="absolute inset-0 h-full w-full object-cover opacity-90 group-hover:scale-[1.03] transition-transform duration-500"
                               loading="lazy"
@@ -469,9 +577,13 @@ export function ParkTabs(props: Props) {
                 {sitesSubTab === "map" && (
                   <>
                     {campMapSummaries.length === 0 ? (
-                      <div className="card p-8 text-center text-stone-500">
-                        No campground layouts available for this park yet.
-                      </div>
+                      <SiteDirectoryFallback
+                        sites={sortedSites}
+                        availabilitySummary={availabilitySummary}
+                        bookingUrls={bookingUrls}
+                        operatorName={operatorName}
+                        onOpenSiteDetails={openSiteFlyout}
+                      />
                     ) : (
                       <>
                         <div className="flex items-baseline justify-between mb-3 flex-wrap gap-2">

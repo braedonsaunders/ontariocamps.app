@@ -289,6 +289,25 @@ export async function upsertOperator(o: Operator): Promise<void> {
   `;
 }
 
+export async function upsertOperatorBranding(args: {
+  operator_id: string;
+  logo_url?: string | null;
+  hero_image_url?: string | null;
+  website_url?: string | null;
+  tagline?: string | null;
+  accent_color?: string | null;
+}): Promise<void> {
+  await sqlDirect()`
+    UPDATE operators SET
+      logo_url = COALESCE(operators.logo_url, ${args.logo_url ?? null}),
+      hero_image_url = COALESCE(operators.hero_image_url, ${args.hero_image_url ?? null}),
+      website_url = COALESCE(operators.website_url, ${args.website_url ?? null}),
+      tagline = COALESCE(operators.tagline, ${args.tagline ?? null}),
+      accent_color = COALESCE(operators.accent_color, ${args.accent_color ?? null})
+    WHERE id = ${args.operator_id}
+  `;
+}
+
 export async function upsertPark(p: Park): Promise<void> {
   await sqlDirect()`
     INSERT INTO parks (id, operator_id, vendor_park_id, slug, name, description, region,
@@ -300,7 +319,7 @@ export async function upsertPark(p: Park): Promise<void> {
       operator_id = excluded.operator_id, vendor_park_id = excluded.vendor_park_id,
       slug = excluded.slug, name = excluded.name, description = excluded.description,
       region = excluded.region, lat = excluded.lat, lng = excluded.lng,
-      address = excluded.address, hero_image_url = parks.hero_image_url,
+      address = excluded.address, hero_image_url = COALESCE(parks.hero_image_url, excluded.hero_image_url),
       vendor_url = excluded.vendor_url, updated_at = now()
   `;
 }

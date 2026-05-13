@@ -25,6 +25,7 @@ import { CampspotClient, type CampspotAvailabilityRow } from "./campspot-client"
 import { LetsCampClient, type LetsCampSite } from "./letscamp-client";
 import type { OperatorConfig } from "./operator-registry";
 import { addDays, defaultSampleDate, slugify as providerSlugify, stableNumericId } from "./provider-utils";
+import { fetchSvgMap, type ParsedSvgMap } from "./svg-map";
 import { decodeResourceRules, decodeSiteAttributes, equipmentRules, operatorRuleProfile } from "../rules";
 import { resolveCoordinates } from "./coordinates";
 import {
@@ -33,6 +34,7 @@ import {
   upsertCampground,
   upsertCampMap,
   upsertSite,
+  upsertOperatorBranding,
   upsertSiteTypeLabel,
   upsertEquipmentOption,
   upsertOperatorFetchConfig,
@@ -91,6 +93,19 @@ function photosFromCampspot(row: CampspotAvailabilityRow) {
     .filter((photo) => photo.url);
 }
 
+function campspotImageUrl(image: {
+  large?: { url?: string };
+  medium?: { url?: string };
+  extraLarge?: { url?: string };
+  originalImageUrl?: string;
+} | null | undefined): string | undefined {
+  return image?.large?.url
+    ?? image?.extraLarge?.url
+    ?? image?.medium?.url
+    ?? image?.originalImageUrl
+    ?? undefined;
+}
+
 function emptyRuleSummary(vendor: Operator["vendor"]): SiteRuleSummary {
   return {
     highlights: [],
@@ -114,6 +129,22 @@ function photosFromLetsCamp(site: LetsCampSite) {
     .filter((photo) => photo.url);
 }
 
+function letsCampImageUrl(image: { sizes?: Record<string, string>; url?: string } | null | undefined): string | undefined {
+  return image?.sizes?.large
+    ?? image?.sizes?.gallery
+    ?? image?.sizes?.siteGallery
+    ?? image?.url
+    ?? undefined;
+}
+
+function firstLetsCampSitePhoto(sites: LetsCampSite[]): string | undefined {
+  for (const site of sites) {
+    const photo = photosFromLetsCamp(site)[0]?.url ?? undefined;
+    if (photo) return photo;
+  }
+  return undefined;
+}
+
 function siteTypeFromUnitTypes(unitTypes: string[] | undefined, fallback?: string | null): SiteType {
   if (unitTypes?.includes("lodging")) return "cabin";
   if (unitTypes?.includes("rv")) return "rv";
@@ -126,6 +157,10 @@ function campspotSiteName(row: CampspotAvailabilityRow): string {
   if (campsite) return campsite;
   const match = row.name.match(/\bSite\s+([A-Za-z0-9-]+)/i);
   return match?.[1] ?? row.name;
+}
+
+function campspotMapId(row: CampspotAvailabilityRow): string | null {
+  return row.campsites?.find((site) => site.mapId)?.mapId ?? null;
 }
 
 function campspotMaxLength(row: CampspotAvailabilityRow): number | null {
@@ -150,6 +185,27 @@ function campsiteCategoryLabel(row: CampspotAvailabilityRow): string {
 function letsCampElectrical(site: LetsCampSite): boolean {
   if (Array.isArray(site.electrical)) return site.electrical.length > 0;
   return typeof site.electrical === "number";
+}
+
+function roundedAnchor(parsedMap: ParsedSvgMap | null, id: string | null | undefined): { x: number; y: number } | null {
+  if (!parsedMap || !id) return null;
+  const anchor = parsedMap.anchors.get(id);
+  if (!anchor) return null;
+  return { x: Math.round(anchor.x), y: Math.round(anchor.y) };
+}
+
+async function fetchProviderSvgMap(
+  url: string | null | undefined,
+  log: (m: string) => void,
+  label: string,
+): Promise<ParsedSvgMap | null> {
+  if (!url) return null;
+  try {
+    return await fetchSvgMap(url);
+  } catch (err) {
+    log(`[${label}] map SVG parse skipped: ${(err as Error).message}`);
+    return null;
+  }
 }
 
 async function refreshCampspotMetadata(
@@ -185,9 +241,16 @@ async function refreshCampspotMetadata(
       });
       parks_seen += 1;
       const parkId = `p_${operator.id}_${park.id}`;
-      const hero = park.media?.mainImage?.large?.url
-        ?? park.media?.mainImage?.medium?.url
-        ?? park.media?.mainImage?.originalImageUrl;
+      const hero = campspotImageUrl(park.media?.mainImage)
+        ?? campspotImageUrl(park.backgroundImage)
+        ?? (rows[0] ? photosFromCampspot(rows[0])[0]?.url : undefined)
+        ?? undefined;
+      await upsertOperatorBranding({
+        operator_id: operator.id,
+        logo_url: campspotImageUrl(park.logo),
+        hero_image_url: hero,
+        website_url: park.marketingSite || config.vendorUrl,
+      });
       await upsertPark({
         id: parkId,
         operator_id: operator.id,
@@ -204,7 +267,9 @@ async function refreshCampspotMetadata(
       const campgroundId = `cg_${parkId}`;
       await upsertCampground({ id: campgroundId, park_id: parkId, vendor_map_id: park.mapUrl ?? String(park.id), name: "Main campground" });
       let campMapId: string | null = null;
+      let parsedMap: ParsedSvgMap | null = null;
       if (park.mapUrl) {
+        parsedMap = await fetchProviderSvgMap(park.mapUrl, log, `${operator.id}:${config.slug}`);
         campMapId = `cm_${parkId}`;
         await upsertCampMap({
           id: campMapId,
@@ -214,15 +279,18 @@ async function refreshCampspotMetadata(
           name: `${config.name} map`,
           description: null,
           image_url: park.mapUrl,
-          x_dimension: 1000,
-          y_dimension: 1000,
+          x_dimension: Math.round(parsedMap?.width ?? 1000),
+          y_dimension: Math.round(parsedMap?.height ?? 1000),
           features: [],
         });
       }
+      let positionedSites = 0;
       for (const row of rows) {
         const amenities = campspotAmenities(row);
         const siteLabel = campsiteCategoryLabel(row);
         const siteId = `s_${parkId}_${row.id}`;
+        const anchor = roundedAnchor(parsedMap, campspotMapId(row));
+        if (anchor) positionedSites += 1;
         await upsertSite({
           id: siteId,
           campground_id: campgroundId,
@@ -244,8 +312,8 @@ async function refreshCampspotMetadata(
           is_waterfront: amenities.some((a) => /waterfront|near river/i.test(a)),
           amenities,
           camp_map_id: campMapId,
-          map_x: null,
-          map_y: null,
+          map_x: anchor?.x ?? null,
+          map_y: anchor?.y ?? null,
           vendor_resource_location_id: park.id,
           vendor_resource_id: row.id,
           vendor_booking_category_id: 0,
@@ -259,7 +327,7 @@ async function refreshCampspotMetadata(
         });
         sites_seen += 1;
       }
-      log(`[${operator.id}] ${config.slug}: ${rows.length} sites`);
+      log(`[${operator.id}] ${config.slug}: ${rows.length} sites · ${positionedSites} map pins`);
     } catch (err) {
       errors.push(`${config.slug}: ${(err as Error).message}`);
     }
@@ -295,6 +363,15 @@ async function refreshLetsCampMetadata(
       const sites = await client.getSites(camp._id);
       parks_seen += 1;
       const parkId = `p_${operator.id}_${camp._id}`;
+      const hero = letsCampImageUrl(camp.featuredImage) ?? firstLetsCampSitePhoto(sites);
+      const mapImage = letsCampImageUrl(camp.map);
+      const parsedMap = await fetchProviderSvgMap(mapImage, log, `${operator.id}:${config.slug}`);
+      await upsertOperatorBranding({
+        operator_id: operator.id,
+        logo_url: letsCampImageUrl(camp.logo),
+        hero_image_url: hero,
+        website_url: camp.info?.website ?? config.vendorUrl,
+      });
       await upsertPark({
         id: parkId,
         operator_id: operator.id,
@@ -305,15 +382,34 @@ async function refreshLetsCampMetadata(
         region: config.region,
         location: { lat: camp.info?.lat ?? 0, lng: camp.info?.lng ?? 0 },
         address: camp.info?.physicalAddress ?? "",
-        hero_image_url: camp.featuredImage?.url,
+        hero_image_url: hero,
         vendor_url: config.vendorUrl,
       });
       const campgroundId = `cg_${parkId}`;
       await upsertCampground({ id: campgroundId, park_id: parkId, vendor_map_id: camp._id, name: "Main campground" });
+      let campMapId: string | null = null;
+      if (mapImage) {
+        campMapId = `cm_${parkId}`;
+        await upsertCampMap({
+          id: campMapId,
+          park_id: parkId,
+          campground_id: campgroundId,
+          vendor_map_id: camp.mapId ?? camp.map?._id ?? camp._id,
+          name: `${config.name} map`,
+          description: null,
+          image_url: mapImage,
+          x_dimension: Math.round(parsedMap?.width ?? 1024),
+          y_dimension: Math.round(parsedMap?.height ?? 768),
+          features: [],
+        });
+      }
+      let positionedSites = 0;
       for (const site of sites) {
         const siteId = `s_${parkId}_${site._id}`;
         const lengthFt = feetFromDimension(site.maxRvLength ?? site.length);
         const allowedUnitTypes = site.allowedUnitTypes ?? [];
+        const anchor = roundedAnchor(parsedMap, site.mapLocation);
+        if (anchor) positionedSites += 1;
         await upsertSite({
           id: siteId,
           campground_id: campgroundId,
@@ -339,9 +435,9 @@ async function refreshLetsCampMetadata(
             ...(site.sewer ? ["sewer"] : []),
             ...(site.pullThrough ? ["pull_through"] : []),
           ],
-          camp_map_id: null,
-          map_x: null,
-          map_y: null,
+          camp_map_id: campMapId,
+          map_x: anchor?.x ?? null,
+          map_y: anchor?.y ?? null,
           vendor_resource_location_id: stableNumericId(`letscamp:camp:${camp._id}`),
           vendor_resource_id: stableNumericId(`letscamp:site:${site._id}`),
           vendor_booking_category_id: 0,
@@ -359,7 +455,7 @@ async function refreshLetsCampMetadata(
         });
         sites_seen += 1;
       }
-      log(`[${operator.id}] ${config.slug}: ${sites.length} sites`);
+      log(`[${operator.id}] ${config.slug}: ${sites.length} sites · ${positionedSites} map pins`);
     } catch (err) {
       errors.push(`${config.slug}: ${(err as Error).message}`);
     }
