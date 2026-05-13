@@ -52,6 +52,7 @@ import {
   startRefreshLog,
   finishRefreshLog,
   setRefreshMeta,
+  refreshAggregates,
   type SiteWrite,
 } from "../db/queries";
 import type { Operator, EquipmentOption, SiteRuleSummary, SiteType } from "../types";
@@ -1161,4 +1162,7 @@ export async function refreshAllMetadata(operators: Operator[], log: (m: string)
     log(`[${op.id}] ${result.status}: ${result.parks_seen} parks, ${result.sites_seen} sites, ${result.errors.length} errors`);
   }
   await setRefreshMeta("metadata");
+  log("[metadata] refreshing aggregate counts");
+  await refreshAggregates();
+  log("[metadata] aggregate counts refreshed");
 }
