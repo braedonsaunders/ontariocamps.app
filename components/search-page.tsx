@@ -2049,7 +2049,7 @@ export function SearchPage() {
               )}
               {!data && !loading && !routeNeedsDates && (
                 <div className="rounded-lg border border-dashed border-stone-300 bg-stone-50 p-8 text-center text-sm text-stone-500">
-                  Results land here with map context beside them.
+                  Search results will appear here, with matching parks highlighted on the map.
                 </div>
               )}
               {groupedMode ? groupedResults.map((group) => {
