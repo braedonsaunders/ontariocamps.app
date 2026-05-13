@@ -174,7 +174,7 @@ const WINDOW_CONFIG: Record<RefreshWindow, {
   hot: {
     startOffset: 0,
     days: 2,
-    maxSites: 180,
+    maxSites: 420,
     concurrency: 3,
     delayMs: 450,
     dueField: "hot_due_at",
@@ -182,7 +182,7 @@ const WINDOW_CONFIG: Record<RefreshWindow, {
   near: {
     startOffset: 3,
     days: 10,
-    maxSites: 120,
+    maxSites: 220,
     concurrency: 3,
     delayMs: 650,
     dueField: "near_due_at",
@@ -190,7 +190,7 @@ const WINDOW_CONFIG: Record<RefreshWindow, {
   planning: {
     startOffset: 14,
     days: 75,
-    maxSites: 60,
+    maxSites: 100,
     concurrency: 2,
     delayMs: 900,
     dueField: "planning_due_at",
@@ -198,7 +198,7 @@ const WINDOW_CONFIG: Record<RefreshWindow, {
   deep: {
     startOffset: 90,
     days: 89,
-    maxSites: 30,
+    maxSites: 60,
     concurrency: 2,
     delayMs: 1200,
     dueField: "deep_due_at",
@@ -577,6 +577,14 @@ function dueAt(window: RefreshWindow, checkedAt: string, rows: SiteNight[]): str
   return new Date(base + hours * 60 * 60 * 1000).toISOString();
 }
 
+function failureBackoffDueAt(window: RefreshWindow, vendor: Vendor): string {
+  const hoursByWindow: Record<RefreshWindow, number> = vendor === "campspot"
+    ? { hot: 2, near: 4, planning: 12, deep: 24 }
+    : { hot: 1, near: 2, planning: 6, deep: 12 };
+  const hours = hoursByWindow[window];
+  return new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
+}
+
 async function updateRefreshState(env: Env, siteId: string, window: RefreshWindow, rows: SiteNight[]): Promise<void> {
   if (rows.length === 0) return;
   const checkedAt = rows[0].last_checked_at;
@@ -593,6 +601,18 @@ async function updateRefreshState(env: Env, siteId: string, window: RefreshWindo
     method: "POST",
     headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
     body: JSON.stringify(patch),
+  });
+}
+
+async function deferRefreshState(env: Env, target: FetchTarget, window: RefreshWindow): Promise<void> {
+  await rest(env, "availability_refresh_state?on_conflict=site_id", {
+    method: "POST",
+    headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+    body: JSON.stringify({
+      site_id: target.site_id,
+      [`${window}_due_at`]: failureBackoffDueAt(window, target.operator_vendor),
+      updated_at: new Date().toISOString(),
+    }),
   });
 }
 
@@ -787,6 +807,7 @@ async function refreshAvailability(env: Env, input: RefreshOptions): Promise<Ref
     let cursor = 0;
     let sitesUpdated = 0;
     let nightsUpdated = 0;
+    const reportedErrors = new Set<string>();
 
     async function worker() {
       while (true) {
@@ -801,7 +822,15 @@ async function refreshAvailability(env: Env, input: RefreshOptions): Promise<Ref
           sitesUpdated += 1;
           nightsUpdated += rows.length;
         } catch (err) {
-          if (errors.length < 50) errors.push(`site ${target.site_id}: ${(err as Error).message}`);
+          const message = (err as Error).message;
+          const errorKey = `${target.operator_vendor}:${target.vendor_park_id}:${message}`;
+          if (!reportedErrors.has(errorKey) && errors.length < 50) {
+            reportedErrors.add(errorKey);
+            errors.push(`site ${target.site_id}: ${message}`);
+          }
+          if (opts.window) {
+            await deferRefreshState(env, target, opts.window).catch(() => undefined);
+          }
         }
       }
     }
