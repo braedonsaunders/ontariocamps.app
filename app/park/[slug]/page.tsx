@@ -20,6 +20,7 @@ import { MotionHero } from "@/components/motion";
 import { ParkTabs, type DateContext } from "@/components/park-tabs";
 import type { SiteStatsEntry } from "@/components/site-field-notes";
 import { buildBookingUrl, normalizeBookingUrlPath } from "@/lib/booking-url";
+import { appDate } from "@/lib/app-time";
 
 export const dynamic = "force-dynamic";
 
@@ -32,10 +33,6 @@ export async function generateMetadata({
   const park = await getParkBySlug(slug);
   if (!park) return { title: "Park not found" };
   return { title: park.name, description: park.description };
-}
-
-function todayUtc(): string {
-  return new Date().toISOString().slice(0, 10);
 }
 
 function isValidDate(s: string | undefined | null): s is string {
@@ -60,7 +57,7 @@ function resolveDateContext(
   if (isValidDate(from) && isValidDate(to) && from <= to) {
     return { mode: "range", from, to };
   }
-  const today = todayUtc();
+  const today = appDate();
   // If today has data, use today; otherwise fall back to the operator's first
   // bookable night so dots render with actual status.
   const date = firstBookableNight && firstBookableNight > today ? firstBookableNight : today;

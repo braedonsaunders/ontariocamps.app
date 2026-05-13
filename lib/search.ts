@@ -5,10 +5,14 @@
  */
 
 import { sql } from "./db/client";
+import { appDate } from "./app-time";
 import { PRESET_LOCATIONS } from "./locations";
 import { buildBookingUrl } from "./booking-url";
 import { displayOperatorName } from "./display";
+import { deriveAmenityCodes } from "./search-amenities";
 import { allowedEquipmentSupportsLength } from "./equipment-normalization";
+import { legendTypeLabel } from "./legend-types";
+import { operatorParkType, parkTypesToOperators } from "./park-types";
 import type {
   SearchResponse,
   SearchResult,
@@ -24,6 +28,7 @@ import type {
   SitePhoto,
   SiteType,
   Operator,
+  ParkType,
 } from "./types";
 import { eachDate } from "./utils";
 
@@ -44,6 +49,7 @@ export type SearchParams = {
   site_types?: string[];
   amenities?: string[];
   operators?: string[];
+  park_types?: ParkType[];
   park_slugs?: string[];
   equipment_length_ft?: number;
   stay_mode?: SearchStayMode;
@@ -81,6 +87,9 @@ type SearchRow = {
   site_name: string;
   site_type: string;
   site_type_label: string | null;
+  site_description: string | null;
+  camp_map_description: string | null;
+  camp_map_features: unknown;
   site_max_equipment_length_ft: number | null;
   site_amenities: string[];
   site_rule_summary: unknown;
@@ -159,53 +168,35 @@ function haversineKm(
   return 2 * earthKm * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
-function ruleSetup(raw: unknown): {
-  electricalService?: unknown;
-  serviceType?: unknown;
-  pullThrough?: unknown;
-} {
-  if (!raw || typeof raw !== "object") return {};
-  return ((raw as { setup?: object }).setup ?? {}) as {
-    electricalService?: unknown;
-    serviceType?: unknown;
-    pullThrough?: unknown;
-  };
-}
-
-function hasAmp(text: string, amp: 15 | 30 | 50): boolean {
-  return new RegExp(`\\b${amp}\\b`, "i").test(text) && /\b(?:a|amp|amps|hydro|electric)/i.test(text);
-}
-
 function deriveAmenities(row: SearchRow): string[] {
-  const raw = Array.isArray(row.site_amenities) ? row.site_amenities.filter(Boolean) : [];
-  const setup = ruleSetup(row.site_rule_summary);
-  const text = [
-    row.site_type_label,
-    ...raw,
-    typeof setup.electricalService === "string" ? setup.electricalService : null,
-    typeof setup.serviceType === "string" ? setup.serviceType : null,
-  ].filter(Boolean).join(" ");
-  const electricText = !/\b(?:unserviced|non[-\s]?electric)\b/i.test(text) && /\b(?:serviced|electric|hydro)\b/i.test(text);
-  const hasElectric = row.site_has_electric || electricText;
-  const out = new Set<string>();
+  return deriveAmenityCodes({
+    site_name: row.site_name,
+    site_type: row.site_type,
+    site_type_label: row.site_type_label,
+    site_description: row.site_description,
+    camp_map_description: row.camp_map_description,
+    map_feature_labels: mapFeatureLabels(row.camp_map_features),
+    amenities: row.site_amenities,
+    rule_summary: row.site_rule_summary,
+    has_electric: row.site_has_electric,
+    has_water: row.site_has_water,
+    has_sewer: row.site_has_sewer,
+    is_pull_through: row.site_is_pull_through,
+    is_accessible: row.site_is_accessible,
+    is_pet_friendly: row.site_is_pet_friendly,
+    is_waterfront: row.site_is_waterfront,
+  });
+}
 
-  if (hasElectric) {
-    if (hasAmp(text, 15)) out.add("electric_15a");
-    if (hasAmp(text, 30)) out.add("electric_30a");
-    if (hasAmp(text, 50)) out.add("electric_50a");
-    if (!out.has("electric_15a") && !out.has("electric_30a") && !out.has("electric_50a")) out.add("electric_30a");
+function mapFeatureLabels(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const ids = new Set<number>();
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const typeId = (item as { legendItemType?: unknown }).legendItemType;
+    if (typeof typeId === "number" && Number.isFinite(typeId)) ids.add(typeId);
   }
-  if (row.site_has_water || /\bwater(?:\s+hook[-\s]?up|\s+hookup)?\b/i.test(text)) out.add("water");
-  if (row.site_has_sewer || /\bsewer\b/i.test(text)) out.add("sewer");
-  if (row.site_is_pull_through || setup.pullThrough === true || /\bpull[-\s]?through\b/i.test(text)) out.add("pull_through");
-  if (row.site_is_accessible || /\baccessible\b/i.test(text)) out.add("accessible");
-  if (row.site_is_pet_friendly || /\bpet[-\s]?friendly\b/i.test(text)) out.add("pet_friendly");
-  if (row.site_is_waterfront || /\bwaterfront\b/i.test(text)) out.add("waterfront");
-  if (/\bbeach\b/i.test(text)) out.add("beach");
-  if (/\bswim(?:ming)?\b/i.test(text)) out.add("lake_swim");
-
-  for (const amenity of raw) out.add(amenity);
-  return Array.from(out);
+  return Array.from(ids).map((typeId) => legendTypeLabel(typeId));
 }
 
 function prepareRow(r: SearchRow, params: SearchParams): PreparedRow {
@@ -614,11 +605,14 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
   }
   const flexible = params.flexible === true;
   const requiredMatches = allowMoves ? 1 : minNights;
+  const browseNight = appDate(1);
   const radiusM = (params.radius_km ?? Infinity) * 1000;
   const lat = params.lat;
   const lng = params.lng;
   const hasAnchor = lat != null && lng != null;
   const parkSlugs = params.park_slugs?.filter(Boolean) ?? [];
+  const parkTypeOperators = parkTypesToOperators(params.park_types);
+  const operatorFilters = Array.from(new Set([...(params.operators ?? []), ...parkTypeOperators].filter(Boolean)));
 
   // Postgres-js tagged template doesn't compose multiple WHERE fragments
   // gracefully — we build them with `client.unsafe` would defeat the purpose.
@@ -631,7 +625,7 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
       WHERE status = 'available'
         ${wantDates
           ? client`AND night_date = ANY(${wantDates}::date[])`
-          : client`AND night_date = (now() AT TIME ZONE 'America/Toronto')::date`}
+          : client`AND night_date = ${browseNight}::date`}
     ),
     matching AS (
       SELECT
@@ -648,6 +642,9 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
         s.name AS site_name,
         s.site_type,
         s.site_type_label,
+        s.description AS site_description,
+        cm.description AS camp_map_description,
+        cm.features AS camp_map_features,
         s.max_equipment_length_ft AS site_max_equipment_length_ft,
         s.amenities AS site_amenities,
         s.rule_summary AS site_rule_summary,
@@ -670,6 +667,7 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
       FROM filtered_availability fa
       JOIN sites s       ON s.id = fa.site_id
       JOIN campgrounds c ON c.id = s.campground_id
+      LEFT JOIN camp_maps cm ON cm.id = s.camp_map_id
       JOIN parks p       ON p.id = c.park_id
       JOIN operators o   ON o.id = p.operator_id
       WHERE 1=1
@@ -677,7 +675,7 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
           ? client`AND ST_DWithin(p.location, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography, ${radiusM})`
           : client``}
         ${parkSlugs.length > 0 ? client`AND p.slug = ANY(${parkSlugs})` : client``}
-        ${params.operators && params.operators.length > 0 ? client`AND p.operator_id = ANY(${params.operators})` : client``}
+        ${operatorFilters.length > 0 ? client`AND p.operator_id = ANY(${operatorFilters})` : client``}
         ${params.party_size && params.party_size > 0 ? client`AND s.max_party_size >= ${params.party_size}` : client``}
         ${params.site_types && params.site_types.length > 0 ? client`AND s.site_type = ANY(${params.site_types})` : client``}
         AND NOT (concat_ws(' ', s.name, s.site_type_label, s.site_type, s.description) ~* ${SEASONAL_SITE_LABEL_PATTERN})
@@ -698,6 +696,9 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
         s.name,
         s.site_type,
         s.site_type_label,
+        s.description,
+        cm.description,
+        cm.features,
         s.max_equipment_length_ft,
         s.amenities,
         s.rule_summary,
@@ -863,7 +864,7 @@ export async function operatorHealth(): Promise<
         JOIN parks p ON p.id = c.park_id
         LEFT JOIN site_availability sa
                ON sa.site_id = s.id
-              AND sa.night_date = CURRENT_DATE
+              AND sa.night_date = (now() AT TIME ZONE 'America/Toronto')::date
        GROUP BY p.operator_id, s.id
     ),
     operator_freshness AS (
@@ -894,4 +895,8 @@ export async function operatorHealth(): Promise<
       median_freshness_minutes: r.median_freshness_minutes ?? 0,
     };
   });
+}
+
+export function parkTypeForOperator(operatorId: string): ParkType {
+  return operatorParkType(operatorId);
 }

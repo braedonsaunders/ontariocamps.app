@@ -11,9 +11,11 @@ import {
   useQueryStates,
 } from "nuqs";
 import { PRESET_LOCATIONS } from "@/lib/locations";
+import { appDate } from "@/lib/app-time";
 import { AMENITIES, type SearchResponse, type SearchResult, type SearchResultGroup } from "@/lib/types";
 import { displayOperatorName } from "@/lib/display";
 import { imageProxyUrl } from "@/lib/image-proxy";
+import { PARK_TYPE_OPTIONS, parkTypesToOperators } from "@/lib/park-types";
 import { ResultCard } from "@/components/result-card";
 import { OntarioMap, type Park as MapPark } from "@/components/ontario-map";
 import type { LucideIcon } from "lucide-react";
@@ -29,6 +31,7 @@ import {
   MapPin,
   Navigation,
   Route,
+  RotateCcw,
   Ruler,
   Search,
   Sliders,
@@ -48,10 +51,11 @@ import { ItineraryFlyout } from "@/components/itinerary-flyout";
 
 type ParkSummary = Omit<MapPark, "description" | "hero_image_url">;
 
-const SITE_TYPES = ["tent", "rv", "cabin", "yurt"] as const;
+const SITE_TYPES = ["tent", "rv", "cabin", "yurt", "backcountry"] as const;
 const STAY_MODES = ["same_site", "same_park", "anywhere"] as const;
 const VIEW_MODES = ["list", "map"] as const;
 const GROUP_OPTIONS = ["park", "campground", "operator", "none"] as const;
+const PARK_TYPE_IDS = PARK_TYPE_OPTIONS.map((option) => option.id);
 const OPERATOR_OPTIONS: { id: string; label: string }[] = [
   { id: "ontario_parks", label: "Ontario Parks" },
   { id: "parks_canada", label: "Parks Canada" },
@@ -180,6 +184,32 @@ function rangeNights(start: string, end: string): number | null {
   return Math.round((endTime - startTime) / 86_400_000);
 }
 
+function addIsoDays(value: string, days: number): string {
+  const date = new Date(`${value}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function sameDayCheckInMessage(startDate: string): string | null {
+  if (!startDate) return null;
+  const minimum = appDate(1);
+  if (startDate >= minimum) return null;
+  const today = appDate();
+  const minimumLabel = formatShortDate(minimum) ?? minimum;
+  if (startDate === today) {
+    return `Same-day check-in is closed for ${formatShortDate(startDate) ?? startDate}. Choose ${minimumLabel} or later.`;
+  }
+  return `Check-in must be ${minimumLabel} or later.`;
+}
+
+function dateRequirementMessage(startDate: string, endDate: string): string | null {
+  if (!startDate || !endDate) return "Choose check-in and check-out dates to search availability.";
+  const sameDayMessage = sameDayCheckInMessage(startDate);
+  if (sameDayMessage) return sameDayMessage;
+  if (rangeNights(startDate, endDate) == null) return "Check-out must be after check-in.";
+  return null;
+}
+
 function formatShortDate(value: string): string | null {
   if (!value) return null;
   const date = new Date(`${value}T00:00:00`);
@@ -261,6 +291,7 @@ export function SearchPage() {
     site_types: parseAsArrayOf(parseAsString).withDefault([]),
     amenities: parseAsArrayOf(parseAsString).withDefault([]),
     operators: parseAsArrayOf(parseAsString).withDefault([]),
+    park_types: parseAsArrayOf(parseAsStringLiteral(PARK_TYPE_IDS)).withDefault([]),
     park_slugs: parseAsArrayOf(parseAsString).withDefault([]),
     stay_mode: parseAsStringLiteral(STAY_MODES).withDefault("same_site"),
     view: parseAsStringLiteral(VIEW_MODES).withDefault("list"),
@@ -347,6 +378,18 @@ export function SearchPage() {
 
   async function runSearch() {
     // Commit typed place strings into state only when the user runs a search.
+    const dateMessage = dateRequirementMessage(state.start_date, state.end_date);
+    if (dateMessage) {
+      setLocationMessage(dateMessage);
+      const empty = { results: [], total: 0, group_total: 0, groups: [], freshness_p50_minutes: 0 };
+      setData(empty);
+      setLoading(false);
+      const nextState = { ...state, page: 1 } as typeof state;
+      setSubmittedState(nextState);
+      await setState({ page: 1 });
+      return;
+    }
+
     const query = nearInput.trim();
     const committedRadius = normalizeSearchRadiusKm(radiusInput);
     setRadiusInput(String(committedRadius));
@@ -508,6 +551,14 @@ export function SearchPage() {
   useEffect(() => {
     if (searchKey === 0) return;
     const requestState = submittedState ?? state;
+    const dateMessage = dateRequirementMessage(requestState.start_date, requestState.end_date);
+    if (dateMessage) {
+      setLocationMessage(dateMessage);
+      setData({ results: [], total: 0, group_total: 0, groups: [], freshness_p50_minutes: 0 });
+      setLoading(false);
+      return;
+    }
+
     const requestAnchor =
       requestState.lat != null && requestState.lng != null
         ? { lat: requestState.lat, lng: requestState.lng }
@@ -538,6 +589,7 @@ export function SearchPage() {
     if (requestState.site_types.length) sp.set("site_types", requestState.site_types.join(","));
     if (requestState.amenities.length) sp.set("amenities", requestState.amenities.join(","));
     if (requestState.operators.length) sp.set("operators", requestState.operators.join(","));
+    if (requestState.park_types.length) sp.set("park_types", requestState.park_types.join(","));
     if (requestState.park_slugs.length) sp.set("park_slugs", requestState.park_slugs.join(","));
     sp.set("stay_mode", requestState.stay_mode);
     sp.set("sort", requestState.sort);
@@ -641,6 +693,7 @@ export function SearchPage() {
       site_types: [],
       amenities: [],
       operators: [],
+      park_types: [],
       park_slugs: [],
       stay_mode: "same_site",
       group_by: "park",
@@ -661,6 +714,7 @@ export function SearchPage() {
       site_types: nextState.site_types,
       amenities: nextState.amenities,
       operators: nextState.operators,
+      park_types: nextState.park_types,
       park_slugs: nextState.park_slugs,
       stay_mode: nextState.stay_mode,
       group_by: nextState.group_by,
@@ -720,6 +774,13 @@ export function SearchPage() {
   const EquipmentIcon = EQUIPMENT_ICONS[selectedEquipment.id] ?? Navigation;
   const selectedStayMode = stayModeCopy(state.stay_mode);
   const dateWindowNights = rangeNights(state.start_date, state.end_date);
+  const minimumCheckInDate = appDate(1);
+  const minimumCheckOutDate = addIsoDays(
+    state.start_date && state.start_date >= minimumCheckInDate ? state.start_date : minimumCheckInDate,
+    1,
+  );
+  const dateBlockMessage = dateRequirementMessage(state.start_date, state.end_date);
+  const searchDisabled = loading || resolvingNear || Boolean(dateBlockMessage);
   const selectedParkSet = useMemo(() => new Set(state.park_slugs), [state.park_slugs]);
   const selectedParks = useMemo(
     () =>
@@ -801,7 +862,7 @@ export function SearchPage() {
       .sort((a, b) => b.available_sites - a.available_sites || a.name.localeCompare(b.name))
       .slice(0, 8);
   }, [allParks, parkInput, selectedParkSet]);
-  const advancedFilterCount = state.site_types.length + state.amenities.length + state.operators.length;
+  const advancedFilterCount = state.site_types.length + state.amenities.length + state.operators.length + state.park_types.length;
   const resultWord = state.stay_mode === "same_site" ? "sites" : "routes";
   const groupedMode = state.group_by !== "none";
   const groupedResults = useMemo(
@@ -910,6 +971,7 @@ export function SearchPage() {
     `${normalizeSearchRadiusKm(state.radius_km)} km`,
     selectedParks.length ? `${selectedParks.length} park${selectedParks.length === 1 ? "" : "s"}` : null,
   ].filter(Boolean).join(" · ");
+  const selectedParkTypeOperators = useMemo(() => new Set(parkTypesToOperators(state.park_types)), [state.park_types]);
 
   return (
     <div className="flex h-[calc(100dvh-3.5rem)] min-h-[calc(100dvh-3.5rem)] flex-col bg-stone-50 lg:min-h-[42rem]">
@@ -942,7 +1004,7 @@ export function SearchPage() {
                 type="button"
                 className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-forest-700 text-white shadow-sm transition hover:bg-forest-800 disabled:opacity-50"
                 onClick={runSearch}
-                disabled={loading || resolvingNear}
+                disabled={searchDisabled}
                 aria-label="Search"
               >
                 {loading || resolvingNear ? <Loader2 size={18} className="animate-spin" /> : <Search size={18} />}
@@ -977,7 +1039,7 @@ export function SearchPage() {
           </div>
 
           <div className="hidden rounded-lg bg-white p-1.5 ring-1 ring-stone-200 lg:block">
-            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-[minmax(15rem,1.05fr)_minmax(17rem,1.25fr)_minmax(8.5rem,0.65fr)_minmax(8.5rem,0.65fr)_minmax(11rem,0.75fr)_auto]">
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-[minmax(15rem,1.05fr)_minmax(17rem,1.25fr)_minmax(8.5rem,0.65fr)_minmax(8.5rem,0.65fr)_minmax(11rem,0.75fr)_auto_auto]">
               <div className="relative col-span-2 rounded-md bg-stone-50 px-3 py-2 ring-1 ring-stone-200 transition focus-within:bg-white focus-within:ring-forest-600 sm:col-span-3 lg:col-span-1 lg:min-w-0">
                 <div className="mb-0.5 flex items-center justify-between gap-3">
                   <label className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-stone-500">
@@ -1059,6 +1121,7 @@ export function SearchPage() {
                 <input
                   type="date"
                   className="w-full min-w-0 bg-transparent text-sm font-semibold text-stone-950 outline-none"
+                  min={minimumCheckInDate}
                   value={state.start_date}
                   onChange={(e) => setState({ start_date: e.target.value, page: 1 })}
                 />
@@ -1071,6 +1134,7 @@ export function SearchPage() {
                 <input
                   type="date"
                   className="w-full min-w-0 bg-transparent text-sm font-semibold text-stone-950 outline-none"
+                  min={minimumCheckOutDate}
                   value={state.end_date}
                   onChange={(e) => setState({ end_date: e.target.value, page: 1 })}
                 />
@@ -1095,7 +1159,7 @@ export function SearchPage() {
                 type="button"
                 className="btn-primary col-span-2 min-h-[3.2rem] px-5 text-sm font-semibold sm:col-span-1 lg:min-w-[7.25rem]"
                 onClick={runSearch}
-                disabled={loading || resolvingNear}
+                disabled={searchDisabled}
               >
                 {loading || resolvingNear ? (
                   <>
@@ -1106,6 +1170,13 @@ export function SearchPage() {
                     <Search size={15} /> Search
                   </>
                 )}
+              </button>
+              <button
+                type="button"
+                className="inline-flex min-h-[3.2rem] items-center justify-center gap-2 rounded-md bg-white px-3 text-sm font-semibold text-stone-700 ring-1 ring-stone-200 transition hover:bg-stone-50"
+                onClick={resetFilters}
+              >
+                <RotateCcw size={15} /> Reset
               </button>
             </div>
 
@@ -1268,7 +1339,7 @@ export function SearchPage() {
                     <Sliders size={13} className="text-stone-500" />
                     <span>Filters</span>
                     <span className="truncate text-stone-500">
-                      {advancedFilterCount ? `${advancedFilterCount} active` : "Types, amenities, operators"}
+                      {advancedFilterCount ? `${advancedFilterCount} active` : "Park types, site types, amenities"}
                     </span>
                   </span>
                   <span className="inline-flex shrink-0 items-center gap-2">
@@ -1277,6 +1348,24 @@ export function SearchPage() {
                   </span>
                 </summary>
                 <div className="flex items-center gap-2 overflow-x-auto border-t border-stone-200 p-1.5 scrollbar-none">
+                  {PARK_TYPE_OPTIONS.map((type) => {
+                    const active = state.park_types.includes(type.id);
+                    return (
+                      <button
+                        key={type.id}
+                        type="button"
+                        onClick={() => setState({ park_types: toggle(state.park_types, type.id), page: 1 })}
+                        className={`chip shrink-0 ring-1 ${
+                          active
+                            ? "bg-stone-900 text-white ring-stone-900"
+                            : "bg-white text-stone-700 ring-stone-300 hover:bg-stone-50"
+                        }`}
+                      >
+                        {type.label}
+                      </button>
+                    );
+                  })}
+                  <span className="h-4 w-px shrink-0 bg-stone-300" />
                   {SITE_TYPES.map((t) => (
                     <button
                       key={t}
@@ -1297,7 +1386,7 @@ export function SearchPage() {
                     </button>
                   ))}
                   <span className="h-4 w-px shrink-0 bg-stone-300" />
-                  {Object.entries(AMENITIES).slice(0, 6).map(([code, a]) => (
+                  {Object.entries(AMENITIES).map(([code, a]) => (
                     <button
                       key={code}
                       type="button"
@@ -1318,10 +1407,11 @@ export function SearchPage() {
                       type="button"
                       onClick={() => setState({ operators: toggle(state.operators, op.id), page: 1 })}
                       className={`chip shrink-0 ring-1 ${
-                        state.operators.includes(op.id)
+                        state.operators.includes(op.id) || selectedParkTypeOperators.has(op.id)
                           ? "bg-stone-900 text-white ring-stone-900"
                           : "bg-white text-stone-700 ring-stone-300 hover:bg-stone-50"
                       }`}
+                      disabled={selectedParkTypeOperators.has(op.id)}
                     >
                       {op.label}
                     </button>
@@ -1331,8 +1421,10 @@ export function SearchPage() {
             </div>
           </div>
 
-          {locationMessage && (
-            <div className="mt-1 text-xs text-stone-500">{locationMessage}</div>
+          {(locationMessage || dateBlockMessage) && (
+            <div className={`mt-1 text-xs ${dateBlockMessage ? "font-semibold text-amber-700" : "text-stone-500"}`}>
+              {dateBlockMessage ?? locationMessage}
+            </div>
           )}
         </div>
       </div>
@@ -1445,6 +1537,7 @@ export function SearchPage() {
                     <input
                       type="date"
                       className="w-full min-w-0 bg-transparent text-sm font-semibold text-stone-950 outline-none"
+                      min={minimumCheckInDate}
                       value={state.start_date}
                       onChange={(e) => setState({ start_date: e.target.value, page: 1 })}
                     />
@@ -1456,6 +1549,7 @@ export function SearchPage() {
                     <input
                       type="date"
                       className="w-full min-w-0 bg-transparent text-sm font-semibold text-stone-950 outline-none"
+                      min={minimumCheckOutDate}
                       value={state.end_date}
                       onChange={(e) => setState({ end_date: e.target.value, page: 1 })}
                     />
@@ -1607,6 +1701,22 @@ export function SearchPage() {
                   <Sliders size={13} /> Filters
                 </div>
                 <div className="flex flex-wrap gap-1.5">
+                  {PARK_TYPE_OPTIONS.map((type) => (
+                    <button
+                      key={type.id}
+                      type="button"
+                      onClick={() => setState({ park_types: toggle(state.park_types, type.id), page: 1 })}
+                      className={`chip ring-1 ${
+                        state.park_types.includes(type.id)
+                          ? "bg-stone-900 text-white ring-stone-900"
+                          : "bg-white text-stone-700 ring-stone-300 hover:bg-stone-50"
+                      }`}
+                    >
+                      {type.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
                   {SITE_TYPES.map((t) => (
                     <button
                       key={t}
@@ -1650,10 +1760,11 @@ export function SearchPage() {
                       type="button"
                       onClick={() => setState({ operators: toggle(state.operators, op.id), page: 1 })}
                       className={`chip ring-1 ${
-                        state.operators.includes(op.id)
+                        state.operators.includes(op.id) || selectedParkTypeOperators.has(op.id)
                           ? "bg-stone-900 text-white ring-stone-900"
                           : "bg-white text-stone-700 ring-stone-300 hover:bg-stone-50"
                       }`}
+                      disabled={selectedParkTypeOperators.has(op.id)}
                     >
                       {op.label}
                     </button>
@@ -1663,25 +1774,34 @@ export function SearchPage() {
             </div>
 
             <div className="absolute inset-x-0 bottom-0 border-t border-stone-200 bg-white/95 p-3 backdrop-blur">
-              <button
-                type="button"
-                className="btn-primary h-11 w-full text-sm font-semibold"
-                onClick={() => {
-                  setMobileFiltersOpen(false);
-                  void runSearch();
-                }}
-                disabled={loading || resolvingNear}
-              >
-                {loading || resolvingNear ? (
-                  <>
-                    <Loader2 size={15} className="animate-spin" /> Searching
-                  </>
-                ) : (
-                  <>
-                    <Search size={15} /> Search
-                  </>
-                )}
-              </button>
+              <div className="grid grid-cols-[auto_1fr] gap-2">
+                <button
+                  type="button"
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-white px-3 text-sm font-semibold text-stone-700 ring-1 ring-stone-200 transition hover:bg-stone-50"
+                  onClick={resetFilters}
+                >
+                  <RotateCcw size={15} /> Reset
+                </button>
+                <button
+                  type="button"
+                  className="btn-primary h-11 w-full text-sm font-semibold"
+                  onClick={() => {
+                    setMobileFiltersOpen(false);
+                    void runSearch();
+                  }}
+                  disabled={searchDisabled}
+                >
+                  {loading || resolvingNear ? (
+                    <>
+                      <Loader2 size={15} className="animate-spin" /> Searching
+                    </>
+                  ) : (
+                    <>
+                      <Search size={15} /> Search
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1746,8 +1866,10 @@ export function SearchPage() {
                 </div>
               )}
               {data && data.total === 0 && !loading && !routeNeedsDates && (
-                <div className="rounded-lg border border-dashed border-stone-300 bg-stone-50 p-8 text-center text-sm text-stone-600">
-                  No availability matches your filters. Try expanding the radius, allowing moves, or easing site filters.
+                <div className={`rounded-lg border border-dashed p-8 text-center text-sm ${
+                  dateBlockMessage ? "border-amber-300 bg-amber-50 text-amber-900" : "border-stone-300 bg-stone-50 text-stone-600"
+                }`}>
+                  {dateBlockMessage ?? "No availability matches your filters. Try expanding the radius, allowing moves, or easing site filters."}
                 </div>
               )}
               {data && data.total > 0 && groupedMode && groupedResults.length === 0 && !loading && (
@@ -1757,7 +1879,7 @@ export function SearchPage() {
               )}
               {!data && !loading && !routeNeedsDates && (
                 <div className="rounded-lg border border-dashed border-stone-300 bg-stone-50 p-8 text-center text-sm text-stone-500">
-                  Type a location, choose dates and equipment, then search. Results land here with map context beside them.
+                  Choose check-in and check-out dates, then search. Results land here with map context beside them.
                 </div>
               )}
               {groupedMode ? groupedResults.map((group) => {

@@ -25,6 +25,7 @@ export async function GET(req: Request) {
     site_types: parseList("site_types"),
     amenities: parseList("amenities"),
     operators: parseList("operators"),
+    park_types: parseList("park_types") as ("provincial" | "conservation" | "federal" | "private")[] | undefined,
     park_slugs: parseList("park_slugs"),
     equipment_length_ft: q.has("equipment_length_ft") ? Number(q.get("equipment_length_ft")) : undefined,
     stay_mode: (q.get("stay_mode") as "same_site" | "same_park" | "anywhere" | null) ?? undefined,

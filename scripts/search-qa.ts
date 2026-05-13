@@ -1,6 +1,8 @@
 import { sql } from "@/lib/db/client";
 import { allowedEquipmentSupportsLength } from "@/lib/equipment-normalization";
+import { legendTypeLabel } from "@/lib/legend-types";
 import { runSearch, type SearchParams } from "@/lib/search";
+import { deriveAmenityCodes } from "@/lib/search-amenities";
 import type { SearchResult, SearchSortMode, SearchStayMode } from "@/lib/types";
 import { eachDate } from "@/lib/utils";
 
@@ -13,8 +15,12 @@ type Scenario = {
 
 type SiteFact = {
   id: string;
+  name: string;
   site_type: string;
   site_type_label: string | null;
+  description: string | null;
+  camp_map_description: string | null;
+  camp_map_features: unknown;
   max_party_size: number;
   max_equipment_length_ft: number | null;
   amenities: string[];
@@ -124,22 +130,34 @@ function factHasAmp(fact: SiteFact, amp: 15 | 30 | 50): boolean {
 }
 
 function factMatchesAmenity(fact: SiteFact, amenity: string): boolean {
-  if (fact.amenities.includes(amenity)) return true;
-  const text = factText(fact);
-  const electricText = !/\b(?:unserviced|non[-\s]?electric)\b/i.test(text) && /\b(?:serviced|electric|hydro)\b/i.test(text);
-  const hasElectric = fact.has_electric || electricText;
-  if (amenity === "electric_15a") return hasElectric && factHasAmp(fact, 15);
-  if (amenity === "electric_30a") return hasElectric && (factHasAmp(fact, 30) || (!factHasAmp(fact, 15) && !factHasAmp(fact, 50)));
-  if (amenity === "electric_50a") return hasElectric && factHasAmp(fact, 50);
-  if (amenity === "water") return fact.has_water || /\bwater(?:\s+hook[-\s]?up|\s+hookup)?\b/i.test(text);
-  if (amenity === "sewer") return fact.has_sewer || /\bsewer\b/i.test(text);
-  if (amenity === "pull_through") return fact.is_pull_through || setupValue(fact.rule_summary, "pullThrough") === true || /\bpull[-\s]?through\b/i.test(text);
-  if (amenity === "accessible") return fact.is_accessible || /\baccessible\b/i.test(text);
-  if (amenity === "pet_friendly") return fact.is_pet_friendly || /\bpet[-\s]?friendly\b/i.test(text);
-  if (amenity === "waterfront") return fact.is_waterfront || /\bwaterfront\b/i.test(text);
-  if (amenity === "beach") return /\bbeach\b/i.test(text);
-  if (amenity === "lake_swim") return /\bswim(?:ming)?\b/i.test(text);
-  return false;
+  return deriveAmenityCodes({
+    site_name: fact.name,
+    site_type: fact.site_type,
+    site_type_label: fact.site_type_label,
+    site_description: fact.description,
+    camp_map_description: fact.camp_map_description,
+    map_feature_labels: mapFeatureLabels(fact.camp_map_features),
+    amenities: fact.amenities,
+    rule_summary: fact.rule_summary,
+    has_electric: fact.has_electric,
+    has_water: fact.has_water,
+    has_sewer: fact.has_sewer,
+    is_pull_through: fact.is_pull_through,
+    is_accessible: fact.is_accessible,
+    is_pet_friendly: fact.is_pet_friendly,
+    is_waterfront: fact.is_waterfront,
+  }).includes(amenity);
+}
+
+function mapFeatureLabels(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const ids = new Set<number>();
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const typeId = (item as { legendItemType?: unknown }).legendItemType;
+    if (typeof typeId === "number" && Number.isFinite(typeId)) ids.add(typeId);
+  }
+  return Array.from(ids).map((typeId) => legendTypeLabel(typeId));
 }
 
 function scenarioList(): Scenario[] {
@@ -308,8 +326,12 @@ async function validateAgainstDatabase(scenario: Scenario, results: SearchResult
   const siteRows = await db<SiteFact[]>`
     SELECT
       s.id,
+      s.name,
       s.site_type,
       s.site_type_label,
+      s.description,
+      cm.description AS camp_map_description,
+      cm.features AS camp_map_features,
       s.max_party_size,
       s.max_equipment_length_ft,
       s.amenities,
@@ -326,6 +348,7 @@ async function validateAgainstDatabase(scenario: Scenario, results: SearchResult
       p.slug AS park_slug
     FROM sites s
     JOIN campgrounds c ON c.id = s.campground_id
+    LEFT JOIN camp_maps cm ON cm.id = s.camp_map_id
     JOIN parks p ON p.id = c.park_id
     WHERE s.id = ANY(${siteIds})
   `;

@@ -17,6 +17,7 @@
 import { CamisClient } from "./camis-client";
 import { CampspotClient, decodeCampspotStatus, type CampspotAvailabilityRow } from "./campspot-client";
 import { LetsCampClient, type LetsCampCamp, type LetsCampSearchResponse } from "./letscamp-client";
+import { appDate } from "../app-time";
 import { addDays } from "./provider-utils";
 import {
   upsertSiteAvailabilityBatch,
@@ -79,7 +80,10 @@ type FetchTarget = {
  * Build the work queue: every site we know about, joined with its operator's
  * fetch config. Returns one record per site.
  */
-async function loadFetchTargets(opts: Pick<AvailabilityRefreshOptions, "missingOnly" | "staleHours"> = {}): Promise<FetchTarget[]> {
+async function loadFetchTargets(
+  opts: Pick<AvailabilityRefreshOptions, "missingOnly" | "staleHours"> & { missingDate?: string } = {},
+): Promise<FetchTarget[]> {
+  const missingDate = opts.missingDate ?? appDate();
   const rows = await sqlDirect()<FetchTarget[]>`
     SELECT s.id              AS site_id,
            s.vendor_site_id,
@@ -102,12 +106,12 @@ async function loadFetchTargets(opts: Pick<AvailabilityRefreshOptions, "missingO
        ${opts.missingOnly ? sqlDirect()`AND NOT EXISTS (
          SELECT 1 FROM site_availability sa
           WHERE sa.site_id = s.id
-            AND sa.night_date = CURRENT_DATE
+            AND sa.night_date = ${missingDate}::date
        )` : sqlDirect()``}
        ${opts.staleHours != null ? sqlDirect()`AND NOT EXISTS (
          SELECT 1 FROM site_availability sa
           WHERE sa.site_id = s.id
-            AND sa.night_date = CURRENT_DATE
+            AND sa.night_date = ${missingDate}::date
             AND sa.last_checked_at > now() - (${opts.staleHours} * interval '1 hour')
        )` : sqlDirect()``}
      ORDER BY s.id
@@ -174,14 +178,11 @@ export async function refreshAvailability(
   const writeBatchSize = opts.writeBatchSize ?? 500;
 
   const started = Date.now();
-  const startDate = new Date();
-  startDate.setUTCDate(startDate.getUTCDate() + daysSkip);
-  const endDate = new Date(startDate);
-  endDate.setUTCDate(endDate.getUTCDate() + daysAhead);
-  const startStr = startDate.toISOString().slice(0, 10);
-  const endStr = endDate.toISOString().slice(0, 10);
+  const today = appDate();
+  const startStr = addDays(today, daysSkip);
+  const endStr = addDays(startStr, daysAhead);
 
-  let targets = await loadFetchTargets({ missingOnly: opts.missingOnly, staleHours: opts.staleHours });
+  let targets = await loadFetchTargets({ missingOnly: opts.missingOnly, staleHours: opts.staleHours, missingDate: startStr });
   if (opts.operatorIds && opts.operatorIds.length) {
     const allowed = new Set(opts.operatorIds);
     targets = targets.filter((t) => allowed.has(t.operator_id));
@@ -371,7 +372,6 @@ export async function refreshAvailability(
   await flush(true);
 
   // Prune nights that have fallen out of the window (yesterday or earlier).
-  const today = new Date().toISOString().slice(0, 10);
   const pruned = await pruneStaleAvailability(today);
   if (pruned > 0) log(`[availability] pruned ${pruned} stale nights before ${today}`);
 

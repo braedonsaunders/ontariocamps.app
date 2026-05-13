@@ -239,6 +239,7 @@ export type AvailabilityRow = {
 export type SearchStayMode = "same_site" | "same_park" | "anywhere";
 export type SearchSortMode = "recommended" | "distance" | "route" | "moves" | "freshness" | "name" | "availability" | "price";
 export type SearchGroupMode = "park" | "campground" | "operator" | "none";
+export type ParkType = "provincial" | "conservation" | "federal" | "private";
 
 export type SearchResultSite = {
   id: string;
@@ -418,8 +419,20 @@ export const AMENITIES: Record<string, { label: string; category: string }> = {
   waterfront: { label: "Waterfront", category: "water_access" },
   lake_swim: { label: "Swim access", category: "water_access" },
   beach: { label: "Beach", category: "water_access" },
+  near_water: { label: "Near water", category: "water_access" },
   pet_friendly: { label: "Pet-friendly", category: "access" },
+  dog_friendly: { label: "Dog-friendly", category: "access" },
   accessible: { label: "Accessible", category: "access" },
+  walk_in: { label: "Walk-in", category: "access" },
+  portage: { label: "Portage nearby", category: "access" },
+  backcountry: { label: "Backcountry", category: "access" },
+  radio_free: { label: "Radio-free", category: "quiet" },
+  generator_free: { label: "Generator-free", category: "quiet" },
+  tents_only: { label: "Tents only", category: "restrictions" },
+  no_vehicles: { label: "No vehicles", category: "restrictions" },
   showers: { label: "Showers nearby", category: "facilities" },
   flush_toilets: { label: "Flush toilets", category: "facilities" },
+  water_tap: { label: "Water tap nearby", category: "facilities" },
+  privy: { label: "Privy", category: "facilities" },
+  playground: { label: "Playground nearby", category: "facilities" },
 };
