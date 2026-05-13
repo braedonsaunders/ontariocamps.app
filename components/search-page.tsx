@@ -15,7 +15,7 @@ import { appDate } from "@/lib/app-time";
 import { AMENITIES, type SearchResponse, type SearchResult, type SearchResultGroup } from "@/lib/types";
 import { displayOperatorName } from "@/lib/display";
 import { imageProxyUrl } from "@/lib/image-proxy";
-import { PARK_TYPE_OPTIONS, parkTypesToOperators } from "@/lib/park-types";
+import { PARK_TYPE_OPTIONS } from "@/lib/park-types";
 import { ResultCard } from "@/components/result-card";
 import { OntarioMap, type Park as MapPark } from "@/components/ontario-map";
 import type { LucideIcon } from "lucide-react";
@@ -56,21 +56,6 @@ const STAY_MODES = ["same_site", "same_park", "anywhere"] as const;
 const VIEW_MODES = ["list", "map"] as const;
 const GROUP_OPTIONS = ["park", "campground", "operator", "none"] as const;
 const PARK_TYPE_IDS = PARK_TYPE_OPTIONS.map((option) => option.id);
-const OPERATOR_OPTIONS: { id: string; label: string }[] = [
-  { id: "ontario_parks", label: "Ontario Parks" },
-  { id: "parks_canada", label: "Parks Canada" },
-  { id: "st_lawrence_parks", label: "Parks of the St. Lawrence" },
-  { id: "gtc_lprca", label: "Long Point Conservation" },
-  { id: "gtc_stclair", label: "St. Clair Conservation" },
-  { id: "gtc_grca", label: "Grand River Conservation" },
-  { id: "gtc_trca", label: "Toronto Region Conservation" },
-  { id: "gtc_npca", label: "Niagara Peninsula Conservation" },
-  { id: "gtc_otonabee", label: "Otonabee Conservation" },
-  { id: "gtc_upperthames", label: "Upper Thames River Conservation" },
-  { id: "gtc_maitland", label: "Maitland Valley Conservation" },
-  { id: "gtc_catfish", label: "Catfish Creek Conservation" },
-  { id: "gtc_hca", label: "Hamilton Conservation" },
-];
 const SORT_OPTIONS = ["recommended", "distance", "route", "moves", "availability", "freshness", "name", "price"] as const;
 const RAW_RESULTS_PER_PAGE = 60;
 const GROUPS_PER_PAGE = 10;
@@ -862,7 +847,7 @@ export function SearchPage() {
       .sort((a, b) => b.available_sites - a.available_sites || a.name.localeCompare(b.name))
       .slice(0, 8);
   }, [allParks, parkInput, selectedParkSet]);
-  const advancedFilterCount = state.site_types.length + state.amenities.length + state.operators.length + state.park_types.length;
+  const advancedFilterCount = state.site_types.length + state.amenities.length + state.park_types.length;
   const resultWord = state.stay_mode === "same_site" ? "sites" : "routes";
   const groupedMode = state.group_by !== "none";
   const groupedResults = useMemo(
@@ -971,8 +956,6 @@ export function SearchPage() {
     `${normalizeSearchRadiusKm(state.radius_km)} km`,
     selectedParks.length ? `${selectedParks.length} park${selectedParks.length === 1 ? "" : "s"}` : null,
   ].filter(Boolean).join(" · ");
-  const selectedParkTypeOperators = useMemo(() => new Set(parkTypesToOperators(state.park_types)), [state.park_types]);
-
   return (
     <div className="flex h-[calc(100dvh-3.5rem)] min-h-[calc(100dvh-3.5rem)] flex-col bg-stone-50 lg:min-h-[42rem]">
       <div className="sticky top-14 z-40 border-b border-stone-200 bg-white/95 shadow-sm backdrop-blur">
@@ -1110,6 +1093,22 @@ export function SearchPage() {
                         {allParks.length ? "No park matches that search." : "Loading parks..."}
                       </div>
                     )}
+                  </div>
+                )}
+                {selectedParks.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {selectedParks.map((park) => (
+                      <button
+                        key={park.slug}
+                        type="button"
+                        onClick={() => removeParkFilter(park.slug)}
+                        className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-forest-50 px-2 py-1 text-[11px] font-semibold text-forest-800 ring-1 ring-forest-200 transition hover:bg-forest-100"
+                        aria-label={`Remove ${park.name} from park filter`}
+                      >
+                        <span className="truncate">{park.name}</span>
+                        <X size={12} className="shrink-0" />
+                      </button>
+                    ))}
                   </div>
                 )}
               </div>
@@ -1400,22 +1399,6 @@ export function SearchPage() {
                       {a.label}
                     </button>
                   ))}
-                  <span className="h-4 w-px shrink-0 bg-stone-300" />
-                  {OPERATOR_OPTIONS.map((op) => (
-                    <button
-                      key={op.id}
-                      type="button"
-                      onClick={() => setState({ operators: toggle(state.operators, op.id), page: 1 })}
-                      className={`chip shrink-0 ring-1 ${
-                        state.operators.includes(op.id) || selectedParkTypeOperators.has(op.id)
-                          ? "bg-stone-900 text-white ring-stone-900"
-                          : "bg-white text-stone-700 ring-stone-300 hover:bg-stone-50"
-                      }`}
-                      disabled={selectedParkTypeOperators.has(op.id)}
-                    >
-                      {op.label}
-                    </button>
-                  ))}
                 </div>
               </details>
             </div>
@@ -1525,6 +1508,22 @@ export function SearchPage() {
                           {allParks.length ? "No park matches that search." : "Loading parks..."}
                         </div>
                       )}
+                    </div>
+                  )}
+                  {selectedParks.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {selectedParks.map((park) => (
+                        <button
+                          key={park.slug}
+                          type="button"
+                          onClick={() => removeParkFilter(park.slug)}
+                          className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-forest-50 px-2 py-1 text-[11px] font-semibold text-forest-800 ring-1 ring-forest-200 transition hover:bg-forest-100"
+                          aria-label={`Remove ${park.name} from park filter`}
+                        >
+                          <span className="truncate">{park.name}</span>
+                          <X size={12} className="shrink-0" />
+                        </button>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -1750,23 +1749,6 @@ export function SearchPage() {
                       }`}
                     >
                       {a.label}
-                    </button>
-                  ))}
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {OPERATOR_OPTIONS.map((op) => (
-                    <button
-                      key={op.id}
-                      type="button"
-                      onClick={() => setState({ operators: toggle(state.operators, op.id), page: 1 })}
-                      className={`chip ring-1 ${
-                        state.operators.includes(op.id) || selectedParkTypeOperators.has(op.id)
-                          ? "bg-stone-900 text-white ring-stone-900"
-                          : "bg-white text-stone-700 ring-stone-300 hover:bg-stone-50"
-                      }`}
-                      disabled={selectedParkTypeOperators.has(op.id)}
-                    >
-                      {op.label}
                     </button>
                   ))}
                 </div>
@@ -2024,7 +2006,7 @@ export function SearchPage() {
               matchedSlugs={data ? null : matchedSlugs}
               mode={data ? "search" : "explore"}
               resultLabel={resultWord}
-              showCategoryFilters={!data}
+              showCategoryFilters={false}
               fitToMarkers={Boolean(data?.results.length)}
               focusedSlug={activeMapGroup?.key ?? null}
               focusZoom={9.1}
