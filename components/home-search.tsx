@@ -246,6 +246,7 @@ export function HomeSearch() {
             autoComplete="off"
             onChange={(e) => {
               setLocationQuery(e.target.value);
+              setPlaceOpen(true);
               if (selectedPlace && e.target.value !== selectedPlace.label) setSelectedPlace(null);
             }}
             onFocus={() => setPlaceOpen(true)}

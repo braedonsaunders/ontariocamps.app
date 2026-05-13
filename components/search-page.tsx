@@ -1215,6 +1215,7 @@ export function SearchPage() {
                   onBlur={() => window.setTimeout(() => setNearSuggestionsOpen(false), 120)}
                   onChange={(e) => {
                     setNearInput(e.target.value);
+                    setNearSuggestionsOpen(true);
                     if (selectedNearSuggestion && e.target.value !== selectedNearSuggestion.label) {
                       setSelectedNearSuggestion(null);
                     }
@@ -1630,6 +1631,7 @@ export function SearchPage() {
                       onBlur={() => window.setTimeout(() => setNearSuggestionsOpen(false), 120)}
                       onChange={(e) => {
                         setNearInput(e.target.value);
+                        setNearSuggestionsOpen(true);
                         if (selectedNearSuggestion && e.target.value !== selectedNearSuggestion.label) {
                           setSelectedNearSuggestion(null);
                         }
