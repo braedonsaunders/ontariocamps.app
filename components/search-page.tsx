@@ -11,6 +11,7 @@ import {
 } from "nuqs";
 import { PRESET_LOCATIONS } from "@/lib/locations";
 import { AMENITIES, type SearchResponse, type SearchResult, type SearchResultGroup } from "@/lib/types";
+import { imageProxyUrl } from "@/lib/image-proxy";
 import { ResultCard } from "@/components/result-card";
 import { OntarioMap, type Park as MapPark } from "@/components/ontario-map";
 import type { LucideIcon } from "lucide-react";
@@ -1567,9 +1568,12 @@ export function SearchPage() {
                       <div className="relative h-8 overflow-hidden bg-stone-200 sm:h-9">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
-                          src={group.hero_image_url}
+                          src={imageProxyUrl(group.hero_image_url, "strip") ?? group.hero_image_url}
                           alt=""
                           className="absolute inset-0 h-full w-full object-cover"
+                          loading="lazy"
+                          decoding="async"
+                          fetchPriority="low"
                         />
                         <div className="absolute inset-0 bg-gradient-to-r from-stone-950/30 via-transparent to-stone-950/10" />
                       </div>

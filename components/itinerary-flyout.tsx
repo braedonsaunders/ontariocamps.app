@@ -4,6 +4,7 @@ import Link from "next/link";
 import { AnimatePresence, motion } from "motion/react";
 import { ArrowUpRight, Calendar, ChevronLeft, MapPin, Route, X } from "lucide-react";
 import type { SearchResult, SearchResultSegment } from "@/lib/types";
+import { imageProxyUrl } from "@/lib/image-proxy";
 
 type Props = {
   result: SearchResult | null;
@@ -97,19 +98,24 @@ export function ItineraryFlyout({ result, onClose, onOpenSiteDetails }: Props) {
 
             <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
               <div className="space-y-3">
-                {segments.map((segment, index) => (
+                {segments.map((segment, index) => {
+                  const thumbnail = imageProxyUrl(segment.site.thumbnail_url, "thumb");
+                  return (
                   <article
                     key={`${segment.site.id}-${segment.availability.nights.join("-")}`}
                     className="overflow-hidden rounded-lg bg-white ring-1 ring-stone-200"
                   >
                     <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-3 p-3 sm:grid-cols-[7rem_minmax(0,1fr)]">
                       <div className="relative min-h-[6.5rem] overflow-hidden rounded-md bg-stone-100 ring-1 ring-stone-200">
-                        {segment.site.thumbnail_url ? (
+                        {thumbnail ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
-                            src={segment.site.thumbnail_url}
+                            src={thumbnail}
                             alt={`${segment.park.name} site ${segment.site.name}`}
                             className="absolute inset-0 h-full w-full object-cover"
+                            loading="lazy"
+                            decoding="async"
+                            fetchPriority="low"
                           />
                         ) : (
                           <div className="absolute inset-0 flex items-center justify-center text-sm font-semibold text-forest-700">
@@ -170,7 +176,8 @@ export function ItineraryFlyout({ result, onClose, onOpenSiteDetails }: Props) {
                       </div>
                     </div>
                   </article>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </motion.aside>

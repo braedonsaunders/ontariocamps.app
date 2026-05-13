@@ -2,6 +2,7 @@
 import { motion } from "motion/react";
 import type { SearchResult } from "@/lib/types";
 import { AMENITIES } from "@/lib/types";
+import { imageProxyUrl } from "@/lib/image-proxy";
 import { timeAgo } from "@/lib/utils";
 import { ArrowUpRight, MapPin, Calendar, Wifi, Droplet, Flame, Tent, Caravan, Route, Loader2 } from "lucide-react";
 
@@ -44,7 +45,7 @@ export function ResultCard({
 }) {
   const segments = result.stay?.segments ?? [result];
   const isRoute = segments.length > 1;
-  const thumbnail = result.site.thumbnail_url;
+  const thumbnail = imageProxyUrl(result.site.thumbnail_url, "card");
   const firstNight = result.availability.nights[0];
   const lastNight = result.availability.nights[result.availability.nights.length - 1];
   const compactRules = result.site.rule_highlights?.slice(0, 2) ?? [];
@@ -91,7 +92,14 @@ export function ResultCard({
       {thumbnail ? (
         <>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={thumbnail} alt="" className="absolute inset-0 h-full w-full object-cover" />
+          <img
+            src={thumbnail}
+            alt=""
+            className="absolute inset-0 h-full w-full object-cover"
+            loading="lazy"
+            decoding="async"
+            fetchPriority="low"
+          />
           <div className="absolute inset-0 bg-gradient-to-br from-white/[0.93] via-white/[0.65] to-white/[0.15]" />
           <div className="absolute inset-0 bg-gradient-to-tr from-white/[0.85] via-white/[0.45] to-transparent" />
           <div className="absolute bottom-0 left-0 h-2/3 w-2/3 bg-white/25 blur-xl" />

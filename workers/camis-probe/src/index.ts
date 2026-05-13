@@ -6,6 +6,24 @@ type Env = {
 
 type ScheduledEvent = { cron?: string; scheduledTime?: number };
 type ExecutionContext = { waitUntil(promise: Promise<unknown>): void };
+type CloudflareImageFit = "scale-down" | "contain" | "cover" | "crop" | "pad";
+type CloudflareImageFormat = "avif" | "webp" | "jpeg";
+type CloudflareImageOptions = {
+  width?: number;
+  height?: number;
+  fit?: CloudflareImageFit;
+  quality?: number;
+  format?: CloudflareImageFormat;
+  metadata?: "copyright";
+  anim?: boolean;
+};
+type CloudflareFetchInit = RequestInit & {
+  cf?: {
+    image?: CloudflareImageOptions;
+    cacheEverything?: boolean;
+    cacheTtl?: number;
+  };
+};
 
 type AvailabilityCode = "available" | "reserved" | "closed" | "unknown";
 type Vendor = "camis5" | "goingtocamp" | "pcrs" | "campspot" | "letscamp";
@@ -100,6 +118,36 @@ type RefreshResult = {
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:121.0) Gecko/20100101 Firefox/121.0";
+const IMAGE_CACHE_SECONDS = 60 * 60 * 24 * 30;
+const IMAGE_ALLOWED_HOSTS = new Set([
+  "images.unsplash.com",
+  "reservations.ontarioparks.ca",
+  "reservations.parks.on.ca",
+  "reservation.pc.gc.ca",
+  "www.grcacamping.ca",
+  "camping.trca.ca",
+  "www.ontarioparks.ca",
+  "parks.canada.ca",
+  "www.grandriver.ca",
+  "trca.ca",
+  "npca.ca",
+  "www.scrca.on.ca",
+  "www.otonabeeconservation.com",
+  "www.lprca.on.ca",
+  "www.stlawrenceparks.com",
+  "hcareservations.ca",
+  "images.campspot.com",
+  "res.cloudinary.com",
+  "ontarioconservationareas.ca",
+  "mvca.on.ca",
+]);
+const IMAGE_ALLOWED_SUFFIXES = [".goingtocamp.com"];
+const IMAGE_PRESETS: Record<string, { width: number; height?: number; quality: number; fit: CloudflareImageFit }> = {
+  card: { width: 520, height: 300, quality: 48, fit: "cover" },
+  thumb: { width: 220, height: 160, quality: 46, fit: "cover" },
+  strip: { width: 720, height: 96, quality: 42, fit: "cover" },
+  hero: { width: 1280, quality: 60, fit: "scale-down" },
+};
 const WINDOW_CONFIG: Record<RefreshWindow, {
   startOffset: number;
   days: number;
@@ -196,6 +244,117 @@ function json(body: unknown, init: ResponseInit = {}): Response {
       "Cache-Control": "no-store",
       ...(init.headers ?? {}),
     },
+  });
+}
+
+function imageError(message: string, status = 400): Response {
+  return json({ error: message }, { status });
+}
+
+function isAllowedImageHost(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return IMAGE_ALLOWED_HOSTS.has(host) || IMAGE_ALLOWED_SUFFIXES.some((suffix) => host.endsWith(suffix));
+}
+
+function imageFormatFor(request: Request): CloudflareImageFormat {
+  const accept = request.headers.get("accept") ?? "";
+  if (accept.includes("image/avif")) return "avif";
+  if (accept.includes("image/webp")) return "webp";
+  return "jpeg";
+}
+
+function imagePreset(url: URL): CloudflareImageOptions {
+  const preset = IMAGE_PRESETS[url.searchParams.get("preset") ?? "card"] ?? IMAGE_PRESETS.card;
+  const widthParam = url.searchParams.get("w");
+  const width = clampInt(widthParam == null ? undefined : Number(widthParam), preset.width, 64, 1600);
+  const heightParam = url.searchParams.get("h");
+  const height = heightParam == null
+    ? preset.height
+    : clampInt(Number(heightParam), preset.height ?? Math.round(width * 0.62), 64, 1200);
+  const qualityParam = url.searchParams.get("q");
+  const quality = clampInt(qualityParam == null ? undefined : Number(qualityParam), preset.quality, 30, 82);
+
+  return {
+    width,
+    height,
+    quality,
+    fit: preset.fit,
+    metadata: "copyright",
+    anim: false,
+  };
+}
+
+async function handleImageRequest(request: Request): Promise<Response> {
+  if (request.method === "OPTIONS") {
+    return new Response(null, {
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+        "Access-Control-Allow-Headers": "Accept",
+        "Access-Control-Max-Age": "86400",
+      },
+    });
+  }
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return imageError("method not allowed", 405);
+  }
+
+  const url = new URL(request.url);
+  const rawSrc = url.searchParams.get("src");
+  if (!rawSrc) return imageError("missing image src");
+
+  let src: URL;
+  try {
+    src = new URL(rawSrc);
+  } catch {
+    return imageError("invalid image src");
+  }
+
+  if (src.protocol !== "https:" || !isAllowedImageHost(src.hostname)) {
+    return imageError("image host is not allowed");
+  }
+  if (src.hostname.endsWith(".workers.dev") || src.hostname === url.hostname) {
+    return imageError("recursive image src is not allowed");
+  }
+
+  const options = imagePreset(url);
+  const transformed = await fetch(src.toString(), {
+    headers: {
+      Accept: "image/avif,image/webp,image/*,*/*;q=0.8",
+      "User-Agent": DEFAULT_USER_AGENT,
+    },
+    cf: {
+      image: {
+        ...options,
+        format: imageFormatFor(request),
+      },
+      cacheEverything: true,
+      cacheTtl: IMAGE_CACHE_SECONDS,
+    },
+  } as CloudflareFetchInit);
+
+  if (!transformed.ok) {
+    return new Response(transformed.body, {
+      status: transformed.status,
+      headers: {
+        "Cache-Control": "no-store",
+        "Access-Control-Allow-Origin": "*",
+        "X-Image-Proxy": "transform-error",
+      },
+    });
+  }
+
+  const headers = new Headers(transformed.headers);
+  headers.set("Cache-Control", `public, max-age=${IMAGE_CACHE_SECONDS}, immutable`);
+  headers.set("Access-Control-Allow-Origin", "*");
+  headers.set("Timing-Allow-Origin", "*");
+  headers.set("Vary", "Accept");
+  headers.set("X-Image-Proxy", "cloudflare-resized");
+  headers.delete("Set-Cookie");
+
+  return new Response(request.method === "HEAD" ? null : transformed.body, {
+    status: transformed.status,
+    headers,
   });
 }
 
@@ -668,6 +827,8 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
     const cf = (request as Request & { cf?: Record<string, unknown> }).cf ?? {};
     return json({ ok: true, colo: cf.colo, country: cf.country, region: cf.region, city: cf.city });
   }
+
+  if (url.pathname === "/image") return handleImageRequest(request);
 
   const auth = requireAuth(request, env);
   if (auth) return auth;
