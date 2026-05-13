@@ -1,9 +1,5 @@
 import { NextResponse } from "next/server";
-
-const ALLOWED_HOSTS = new Set([
-  "campspot-production.s3.amazonaws.com",
-  "www.camplife.com",
-]);
+import { isAllowedMapImageHost } from "@/lib/map-image-hosts";
 
 const MAX_BYTES = 5 * 1024 * 1024;
 
@@ -36,7 +32,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "invalid src" }, { status: 400 });
   }
 
-  if (src.protocol !== "https:" || !ALLOWED_HOSTS.has(src.hostname)) {
+  if (src.protocol !== "https:" || !isAllowedMapImageHost(src.hostname)) {
     return NextResponse.json({ error: "map image host is not allowed" }, { status: 400 });
   }
 
