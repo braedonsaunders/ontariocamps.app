@@ -55,6 +55,7 @@ type Props = {
   calendarLastChecked: string | null;
   vendorSiteIds: Record<string, string>;
   calendarDataUrl?: string;
+  siteDataUrl?: string;
   dateContext: DateContext;
   parkReviews: ParkReview[];
   parkReviewAggregate: ParkReviewAggregate;
@@ -73,6 +74,15 @@ type ParkCalendarPayload = {
   calendarLastChecked: string | null;
   vendorSiteIds: Record<string, string>;
   bookingUrls: Record<string, string>;
+};
+
+type ParkSitePayload = {
+  campMapSummaries: CampMapSummary[];
+  sites: Site[];
+  availabilitySummary: Record<string, SiteAvailability>;
+  bookingUrls: Record<string, string>;
+  calendarLastChecked: string | null;
+  siteStats: SiteStatsEntry[];
 };
 
 const PARK_REFRESH_COOLDOWN_MS = 5 * 60 * 1000;
@@ -365,21 +375,22 @@ export function ParkTabs(props: Props) {
     parkLocation,
     totalSites,
     avgAvailability,
-    campMapSummaries,
-    sites,
-    availabilitySummary,
-    bookingUrls,
+    campMapSummaries: initialCampMapSummaries,
+    sites: initialSites,
+    availabilitySummary: initialAvailabilitySummary,
+    bookingUrls: initialBookingUrls,
     equipmentOptions,
     calendarRows,
-    calendarLastChecked,
+    calendarLastChecked: initialCalendarLastChecked,
     vendorSiteIds,
     calendarDataUrl,
+    siteDataUrl,
     dateContext,
     parkReviews,
     parkReviewAggregate,
     recentSiteReviews,
     parkId,
-    siteStats,
+    siteStats: initialSiteStats,
     operatorRuleSource,
   } = props;
 
@@ -389,15 +400,28 @@ export function ParkTabs(props: Props) {
   const [selectedSiteDetails, setSelectedSiteDetails] = useState<SiteFlyoutDetails | null>(null);
   const [parkRefreshKeyInFlight, setParkRefreshKeyInFlight] = useState<string | null>(null);
   const [refreshingSiteId, setRefreshingSiteId] = useState<string | null>(null);
+  const [siteData, setSiteData] = useState<ParkSitePayload>({
+    campMapSummaries: initialCampMapSummaries,
+    sites: initialSites,
+    availabilitySummary: initialAvailabilitySummary,
+    bookingUrls: initialBookingUrls,
+    calendarLastChecked: initialCalendarLastChecked,
+    siteStats: initialSiteStats,
+  });
+  const [siteLoadStatus, setSiteLoadStatus] = useState<CalendarLoadStatus>(
+    initialSites.length > 0 ? "ready" : "idle",
+  );
   const [calendarData, setCalendarData] = useState<ParkCalendarPayload>({
     calendarRows,
-    calendarLastChecked,
+    calendarLastChecked: initialCalendarLastChecked,
     vendorSiteIds,
-    bookingUrls,
+    bookingUrls: initialBookingUrls,
   });
   const [calendarLoadStatus, setCalendarLoadStatus] = useState<CalendarLoadStatus>(
     calendarRows.length > 0 ? "ready" : "idle",
   );
+  const siteDataUrlRef = useRef(siteDataUrl ?? null);
+  const siteLoadStatusRef = useRef<CalendarLoadStatus>(initialSites.length > 0 ? "ready" : "idle");
   const calendarDataUrlRef = useRef(calendarDataUrl ?? null);
   const calendarLoadStatusRef = useRef<CalendarLoadStatus>(calendarRows.length > 0 ? "ready" : "idle");
   const router = useRouter();
@@ -409,18 +433,60 @@ export function ParkTabs(props: Props) {
   ), [dateContext]);
   const parkRefreshKey = `park:${parkId}:${dateWindowKey}`;
   const parkRefreshInFlight = parkRefreshKeyInFlight === parkRefreshKey;
+  const activeCampMapSummaries = siteData.campMapSummaries.length > 0
+    ? siteData.campMapSummaries
+    : initialCampMapSummaries;
+  const activeSites = siteData.sites;
+  const activeAvailabilitySummary = siteData.availabilitySummary;
+  const activeSiteStats = siteData.siteStats;
+  const activeSiteBookingUrls = siteData.bookingUrls;
+  const activeTotalSites = activeSites.length > 0 ? activeSites.length : totalSites;
+  const activeAvgAvailability =
+    activeSites.length > 0 && activeTotalSites > 0
+      ? Math.round((Object.values(activeAvailabilitySummary).filter((a) => a.status === "available").length / activeTotalSites) * 100)
+      : avgAvailability;
   const activeCalendarRows = calendarData.calendarRows;
-  const activeCalendarLastChecked = calendarData.calendarLastChecked ?? calendarLastChecked;
+  const activeCalendarLastChecked = calendarData.calendarLastChecked ?? siteData.calendarLastChecked ?? initialCalendarLastChecked;
   const activeVendorSiteIds = Object.keys(calendarData.vendorSiteIds).length > 0
     ? calendarData.vendorSiteIds
     : vendorSiteIds;
   const activeBookingUrls = Object.keys(calendarData.bookingUrls).length > 0
     ? calendarData.bookingUrls
-    : bookingUrls;
+    : activeSiteBookingUrls;
 
   useEffect(() => {
     calendarLoadStatusRef.current = calendarLoadStatus;
   }, [calendarLoadStatus]);
+
+  useEffect(() => {
+    siteLoadStatusRef.current = siteLoadStatus;
+  }, [siteLoadStatus]);
+
+  useEffect(() => {
+    const nextUrl = siteDataUrl ?? null;
+    const urlChanged = siteDataUrlRef.current !== nextUrl;
+    if (!urlChanged && initialSites.length === 0) return;
+    siteDataUrlRef.current = nextUrl;
+    setSiteData({
+      campMapSummaries: initialCampMapSummaries,
+      sites: initialSites,
+      availabilitySummary: initialAvailabilitySummary,
+      bookingUrls: initialBookingUrls,
+      calendarLastChecked: initialCalendarLastChecked,
+      siteStats: initialSiteStats,
+    });
+    const nextStatus = initialSites.length > 0 ? "ready" : "idle";
+    siteLoadStatusRef.current = nextStatus;
+    setSiteLoadStatus(nextStatus);
+  }, [
+    initialAvailabilitySummary,
+    initialBookingUrls,
+    initialCalendarLastChecked,
+    initialCampMapSummaries,
+    initialSiteStats,
+    initialSites,
+    siteDataUrl,
+  ]);
 
   useEffect(() => {
     const nextUrl = calendarDataUrl ?? null;
@@ -429,14 +495,47 @@ export function ParkTabs(props: Props) {
     calendarDataUrlRef.current = nextUrl;
     setCalendarData({
       calendarRows,
-      calendarLastChecked,
+      calendarLastChecked: initialCalendarLastChecked,
       vendorSiteIds,
-      bookingUrls,
+      bookingUrls: initialBookingUrls,
     });
     const nextStatus = calendarRows.length > 0 ? "ready" : "idle";
     calendarLoadStatusRef.current = nextStatus;
     setCalendarLoadStatus(nextStatus);
-  }, [bookingUrls, calendarDataUrl, calendarLastChecked, calendarRows, vendorSiteIds]);
+  }, [initialBookingUrls, calendarDataUrl, initialCalendarLastChecked, calendarRows, vendorSiteIds]);
+
+  const loadSiteData = useCallback(async ({ force = false }: { force?: boolean } = {}) => {
+    if (!siteDataUrl) return;
+    const currentStatus = siteLoadStatusRef.current;
+    if (currentStatus === "loading" || (!force && currentStatus === "ready")) return;
+    const keepReadyVisible = currentStatus === "ready";
+    siteLoadStatusRef.current = "loading";
+    if (!keepReadyVisible) {
+      setSiteLoadStatus("loading");
+    }
+    try {
+      const response = await fetch(siteDataUrl);
+      if (!response.ok) throw new Error("Unable to load park sites");
+      const payload = (await response.json()) as Partial<ParkSitePayload>;
+      setSiteData((current) => ({
+        campMapSummaries: payload.campMapSummaries ?? current.campMapSummaries,
+        sites: payload.sites ?? [],
+        availabilitySummary: payload.availabilitySummary ?? {},
+        bookingUrls: { ...initialBookingUrls, ...(payload.bookingUrls ?? {}) },
+        calendarLastChecked: payload.calendarLastChecked ?? current.calendarLastChecked,
+        siteStats: payload.siteStats ?? [],
+      }));
+      siteLoadStatusRef.current = "ready";
+      setSiteLoadStatus("ready");
+    } catch {
+      if (keepReadyVisible) {
+        siteLoadStatusRef.current = "ready";
+      } else {
+        siteLoadStatusRef.current = "error";
+        setSiteLoadStatus("error");
+      }
+    }
+  }, [initialBookingUrls, siteDataUrl]);
 
   const loadCalendarData = useCallback(async ({ force = false }: { force?: boolean } = {}) => {
     if (!calendarDataUrl) return;
@@ -455,7 +554,7 @@ export function ParkTabs(props: Props) {
         calendarRows: payload.calendarRows ?? [],
         calendarLastChecked: payload.calendarLastChecked ?? null,
         vendorSiteIds: payload.vendorSiteIds ?? {},
-        bookingUrls: { ...bookingUrls, ...(payload.bookingUrls ?? {}) },
+        bookingUrls: { ...activeSiteBookingUrls, ...(payload.bookingUrls ?? {}) },
       });
       calendarLoadStatusRef.current = "ready";
       setCalendarLoadStatus("ready");
@@ -467,14 +566,14 @@ export function ParkTabs(props: Props) {
         setCalendarLoadStatus("error");
       }
     }
-  }, [bookingUrls, calendarDataUrl]);
+  }, [activeSiteBookingUrls, calendarDataUrl]);
 
   const refreshLiveAvailability = useCallback(async (payload: { siteId?: string; park?: boolean }) => {
     const scopedSiteId = payload.siteId ?? null;
     const refreshKey = scopedSiteId ? `site:${parkId}:${scopedSiteId}:${dateWindowKey}` : parkRefreshKey;
     const cooldownMs = scopedSiteId ? SITE_REFRESH_COOLDOWN_MS : PARK_REFRESH_COOLDOWN_MS;
     const lastCheckedAt = scopedSiteId
-      ? availabilitySummary[scopedSiteId]?.last_checked_at
+      ? activeAvailabilitySummary[scopedSiteId]?.last_checked_at
       : activeCalendarLastChecked;
 
     if (isFreshEnough(lastCheckedAt, scopedSiteId ? 2 : 3)) return;
@@ -530,7 +629,13 @@ export function ParkTabs(props: Props) {
 
     availabilityRefreshesInFlight.set(refreshKey, refreshPromise);
     await refreshPromise;
-  }, [activeCalendarLastChecked, availabilitySummary, dateContext, dateWindowKey, loadCalendarData, parkId, parkRefreshKey, parkSlug, router]);
+  }, [activeAvailabilitySummary, activeCalendarLastChecked, dateContext, dateWindowKey, loadCalendarData, parkId, parkRefreshKey, parkSlug, router]);
+
+  useEffect(() => {
+    if (activeTab === "sites" || activeTab === "rules") {
+      void loadSiteData();
+    }
+  }, [activeTab, loadSiteData]);
 
   useEffect(() => {
     if (activeTab === "sites" || activeTab === "calendar") {
@@ -545,7 +650,7 @@ export function ParkTabs(props: Props) {
   }, [activeTab, loadCalendarData]);
 
   const openSiteFlyout = useCallback(async (siteId: string) => {
-    const site = sites.find((candidate) => candidate.id === siteId);
+    const site = activeSites.find((candidate) => candidate.id === siteId);
     if (site) {
       setSelectedSiteDetails({
         site,
@@ -556,8 +661,8 @@ export function ParkTabs(props: Props) {
         bookingUrl: activeBookingUrls[site.id],
         equipment: equipmentOptions,
         calendarRow: activeCalendarRows.find((row) => row.site.id === site.id) ?? null,
-        lastCheckedAt: availabilitySummary[site.id]?.last_checked_at ?? activeCalendarLastChecked,
-        stats: siteStats.find((entry) => entry.id === site.id) ?? null,
+        lastCheckedAt: activeAvailabilitySummary[site.id]?.last_checked_at ?? activeCalendarLastChecked,
+        stats: activeSiteStats.find((entry) => entry.id === site.id) ?? null,
         recentReviews: recentSiteReviews.filter((review) => review.site_id === site.id),
       });
     }
@@ -577,9 +682,11 @@ export function ParkTabs(props: Props) {
     }
   }, [
     activeBookingUrls,
+    activeAvailabilitySummary,
     activeCalendarLastChecked,
     activeCalendarRows,
-    availabilitySummary,
+    activeSiteStats,
+    activeSites,
     equipmentOptions,
     operatorId,
     operatorName,
@@ -587,8 +694,6 @@ export function ParkTabs(props: Props) {
     parkSlug,
     recentSiteReviews,
     refreshLiveAvailability,
-    siteStats,
-    sites,
   ]);
 
   const closeSiteFlyout = useCallback(() => {
@@ -597,16 +702,16 @@ export function ParkTabs(props: Props) {
 
   const siteTypeCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const s of sites) {
+    for (const s of activeSites) {
       const k = s.site_type_label ?? s.site_type;
       counts.set(k, (counts.get(k) ?? 0) + 1);
     }
     return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
-  }, [sites]);
+  }, [activeSites]);
 
   const sortedSites = useMemo(
-    () => [...sites].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })),
-    [sites],
+    () => [...activeSites].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })),
+    [activeSites],
   );
 
   function jumpToSection(campMapId: string) {
@@ -633,8 +738,8 @@ export function ParkTabs(props: Props) {
   ];
 
   const availableNowCount = useMemo(
-    () => Object.values(availabilitySummary).filter((a) => a.status === "available").length,
-    [availabilitySummary],
+    () => Object.values(activeAvailabilitySummary).filter((a) => a.status === "available").length,
+    [activeAvailabilitySummary],
   );
   const weatherRange = dateContext.mode === "range"
     ? { from: dateContext.from, to: dateContext.to }
@@ -643,20 +748,6 @@ export function ParkTabs(props: Props) {
   return (
     <section className="mx-auto w-full min-w-0 max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
       <DateFilter ctx={dateContext} />
-
-      <div className="mt-2 grid grid-cols-2 gap-1.5">
-        <WeatherStrip
-          lat={parkLocation.lat}
-          lng={parkLocation.lng}
-          from={weatherRange.from}
-          to={weatherRange.to}
-        />
-        <ParkAlertsStrip
-          operatorId={operatorId}
-          parkName={parkName}
-          sourceUrl={operatorRuleSource?.alerts_url ?? undefined}
-        />
-      </div>
 
       {/* Sticky-ish tab strip */}
       <div className="relative mt-4 min-w-0 border-b border-stone-200">
@@ -719,11 +810,11 @@ export function ParkTabs(props: Props) {
                   <div className="flex items-baseline justify-between mb-3 flex-wrap gap-2">
                     <h2 className="text-xl font-semibold tracking-tight">Campgrounds</h2>
                     <span className="text-xs text-stone-500">
-                      {campMapSummaries.length} {campMapSummaries.length === 1 ? "section" : "sections"} · click any card to open in the Sites tab
+                      {activeCampMapSummaries.length} {activeCampMapSummaries.length === 1 ? "section" : "sections"} · click any card to open in the Sites tab
                     </span>
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    {campMapSummaries.map((m) => {
+                    {activeCampMapSummaries.map((m) => {
                       const pct = m.total_sites > 0 ? Math.round((m.available_sites / m.total_sites) * 100) : 0;
                       return (
                         <button
@@ -807,13 +898,17 @@ export function ParkTabs(props: Props) {
                   })}
                 </div>
 
-                {sitesSubTab === "map" && (
+                {siteLoadStatus !== "ready" && activeSites.length === 0 ? (
+                  <div className="card p-8 text-center text-sm text-stone-500">
+                    {siteLoadStatus === "error" ? "Site data could not be loaded. Switch tabs and open Sites again to retry." : "Loading campsite data..."}
+                  </div>
+                ) : sitesSubTab === "map" ? (
                   <>
-                    {campMapSummaries.length === 0 ? (
+                    {activeCampMapSummaries.length === 0 ? (
                       <SiteDirectoryFallback
                         sites={sortedSites}
-                        availabilitySummary={availabilitySummary}
-                        bookingUrls={bookingUrls}
+                        availabilitySummary={activeAvailabilitySummary}
+                        bookingUrls={activeBookingUrls}
                         operatorName={operatorName}
                         onOpenSiteDetails={openSiteFlyout}
                       />
@@ -826,10 +921,10 @@ export function ParkTabs(props: Props) {
                           </span>
                         </div>
                         <CampgroundMap
-                          campMaps={campMapSummaries}
-                          sites={sites}
-                          availabilitySummary={availabilitySummary}
-                          bookingUrls={bookingUrls}
+                          campMaps={activeCampMapSummaries}
+                          sites={activeSites}
+                          availabilitySummary={activeAvailabilitySummary}
+                          bookingUrls={activeBookingUrls}
                           operatorName={operatorName}
                           equipmentOptions={equipmentOptions}
                           initialMapId={selectedSection}
@@ -838,9 +933,7 @@ export function ParkTabs(props: Props) {
                       </>
                     )}
                   </>
-                )}
-
-                {sitesSubTab === "field-notes" && (
+                ) : (
                   <>
                     <div className="flex items-baseline justify-between mb-3 flex-wrap gap-2">
                       <h2 className="text-xl font-semibold tracking-tight">Field Notes</h2>
@@ -849,9 +942,9 @@ export function ParkTabs(props: Props) {
                       </span>
                     </div>
                     <SiteFieldNotes
-                      totalSites={totalSites}
+                      totalSites={activeTotalSites}
                       availableCount={availableNowCount}
-                      siteStats={siteStats}
+                      siteStats={activeSiteStats}
                       recentSiteReviews={recentSiteReviews}
                       onOpenSiteDetails={openSiteFlyout}
                     />
@@ -887,7 +980,7 @@ export function ParkTabs(props: Props) {
                 {calendarLoadStatus === "ready" && (
                   <AvailabilityCalendar
                     rows={activeCalendarRows}
-                    totalSites={sites.length}
+                    totalSites={activeTotalSites}
                     lastCheckedAt={activeCalendarLastChecked}
                     vendorSiteIds={activeVendorSiteIds}
                     bookingUrls={activeBookingUrls}
@@ -932,14 +1025,20 @@ export function ParkTabs(props: Props) {
                 exit={{ opacity: 0, y: -4 }}
                 transition={{ duration: 0.25 }}
               >
-                <RulesPanel
-                  parkName={parkName}
-                  operatorName={operatorName}
-                  operatorRuleSource={operatorRuleSource}
-                  sites={sites}
-                  totalSites={totalSites}
-                  lastCheckedAt={calendarLastChecked}
-                />
+                {siteLoadStatus !== "ready" && activeSites.length === 0 ? (
+                  <div className="card p-8 text-center text-sm text-stone-500">
+                    {siteLoadStatus === "error" ? "Site rules could not be loaded. Switch tabs and open Rules again to retry." : "Loading site rules..."}
+                  </div>
+                ) : (
+                  <RulesPanel
+                    parkName={parkName}
+                    operatorName={operatorName}
+                    operatorRuleSource={operatorRuleSource}
+                    sites={activeSites}
+                    totalSites={activeTotalSites}
+                    lastCheckedAt={activeCalendarLastChecked}
+                  />
+                )}
               </motion.div>
             )}
           </AnimatePresence>
@@ -948,6 +1047,21 @@ export function ParkTabs(props: Props) {
         <aside className="min-w-0 space-y-4">
           <div className="card overflow-hidden">
             <ParkLocationMap parkName={parkName} location={parkLocation} />
+            <div className="border-b border-stone-100 p-2">
+              <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+                <WeatherStrip
+                  lat={parkLocation.lat}
+                  lng={parkLocation.lng}
+                  from={weatherRange.from}
+                  to={weatherRange.to}
+                />
+                <ParkAlertsStrip
+                  operatorId={operatorId}
+                  parkName={parkName}
+                  sourceUrl={operatorRuleSource?.alerts_url ?? undefined}
+                />
+              </div>
+            </div>
             <div className="p-5">
               <div className="text-xs text-stone-500 uppercase tracking-wide">At a glance</div>
               <dl className="mt-3 grid grid-cols-2 gap-y-3 text-sm">
@@ -960,11 +1074,11 @@ export function ParkTabs(props: Props) {
                 <dt className="text-stone-500">Vendor</dt>
                 <dd className="text-stone-700">{operatorVendor}</dd>
                 <dt className="text-stone-500">Sites</dt>
-                <dd className="font-medium tabular-nums">{totalSites.toLocaleString()}</dd>
+                <dd className="font-medium tabular-nums">{activeTotalSites.toLocaleString()}</dd>
                 <dt className="text-stone-500">Sections</dt>
-                <dd className="font-medium tabular-nums">{campMapSummaries.length}</dd>
+                <dd className="font-medium tabular-nums">{activeCampMapSummaries.length}</dd>
                 <dt className="text-stone-500">Avg open</dt>
-                <dd className="font-medium tabular-nums">{avgAvailability}%</dd>
+                <dd className="font-medium tabular-nums">{activeAvgAvailability}%</dd>
                 <dt className="text-stone-500">Coordinates</dt>
                 <dd className="text-stone-700">
                   {parkLocation.lat.toFixed(3)}, {parkLocation.lng.toFixed(3)}
@@ -1017,10 +1131,10 @@ export function ParkTabs(props: Props) {
             </div>
           )}
 
-          {calendarLastChecked && (
+          {activeCalendarLastChecked && (
             <div className="card p-5 text-sm text-stone-600 leading-relaxed">
               <div className="font-semibold text-stone-900 mb-1.5">Freshness</div>
-              We last checked {operatorName} {timeAgo(calendarLastChecked)}. Background batches run continuously; opening live availability requests a fresh site check.
+              We last checked {operatorName} {timeAgo(activeCalendarLastChecked)}. Background batches run continuously; opening live availability requests a fresh site check.
             </div>
           )}
         </aside>

@@ -183,7 +183,30 @@ export type SiteNight = {
   last_checked_at: string;
 };
 
+export async function getFirstBookableNightForPark(parkId: string): Promise<string | null> {
+  const rows = await sql()<Array<{ night_date: Date | string | null }>>`
+    SELECT min(sa.night_date) AS night_date
+      FROM site_availability sa
+      JOIN sites s        ON s.id = sa.site_id
+      JOIN campgrounds c  ON c.id = s.campground_id
+     WHERE c.park_id = ${parkId}
+  `;
+  const night = rows[0]?.night_date;
+  if (!night) return null;
+  return night instanceof Date ? night.toISOString().slice(0, 10) : String(night).slice(0, 10);
+}
+
 export async function getSiteAvailabilityForPark(parkId: string): Promise<SiteNight[]> {
+  return getSiteAvailabilityForParkWindow(parkId);
+}
+
+export async function getSiteAvailabilityForParkWindow(
+  parkId: string,
+  fromDate?: string,
+  toDate?: string,
+): Promise<SiteNight[]> {
+  const start = fromDate ?? "0001-01-01";
+  const end = toDate ?? "9999-12-31";
   const rows = await sql()<Array<{
     site_id: string;
     night_date: Date | string;
@@ -198,6 +221,7 @@ export async function getSiteAvailabilityForPark(parkId: string): Promise<SiteNi
       JOIN sites s        ON s.id = sa.site_id
       JOIN campgrounds c  ON c.id = s.campground_id
      WHERE c.park_id = ${parkId}
+       AND sa.night_date BETWEEN ${start}::date AND ${end}::date
      ORDER BY s.vendor_site_id, sa.night_date
   `;
   return rows.map((r) => ({

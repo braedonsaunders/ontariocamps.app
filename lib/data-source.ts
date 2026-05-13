@@ -172,26 +172,140 @@ export async function getCampMapsForPark(parkId: string): Promise<CampMap[]> {
   }));
 }
 
+export type CampMapAvailabilitySummary = CampMap & {
+  total_sites: number;
+  available_sites: number;
+};
+
+export type ParkAvailabilityOverview = {
+  campMapSummaries: CampMapAvailabilitySummary[];
+  totalSites: number;
+  availableSites: number;
+  calendarLastChecked: string | null;
+};
+
+function inclusiveNightCount(fromDate: string, toDate: string): number {
+  const from = Date.parse(`${fromDate}T00:00:00Z`);
+  const to = Date.parse(`${toDate}T00:00:00Z`);
+  if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) return 1;
+  return Math.max(1, Math.round((to - from) / 86_400_000) + 1);
+}
+
+export async function getParkAvailabilityOverviewForWindow(
+  parkId: string,
+  fromDate: string,
+  toDate: string,
+): Promise<ParkAvailabilityOverview> {
+  const expectedNights = inclusiveNightCount(fromDate, toDate);
+  const [mapRows, totalRows] = await Promise.all([
+    sql()<Array<{
+      id: string; park_id: string; campground_id: string; vendor_map_id: string;
+      name: string | null; description: string | null;
+      image_url: string; x_dimension: number; y_dimension: number;
+      total_sites: number; available_sites: number;
+    }>>`
+      WITH map_sites AS (
+        SELECT cm.id, cm.park_id, cm.campground_id, cm.vendor_map_id,
+               cm.name, cm.description, cm.image_url, cm.x_dimension, cm.y_dimension,
+               s.id AS site_id
+          FROM camp_maps cm
+          LEFT JOIN sites s ON s.camp_map_id = cm.id
+         WHERE cm.park_id = ${parkId}
+      ),
+      site_status AS (
+        SELECT ms.id, ms.park_id, ms.campground_id, ms.vendor_map_id,
+               ms.name, ms.description, ms.image_url, ms.x_dimension, ms.y_dimension,
+               ms.site_id,
+               count(sa.night_date)::int AS nights_seen,
+               count(sa.night_date) FILTER (WHERE sa.status = 'available')::int AS available_nights
+          FROM map_sites ms
+          LEFT JOIN site_availability sa
+                 ON sa.site_id = ms.site_id
+                AND sa.night_date BETWEEN ${fromDate}::date AND ${toDate}::date
+         GROUP BY ms.id, ms.park_id, ms.campground_id, ms.vendor_map_id,
+                  ms.name, ms.description, ms.image_url, ms.x_dimension, ms.y_dimension,
+                  ms.site_id
+      )
+      SELECT id, park_id, campground_id, vendor_map_id, name, description,
+             image_url, x_dimension, y_dimension,
+             count(site_id)::int AS total_sites,
+             count(site_id) FILTER (
+               WHERE nights_seen = ${expectedNights}
+                 AND available_nights = ${expectedNights}
+             )::int AS available_sites
+        FROM site_status
+       GROUP BY id, park_id, campground_id, vendor_map_id, name, description,
+                image_url, x_dimension, y_dimension
+       ORDER BY total_sites DESC, name
+    `,
+    sql()<Array<{
+      total_sites: number;
+      available_sites: number;
+      calendar_last_checked: Date | string | null;
+    }>>`
+      WITH per_site AS (
+        SELECT s.id,
+               count(sa.night_date)::int AS nights_seen,
+               count(sa.night_date) FILTER (WHERE sa.status = 'available')::int AS available_nights,
+               max(sa.last_checked_at) AS last_checked_at
+          FROM sites s
+          JOIN campgrounds c ON c.id = s.campground_id
+          LEFT JOIN site_availability sa
+                 ON sa.site_id = s.id
+                AND sa.night_date BETWEEN ${fromDate}::date AND ${toDate}::date
+         WHERE c.park_id = ${parkId}
+         GROUP BY s.id
+      )
+      SELECT count(*)::int AS total_sites,
+             count(*) FILTER (
+               WHERE nights_seen = ${expectedNights}
+                 AND available_nights = ${expectedNights}
+             )::int AS available_sites,
+             max(last_checked_at) AS calendar_last_checked
+        FROM per_site
+    `,
+  ]);
+
+  const total = totalRows[0];
+  return {
+    campMapSummaries: mapRows.map((r) => ({
+      id: r.id,
+      park_id: r.park_id,
+      campground_id: r.campground_id,
+      vendor_map_id: r.vendor_map_id,
+      name: r.name,
+      description: r.description,
+      image_url: r.image_url,
+      x_dimension: r.x_dimension,
+      y_dimension: r.y_dimension,
+      features: [],
+      total_sites: r.total_sites,
+      available_sites: r.available_sites,
+    })),
+    totalSites: total?.total_sites ?? 0,
+    availableSites: total?.available_sites ?? 0,
+    calendarLastChecked: total?.calendar_last_checked
+      ? total.calendar_last_checked instanceof Date
+        ? total.calendar_last_checked.toISOString()
+        : String(total.calendar_last_checked)
+      : null,
+  };
+}
+
 export async function getSitesForPark(parkId: string): Promise<Site[]> {
   const rows = await sql()<Array<{
     id: string; campground_id: string; vendor_site_id: string; name: string;
     site_type: string; site_type_label: string | null; icon_type: number | null;
-    min_party_size: number | null; max_party_size: number; max_stay_nights: number | null;
-    max_equipment_length_ft: number | null;
-    has_electric: boolean; has_water: boolean; has_sewer: boolean;
-    is_pull_through: boolean; is_accessible: boolean;
+    max_party_size: number;
+    has_electric: boolean;
     is_pet_friendly: boolean; is_waterfront: boolean;
-    amenities: string[];
     camp_map_id: string | null; map_x: number | null; map_y: number | null;
-    rule_summary: unknown;
   }>>`
     SELECT s.id, s.campground_id, s.vendor_site_id, s.name, s.site_type,
            s.site_type_label, s.icon_type,
-           s.min_party_size, s.max_party_size, s.max_stay_nights, s.max_equipment_length_ft,
-           s.has_electric, s.has_water, s.has_sewer, s.is_pull_through,
-           s.is_accessible, s.is_pet_friendly, s.is_waterfront,
-           s.amenities, s.camp_map_id, s.map_x, s.map_y,
-           s.rule_summary
+           s.max_party_size,
+           s.has_electric, s.is_pet_friendly, s.is_waterfront,
+           s.camp_map_id, s.map_x, s.map_y
       FROM sites s
       JOIN campgrounds c ON c.id = s.campground_id
      WHERE c.park_id = ${parkId}
@@ -200,14 +314,14 @@ export async function getSitesForPark(parkId: string): Promise<Site[]> {
     id: r.id, campground_id: r.campground_id, vendor_site_id: r.vendor_site_id,
     name: r.name, site_type: r.site_type as Site["site_type"],
     site_type_label: r.site_type_label, icon_type: r.icon_type,
-    min_party_size: r.min_party_size, max_party_size: r.max_party_size,
-    max_stay_nights: r.max_stay_nights, max_equipment_length_ft: r.max_equipment_length_ft,
-    has_electric: r.has_electric, has_water: r.has_water, has_sewer: r.has_sewer,
-    is_pull_through: r.is_pull_through, is_accessible: r.is_accessible,
+    min_party_size: null, max_party_size: r.max_party_size,
+    max_stay_nights: null, max_equipment_length_ft: null,
+    has_electric: r.has_electric, has_water: false, has_sewer: false,
+    is_pull_through: false, is_accessible: false,
     is_pet_friendly: r.is_pet_friendly, is_waterfront: r.is_waterfront,
-    amenities: Array.isArray(r.amenities) ? r.amenities : [],
+    amenities: [],
     camp_map_id: r.camp_map_id, map_x: r.map_x, map_y: r.map_y,
-    rule_summary: r.rule_summary && typeof r.rule_summary === "object" ? (r.rule_summary as Site["rule_summary"]) : null,
+    rule_summary: null,
   }));
 }
 

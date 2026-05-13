@@ -4,21 +4,18 @@ import type { Metadata } from "next";
 import {
   getParkBySlug,
   getOperatorWithStats,
-  getCampMapsForPark,
-  getSitesForPark,
   getEquipmentForOperator,
   getParkReviews,
   getParkReviewAggregate,
   getRecentSiteReviewsForPark,
-  getSiteReviewStatsForPark,
   getOperatorRuleSource,
+  getParkAvailabilityOverviewForWindow,
 } from "@/lib/data-source";
-import { getSiteAvailabilityForPark } from "@/lib/db/queries";
+import { getFirstBookableNightForPark } from "@/lib/db/queries";
 import { MapPin } from "lucide-react";
 import { MotionHero } from "@/components/motion";
 import { ParkTabs, type DateContext } from "@/components/park-tabs";
-import type { SiteStatsEntry } from "@/components/site-field-notes";
-import { buildBookingUrl, normalizeBookingUrlPath } from "@/lib/booking-url";
+import { normalizeBookingUrlPath } from "@/lib/booking-url";
 import { appDate } from "@/lib/app-time";
 import { imageProxyUrl } from "@/lib/image-proxy";
 import { SITE_NAME, absoluteUrl, toMetaDescription } from "@/lib/seo";
@@ -110,19 +107,23 @@ export default async function ParkPage({
   const park = await getParkBySlug(slug);
   if (!park) notFound();
 
-  const [operator, parkCampMaps, allParkSites, operatorEquipment, perNight, parkReviews, parkReviewAggregate, recentSiteReviews, siteReviewStats, operatorRuleSource] = await Promise.all([
+  const [firstBookableNight, operator, operatorEquipment, parkReviews, parkReviewAggregate, recentSiteReviews, operatorRuleSource] = await Promise.all([
+    getFirstBookableNightForPark(park.id),
     getOperatorWithStats(park.operator_id),
-    getCampMapsForPark(park.id),
-    getSitesForPark(park.id),
     getEquipmentForOperator(park.operator_id),
-    getSiteAvailabilityForPark(park.id),
     getParkReviews(park.id),
     getParkReviewAggregate(park.id),
     getRecentSiteReviewsForPark(park.id),
-    getSiteReviewStatsForPark(park.id),
     getOperatorRuleSource(park.operator_id),
   ]);
   if (!operator) notFound();
+
+  const dateContext = resolveDateContext(sp, firstBookableNight);
+  const overview = await getParkAvailabilityOverviewForWindow(
+    park.id,
+    dateContext.mode === "range" ? dateContext.from : dateContext.date,
+    dateContext.mode === "range" ? dateContext.to : dateContext.date,
+  );
 
   const canonicalUrl = absoluteUrl(`/park/${park.slug}`);
   const jsonLdDescription = toMetaDescription(
@@ -180,143 +181,18 @@ export default async function ParkPage({
   };
   const parkHeroImageUrl = imageProxyUrl(park.hero_image_url, "hero") ?? park.hero_image_url;
 
-  // Map: site_id → all (date, status, last_checked_at) rows for fast filtering.
-  const nightsBySite = new Map<string, Array<{ night_date: string; status: string; last_checked_at: string }>>();
-  let firstBookableNight: string | null = null;
-  for (const r of perNight) {
-    let arr = nightsBySite.get(r.site_id);
-    if (!arr) {
-      arr = [];
-      nightsBySite.set(r.site_id, arr);
-    }
-    arr.push(r);
-    if (!firstBookableNight || r.night_date < firstBookableNight) firstBookableNight = r.night_date;
-  }
-
-  const dateContext = resolveDateContext(sp, firstBookableNight);
-
-  // The "in-context" availability summary used to colour map dots. Definition:
-  //   range mode: site is available iff EVERY night in [from, to] is "available".
-  //                Status is "closed" if any night is "closed", else "reserved".
-  //   today mode: just look at today's row.
-  // `nights_available` keeps a count of open nights across the next 90-day
-  // window so the popover can still tell the user "X open nights overall".
-  const availabilitySummary: Record<
-    string,
-    { status: "available" | "reserved" | "closed" | "unknown"; nights_available: number; last_checked_at: string | null }
-  > = {};
-
-  for (const s of allParkSites) {
-    const rows = nightsBySite.get(s.id) ?? [];
-    let latest: string | null = null;
-    let totalAvailable = 0;
-    for (const r of rows) {
-      if (r.status === "available") totalAvailable += 1;
-      if (!latest || r.last_checked_at > latest) latest = r.last_checked_at;
-    }
-
-    let contextStatus: "available" | "reserved" | "closed" | "unknown";
-    if (dateContext.mode === "range") {
-      const inRange = rows.filter((r) => r.night_date >= dateContext.from && r.night_date <= dateContext.to);
-      if (inRange.length === 0) {
-        contextStatus = "unknown";
-      } else if (inRange.some((r) => r.status === "closed")) {
-        contextStatus = "closed";
-      } else if (inRange.every((r) => r.status === "available")) {
-        contextStatus = "available";
-      } else {
-        contextStatus = "reserved";
-      }
-    } else {
-      const todayRow = rows.find((r) => r.night_date === dateContext.date);
-      if (!todayRow) {
-        contextStatus = "unknown";
-      } else {
-        contextStatus = todayRow.status as "available" | "reserved" | "closed" | "unknown";
-      }
-    }
-
-    availabilitySummary[s.id] = {
-      status: contextStatus,
-      nights_available: totalAvailable,
-      last_checked_at: latest,
-    };
-  }
-
-  // Per-camp-map (section) summaries: site count + how many of those sites are
-  // "available" under the current date context.
-  const campMapSummaries = parkCampMaps.map((cm) => {
-    const cmSites = allParkSites.filter((s) => s.camp_map_id === cm.id);
-    let availSites = 0;
-    for (const s of cmSites) {
-      if (availabilitySummary[s.id]?.status === "available") availSites += 1;
-    }
-    return {
-      ...cm,
-      total_sites: cmSites.length,
-      available_sites: availSites,
-    };
-  }).sort((a, b) => b.total_sites - a.total_sites);
-
-  const totalSites = allParkSites.length;
+  const campMapSummaries = overview.campMapSummaries;
+  const totalSites = overview.totalSites;
   const avgAvailability =
-    campMapSummaries.length > 0
-      ? Math.round(
-          campMapSummaries.reduce(
-            (sum, m) => sum + (m.total_sites > 0 ? (m.available_sites / m.total_sites) * 100 : 0),
-            0,
-          ) / campMapSummaries.length,
-        )
+    totalSites > 0
+      ? Math.round((overview.availableSites / totalSites) * 100)
       : 0;
 
-  const campMapById = new Map(parkCampMaps.map((m) => [m.id, m]));
-  let calendarLastChecked: string | null = null;
-  for (const r of perNight) {
-    if (!calendarLastChecked || r.last_checked_at > calendarLastChecked) {
-      calendarLastChecked = r.last_checked_at;
-    }
-  }
-
-  const bookingUrls: Record<string, string> = {};
-  for (const s of allParkSites) {
-    const campMap = s.camp_map_id ? campMapById.get(s.camp_map_id) : null;
-    bookingUrls[s.id] = buildBookingUrl(park.vendor_url, {
-      resourceId: s.vendor_site_id,
-      mapId: campMap?.vendor_map_id || undefined,
-    });
-  }
-
-  const siteBookingData: Record<string, { total: number; available: number; reserved: number }> = {};
-  for (const s of allParkSites) {
-    const rows = nightsBySite.get(s.id) ?? [];
-    let available = 0;
-    let reserved = 0;
-    for (const r of rows) {
-      if (r.status === "available") available++;
-      else if (r.status === "reserved") reserved++;
-    }
-    siteBookingData[s.id] = { total: rows.length, available, reserved };
-  }
-
-  const reviewStatsMap = new Map(siteReviewStats.map((r) => [r.site_id, r]));
-  const siteStats: SiteStatsEntry[] = allParkSites.map((s) => {
-    const booking = siteBookingData[s.id] ?? { total: 0, available: 0, reserved: 0 };
-    const review = reviewStatsMap.get(s.id);
-    return {
-      id: s.id,
-      vendorSiteId: s.vendor_site_id,
-      name: s.name,
-      siteTypeLabel: s.site_type_label ?? s.site_type,
-      hasElectric: s.has_electric,
-      isWaterfront: s.is_waterfront,
-      isPetFriendly: s.is_pet_friendly,
-      totalNights: booking.total,
-      availableNights: booking.available,
-      reservedNights: booking.reserved,
-      reviewCount: review?.review_count ?? 0,
-      ratingAvg: review?.rating_avg ?? null,
-    };
-  });
+  const siteDataParams = new URLSearchParams(
+    dateContext.mode === "range"
+      ? { from: dateContext.from, to: dateContext.to }
+      : { from: dateContext.date, to: dateContext.date },
+  );
 
   return (
     <div>
@@ -368,20 +244,21 @@ export default async function ParkPage({
         totalSites={totalSites}
         avgAvailability={avgAvailability}
         campMapSummaries={campMapSummaries}
-        sites={allParkSites}
-        availabilitySummary={availabilitySummary}
-        bookingUrls={bookingUrls}
+        sites={[]}
+        availabilitySummary={{}}
+        bookingUrls={{}}
         equipmentOptions={operatorEquipment}
         calendarRows={[]}
-        calendarLastChecked={calendarLastChecked}
+        calendarLastChecked={overview.calendarLastChecked}
         vendorSiteIds={{}}
         calendarDataUrl={`/api/park/${encodeURIComponent(park.slug)}/calendar`}
+        siteDataUrl={`/api/park/${encodeURIComponent(park.slug)}/sites?${siteDataParams.toString()}`}
         dateContext={dateContext}
         parkReviews={parkReviews}
         parkReviewAggregate={parkReviewAggregate}
         recentSiteReviews={recentSiteReviews}
         parkId={park.id}
-        siteStats={siteStats}
+        siteStats={[]}
         operatorRuleSource={operatorRuleSource}
       />
     </div>
