@@ -752,12 +752,57 @@ async function refreshCamplifeMetadata(
   return { status, parks_seen, sites_seen, errors };
 }
 
+function bookingCategoryNames(cat: CamisBookingCategory): string[] {
+  return (cat.localizedValues ?? [])
+    .map((lv) => (lv.name ?? "").trim())
+    .filter(Boolean);
+}
+
+function bookingCategoryText(cat: CamisBookingCategory): string {
+  return bookingCategoryNames(cat).join(" ").toLowerCase();
+}
+
+function isSupportedOvernightBookingCategory(cat: CamisBookingCategory): boolean {
+  const text = bookingCategoryText(cat);
+  if (cat.bookingModel !== 0 && cat.bookingModel !== 5) return false;
+  if (/\b(day|parking|vehicle|permit|bus|shuttle|guided|hike|activity|fishing|facility|picnic|seasonal|dock)\b/.test(text)) {
+    return false;
+  }
+  return (cat.allowedResourceCategoryIds?.length ?? 0) > 0;
+}
+
+function bookingCategoryRank(cat: CamisBookingCategory): number {
+  const names = bookingCategoryNames(cat);
+  const text = names.join(" ").toLowerCase();
+  if (names.some((name) => /^campsite$/i.test(name))) return 0;
+  if (/\bfrontcountry\b.*\bcampsite\b/.test(text)) return 1;
+  if (/\b(backcountry|paddling|hiking|quetico)\b/.test(text)) return 2;
+  if (/\b(roofed|accommodation|cabin|cottage|yurt|o'?tentik)\b/.test(text)) return 3;
+  if (/\bgroup\b/.test(text)) return 4;
+  if (cat.bookingModel === 0) return 10;
+  return 20;
+}
+
 function pickCampsiteBookingCategory(cats: CamisBookingCategory[]): CamisBookingCategory | null {
   const enabled = cats.filter((c) => !c.isDisabled);
-  const named = enabled.find((c) => c.localizedValues.some((lv) => /campsite/i.test(lv.name ?? "")));
-  if (named) return named;
-  const overnight = enabled.find((c) => c.bookingModel === 0);
-  return overnight ?? enabled[0] ?? null;
+  const supported = enabled
+    .filter(isSupportedOvernightBookingCategory)
+    .sort((a, b) => bookingCategoryRank(a) - bookingCategoryRank(b));
+  return supported[0] ?? enabled.find((c) => c.bookingModel === 0) ?? enabled[0] ?? null;
+}
+
+function bookingCategoryForResourceCategory(
+  resourceCategoryId: number | null | undefined,
+  cats: CamisBookingCategory[],
+  fallback: CamisBookingCategory | null,
+): CamisBookingCategory | null {
+  if (resourceCategoryId == null) return fallback;
+  const matches = cats
+    .filter((cat) => !cat.isDisabled)
+    .filter(isSupportedOvernightBookingCategory)
+    .filter((cat) => (cat.allowedResourceCategoryIds ?? []).includes(resourceCategoryId))
+    .sort((a, b) => bookingCategoryRank(a) - bookingCategoryRank(b));
+  return matches[0] ?? null;
 }
 
 function pickTentEquipment(eq: CamisEquipmentCategory[]) {
@@ -975,7 +1020,6 @@ export async function refreshOperatorMetadata(
 
   const bookingCategoryRecord = pickCampsiteBookingCategory(bookingCats);
   const bookingCategoryId = bookingCategoryRecord?.bookingCategoryId ?? 0;
-  const allowedResourceCategoryIds = new Set(bookingCategoryRecord?.allowedResourceCategoryIds ?? []);
   const { equipmentCategoryId, subEquipmentCategoryId } = pickTentEquipment(equipmentCats);
 
   // Per-operator fetch config — used by the availability ingest to know which
@@ -1075,13 +1119,12 @@ export async function refreshOperatorMetadata(
         const siteId = `s_${parkId}_${r.resourceId}`;
         const label = labelByIcon.get(r.iconType) ?? null;
         const detail = resourceDetails[String(r.resourceId)];
-        if (
-          allowedResourceCategoryIds.size > 0
-          && detail?.resourceCategoryId != null
-          && !allowedResourceCategoryIds.has(detail.resourceCategoryId)
-        ) {
-          continue;
-        }
+        const siteBookingCategory = bookingCategoryForResourceCategory(
+          detail?.resourceCategoryId,
+          bookingCats,
+          bookingCategoryRecord,
+        );
+        if (!siteBookingCategory) continue;
         const en = detail?.localizedValues?.find((l) => l.cultureName === "en-CA")
           ?? detail?.localizedValues?.[0];
         const photos = (detail?.photos ?? [])
@@ -1127,7 +1170,7 @@ export async function refreshOperatorMetadata(
           map_y: r.yCoordinate,
           vendor_resource_location_id: cand.resourceLocationId,
           vendor_resource_id: r.resourceId,
-          vendor_booking_category_id: bookingCategoryId,
+          vendor_booking_category_id: siteBookingCategory.bookingCategoryId,
           photos,
           description,
           defined_attributes: decodedAttributes,

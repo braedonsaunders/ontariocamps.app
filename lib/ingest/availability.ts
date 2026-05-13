@@ -52,8 +52,13 @@ type AvailabilityCode = "available" | "reserved" | "closed" | "unknown";
  * For our index we treat anything that isn't bookable-right-now as reserved,
  * except codes 2/3 which mean the season is closed.
  */
-function decodeAvailability(row: { availability: number; processedAvailability?: number }): AvailabilityCode {
+function decodeAvailability(row: { availability: number; processedAvailability?: number }, vendor: Vendor): AvailabilityCode {
   const code = row.processedAvailability ?? row.availability;
+  if (vendor === "pcrs") {
+    if (code === 0 || code === 1) return "available";
+    if (code === 2 || code === 3 || code === 6) return "closed";
+    return "reserved";
+  }
   if (code === 0) return "available";
   if (code === 2 || code === 3) return "closed";
   return "reserved";
@@ -95,8 +100,8 @@ async function loadFetchTargets(
            o.id              AS operator_id,
            o.vendor          AS operator_vendor,
            o.base_url        AS operator_base_url,
-           ofc.equipment_category_id,
-           ofc.sub_equipment_category_id
+           COALESCE((s.allowed_equipment->0->>'equipmentCategoryId')::int, ofc.equipment_category_id) AS equipment_category_id,
+           COALESCE((s.allowed_equipment->0->>'subEquipmentCategoryId')::int, ofc.sub_equipment_category_id) AS sub_equipment_category_id
       FROM sites s
       JOIN campgrounds c           ON c.id = s.campground_id
       JOIN parks p                 ON p.id = c.park_id
@@ -338,7 +343,7 @@ export async function refreshAvailability(
       out.push({
         site_id: t.site_id,
         night_date: cur.toISOString().slice(0, 10),
-        status: decodeAvailability(row),
+        status: decodeAvailability(row, t.operator_vendor),
         last_checked_at: nowIso,
       });
       cur.setUTCDate(cur.getUTCDate() + 1);

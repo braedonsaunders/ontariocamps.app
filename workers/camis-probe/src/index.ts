@@ -266,8 +266,13 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function decodeAvailability(row: { availability: number; processedAvailability?: number }): AvailabilityCode {
+function decodeAvailability(row: { availability: number; processedAvailability?: number }, vendor?: string): AvailabilityCode {
   const code = row.processedAvailability ?? row.availability;
+  if (vendor === "pcrs") {
+    if (code === 0 || code === 1) return "available";
+    if (code === 2 || code === 3 || code === 6) return "closed";
+    return "reserved";
+  }
   if (code === 0) return "available";
   if (code === 2 || code === 3) return "closed";
   return "reserved";
@@ -848,7 +853,7 @@ async function fetchVendorAvailability(target: FetchTarget, startDate: string, e
     const out = {
       site_id: target.site_id,
       night_date: night,
-      status: decodeAvailability(row),
+      status: decodeAvailability(row, target.operator_vendor),
       last_checked_at: nowIso,
     };
     night = addDays(night, 1);

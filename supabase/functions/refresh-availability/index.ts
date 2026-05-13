@@ -6,6 +6,7 @@ type Target = {
   vendor_resource_id: number;
   vendor_booking_category_id: number;
   operator_id: string;
+  operator_vendor: string;
   operator_base_url: string;
   equipment_category_id: number;
   sub_equipment_category_id: number;
@@ -41,8 +42,13 @@ function json(status: number, body: unknown): Response {
   });
 }
 
-function decodeAvailability(row: { availability: number; processedAvailability?: number }): AvailabilityCode {
+function decodeAvailability(row: { availability: number; processedAvailability?: number }, vendor?: string): AvailabilityCode {
   const code = row.processedAvailability ?? row.availability;
+  if (vendor === "pcrs") {
+    if (code === 0 || code === 1) return "available";
+    if (code === 2 || code === 3 || code === 6) return "closed";
+    return "reserved";
+  }
   if (code === 0) return "available";
   if (code === 2 || code === 3) return "closed";
   return "reserved";
@@ -193,7 +199,7 @@ async function fetchAvailability(target: Target, startDate: string, endDate: str
     const out = {
       site_id: target.site_id,
       night_date: night,
-      status: decodeAvailability(row),
+      status: decodeAvailability(row, target.operator_vendor),
       last_checked_at: nowIso,
     };
     night = addDays(night, 1);
