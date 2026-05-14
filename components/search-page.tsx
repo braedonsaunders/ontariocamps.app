@@ -47,7 +47,13 @@ import {
   Truck,
   X,
 } from "lucide-react";
-import { SEARCH_EQUIPMENT_OPTIONS, searchEquipmentById } from "@/lib/search-equipment";
+import {
+  SEARCH_EQUIPMENT_OPTIONS,
+  equipmentDisplayLabel,
+  normalizeEquipmentLengthFt,
+  searchEquipmentById,
+} from "@/lib/search-equipment";
+import { EquipmentLengthField } from "@/components/equipment-length-field";
 import {
   DEFAULT_SEARCH_RADIUS_KM,
   MAX_SEARCH_RADIUS_KM,
@@ -102,9 +108,9 @@ const STAY_MODE_OPTIONS: {
 const EQUIPMENT_ICONS: Record<string, LucideIcon> = {
   any: Navigation,
   tent: Tent,
-  small_rv: Truck,
-  rv: Truck,
-  large_rv: Ruler,
+  camper_van: Truck,
+  tent_trailer: Truck,
+  trailer: Ruler,
   roofed: Home,
 };
 
@@ -425,8 +431,16 @@ export function SearchPage() {
 
     const query = nearInput.trim();
     const committedRadius = normalizeSearchRadiusKm(radiusInput);
+    const committedEquipment = searchEquipmentById(state.equipment);
+    const committedEquipmentLengthFt = normalizeEquipmentLengthFt(state.equipment, state.equipment_length_ft);
     setRadiusInput(String(committedRadius));
-    const nextState: Partial<typeof state> = { page: 1, radius_km: committedRadius, party_size: committedPartySize };
+    const nextState: Partial<typeof state> = {
+      page: 1,
+      radius_km: committedRadius,
+      party_size: committedPartySize,
+      equipment: committedEquipment.id,
+      equipment_length_ft: committedEquipment.needsLength ? committedEquipmentLengthFt ?? null : null,
+    };
     if (shouldCommitMinNights && committedMinNights != null) {
       nextState.flexible = true;
       nextState.min_nights = committedMinNights;
@@ -678,9 +692,12 @@ export function SearchPage() {
     if (requestState.flexible) sp.set("flexible", "true");
     if (requestState.min_nights) sp.set("min_nights", String(requestState.min_nights));
     if (requestState.party_size) sp.set("party_size", String(requestState.party_size));
-    if (requestState.equipment && requestState.equipment !== "any") sp.set("equipment", requestState.equipment);
-    if (requestState.equipment_length_ft) sp.set("equipment_length_ft", String(requestState.equipment_length_ft));
-    if (requestState.site_types.length) sp.set("site_types", requestState.site_types.join(","));
+    const requestEquipment = searchEquipmentById(requestState.equipment);
+    const requestEquipmentLengthFt = normalizeEquipmentLengthFt(requestState.equipment, requestState.equipment_length_ft);
+    const requestSiteTypes = requestState.site_types.length ? requestState.site_types : requestEquipment.siteTypes;
+    if (requestEquipment.id !== "any") sp.set("equipment", requestEquipment.id);
+    if (requestEquipmentLengthFt) sp.set("equipment_length_ft", String(requestEquipmentLengthFt));
+    if (requestSiteTypes.length) sp.set("site_types", requestSiteTypes.join(","));
     if (requestState.amenities.length) sp.set("amenities", requestState.amenities.join(","));
     if (requestState.operators.length) sp.set("operators", requestState.operators.join(","));
     if (requestState.park_types.length) sp.set("park_types", requestState.park_types.join(","));
@@ -719,8 +736,15 @@ export function SearchPage() {
     const option = searchEquipmentById(id);
     setState({
       equipment: option.id,
-      equipment_length_ft: option.equipmentLengthFt ?? null,
+      equipment_length_ft: option.needsLength ? option.defaultLengthFt ?? null : null,
       site_types: option.siteTypes,
+      page: 1,
+    });
+  }
+
+  function updateEquipmentLength(lengthFt: number) {
+    setState({
+      equipment_length_ft: normalizeEquipmentLengthFt(selectedEquipment.id, lengthFt) ?? null,
       page: 1,
     });
   }
@@ -883,6 +907,7 @@ export function SearchPage() {
   }, [data]);
 
   const selectedEquipment = useMemo(() => searchEquipmentById(state.equipment), [state.equipment]);
+  const selectedEquipmentLengthFt = normalizeEquipmentLengthFt(state.equipment, state.equipment_length_ft);
   const EquipmentIcon = EQUIPMENT_ICONS[selectedEquipment.id] ?? Navigation;
   const selectedStayMode = stayModeCopy(state.stay_mode);
   const dateWindowNights = rangeNights(state.start_date, state.end_date);
@@ -1099,7 +1124,7 @@ export function SearchPage() {
     (normalizeSearchRadiusKm(state.radius_km) !== DEFAULT_SEARCH_RADIUS_KM ? 1 : 0);
   const mobilePrimarySummary = `${nearInput.trim() || "Ontario"} · ${dateSummary}`;
   const mobileSecondarySummary = [
-    selectedEquipment.shortLabel,
+    equipmentDisplayLabel(state.equipment, selectedEquipmentLengthFt),
     selectedStayMode.label,
     `${normalizeSearchRadiusKm(state.radius_km)} km`,
     selectedParks.length ? `${selectedParks.length} park${selectedParks.length === 1 ? "" : "s"}` : null,
@@ -1229,7 +1254,11 @@ export function SearchPage() {
           </div>
 
           <div className="hidden rounded-lg bg-white p-1.5 ring-1 ring-stone-200 lg:block">
-            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-[minmax(15rem,1.05fr)_minmax(17rem,1.25fr)_minmax(8.5rem,0.65fr)_minmax(8.5rem,0.65fr)_minmax(11rem,0.75fr)_auto_auto]">
+            <div className={`grid grid-cols-2 gap-1.5 sm:grid-cols-3 ${
+              selectedEquipment.needsLength
+                ? "lg:grid-cols-[minmax(14rem,0.95fr)_minmax(15rem,1.05fr)_minmax(8rem,0.6fr)_minmax(8rem,0.6fr)_minmax(10rem,0.72fr)_minmax(7rem,0.48fr)_auto_auto]"
+                : "lg:grid-cols-[minmax(15rem,1.05fr)_minmax(17rem,1.25fr)_minmax(8.5rem,0.65fr)_minmax(8.5rem,0.65fr)_minmax(11rem,0.75fr)_auto_auto]"
+            }`}>
               <div className="relative col-span-2 rounded-md bg-stone-50 px-3 py-2 ring-1 ring-stone-200 transition focus-within:bg-white focus-within:ring-forest-600 sm:col-span-3 lg:col-span-1 lg:min-w-0">
                 <div className="mb-0.5 flex items-center justify-between gap-3">
                   <label className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-stone-500">
@@ -1361,7 +1390,7 @@ export function SearchPage() {
                 </label>
                 <select
                   className="w-full min-w-0 appearance-none bg-transparent text-sm font-semibold text-stone-950 outline-none"
-                  value={state.equipment}
+                  value={selectedEquipment.id}
                   onChange={(e) => applyEquipment(e.target.value)}
                 >
                   {SEARCH_EQUIPMENT_OPTIONS.map((option) => (
@@ -1369,6 +1398,15 @@ export function SearchPage() {
                   ))}
                 </select>
               </div>
+
+              {selectedEquipment.needsLength && (
+                <EquipmentLengthField
+                  id="search-equipment-length"
+                  value={selectedEquipmentLengthFt}
+                  defaultValue={selectedEquipment.defaultLengthFt}
+                  onChange={updateEquipmentLength}
+                />
+              )}
 
               <button
                 type="button"
@@ -1781,20 +1819,31 @@ export function SearchPage() {
                   </label>
                 </div>
 
-                <label className="block rounded-md bg-stone-50 px-3 py-2 ring-1 ring-stone-200 focus-within:bg-white focus-within:ring-forest-600">
-                  <span className="mb-0.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-stone-500">
-                    <EquipmentIcon size={12} /> Equipment
-                  </span>
-                  <select
-                    className="w-full min-w-0 appearance-none bg-transparent text-sm font-semibold text-stone-950 outline-none"
-                    value={state.equipment}
-                    onChange={(e) => applyEquipment(e.target.value)}
-                  >
-                    {SEARCH_EQUIPMENT_OPTIONS.map((option) => (
-                      <option key={option.id} value={option.id}>{option.label}</option>
-                    ))}
-                  </select>
-                </label>
+                <div className={selectedEquipment.needsLength ? "grid grid-cols-2 gap-2" : ""}>
+                  <label className="block min-w-0 rounded-md bg-stone-50 px-3 py-2 ring-1 ring-stone-200 focus-within:bg-white focus-within:ring-forest-600">
+                    <span className="mb-0.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-stone-500">
+                      <EquipmentIcon size={12} /> Equipment
+                    </span>
+                    <select
+                      className="w-full min-w-0 appearance-none bg-transparent text-sm font-semibold text-stone-950 outline-none"
+                      value={selectedEquipment.id}
+                      onChange={(e) => applyEquipment(e.target.value)}
+                    >
+                      {SEARCH_EQUIPMENT_OPTIONS.map((option) => (
+                        <option key={option.id} value={option.id}>{option.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  {selectedEquipment.needsLength && (
+                    <EquipmentLengthField
+                      id="mobile-equipment-length"
+                      value={selectedEquipmentLengthFt}
+                      defaultValue={selectedEquipment.defaultLengthFt}
+                      onChange={updateEquipmentLength}
+                      className="min-w-0"
+                    />
+                  )}
+                </div>
               </section>
 
               <section className="space-y-2 border-t border-stone-200 pt-3">
@@ -2035,7 +2084,7 @@ export function SearchPage() {
                   <div className="mt-0.5 truncate text-sm font-semibold text-stone-950">
                     {nearInput.trim() || "Ontario"}
                     {dateWindowNights ? ` · ${dateWindowNights} nights` : ""}
-                    {selectedEquipment.id !== "any" ? ` · ${selectedEquipment.shortLabel}` : ""}
+                    {selectedEquipment.id !== "any" ? ` · ${equipmentDisplayLabel(state.equipment, selectedEquipmentLengthFt)}` : ""}
                     {hasRouteEndpoint ? ` · ends near ${state.end_loc || endInput}` : ""}
                   </div>
                 </div>

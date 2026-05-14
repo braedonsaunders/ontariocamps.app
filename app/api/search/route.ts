@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { runSearch } from "@/lib/search";
 import { normalizeSearchRadiusKm } from "@/lib/search-radius";
+import { normalizeEquipmentLengthFt, searchEquipmentById } from "@/lib/search-equipment";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +10,12 @@ export async function GET(req: Request) {
   const q = url.searchParams;
   const parseList = (key: string) =>
     q.get(key)?.split(",").map((s) => s.trim()).filter(Boolean);
+  const equipment = q.get("equipment") ?? undefined;
+  const normalizedEquipment = searchEquipmentById(equipment);
+  const equipmentLengthFt = normalizeEquipmentLengthFt(
+    equipment,
+    q.has("equipment_length_ft") ? Number(q.get("equipment_length_ft")) : undefined,
+  );
 
   const data = await runSearch({
     lat: q.has("lat") ? Number(q.get("lat")) : undefined,
@@ -21,13 +28,13 @@ export async function GET(req: Request) {
     min_nights: q.has("min_nights") ? Number(q.get("min_nights")) : undefined,
     flexible: q.get("flexible") === "true",
     party_size: q.has("party_size") ? Number(q.get("party_size")) : undefined,
-    equipment: q.get("equipment") ?? undefined,
-    site_types: parseList("site_types"),
+    equipment: normalizedEquipment.id,
+    site_types: parseList("site_types") ?? normalizedEquipment.siteTypes,
     amenities: parseList("amenities"),
     operators: parseList("operators"),
     park_types: parseList("park_types") as ("provincial" | "conservation" | "federal" | "private")[] | undefined,
     park_slugs: parseList("park_slugs"),
-    equipment_length_ft: q.has("equipment_length_ft") ? Number(q.get("equipment_length_ft")) : undefined,
+    equipment_length_ft: equipmentLengthFt,
     stay_mode: (q.get("stay_mode") as "same_site" | "same_park" | "anywhere" | null) ?? undefined,
     group_by: (q.get("group_by") as "park" | "operator" | "none" | null) ?? undefined,
     group_limit: q.has("group_limit") ? Number(q.get("group_limit")) : undefined,

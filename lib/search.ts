@@ -10,7 +10,7 @@ import { PRESET_LOCATIONS } from "./locations";
 import { buildBookingUrl } from "./booking-url";
 import { displayOperatorName } from "./display";
 import { deriveAmenityCodes } from "./search-amenities";
-import { allowedEquipmentSupportsLength } from "./equipment-normalization";
+import { allowedEquipmentSupportsRequest } from "./equipment-normalization";
 import { legendTypeLabel } from "./legend-types";
 import { operatorParkType, parkTypesToOperators } from "./park-types";
 import type {
@@ -243,10 +243,13 @@ function ruleSiteLengthFt(raw: unknown): number | null {
   return typeof metres === "number" && Number.isFinite(metres) ? Math.round(metres * 3.28084) : null;
 }
 
-function supportsRequestedEquipmentLength(row: SearchRow, requestedLengthFt: number | null | undefined): boolean {
-  if (!requestedLengthFt || requestedLengthFt <= 0) return true;
-  const allowedSignal = allowedEquipmentSupportsLength(row.site_allowed_equipment, requestedLengthFt);
+function supportsRequestedEquipment(row: SearchRow, params: SearchParams): boolean {
+  const requestedLengthFt = params.equipment_length_ft;
+  const requestedKind = params.equipment;
+  if ((!requestedKind || requestedKind === "any") && (!requestedLengthFt || requestedLengthFt <= 0)) return true;
+  const allowedSignal = allowedEquipmentSupportsRequest(row.site_allowed_equipment, requestedKind, requestedLengthFt);
   if (allowedSignal != null) return allowedSignal;
+  if (!requestedLengthFt || requestedLengthFt <= 0) return true;
   if (typeof row.site_max_equipment_length_ft === "number") return row.site_max_equipment_length_ft >= requestedLengthFt;
   const siteLengthFt = ruleSiteLengthFt(row.site_rule_summary);
   if (siteLengthFt != null) return siteLengthFt >= requestedLengthFt;
@@ -717,7 +720,7 @@ export async function runSearch(params: SearchParams): Promise<SearchResponse> {
   const freshnessSamples: number[] = [];
   const preparedRows: PreparedRow[] = [];
   for (const row of rows) {
-    if (!supportsRequestedEquipmentLength(row, params.equipment_length_ft)) continue;
+    if (!supportsRequestedEquipment(row, params)) continue;
     const prepared = prepareRow(row, params);
     if (params.amenities && params.amenities.length > 0) {
       let ok = true;

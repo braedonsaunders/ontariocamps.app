@@ -1,9 +1,9 @@
 export type SearchEquipmentId =
   | "any"
   | "tent"
-  | "small_rv"
-  | "rv"
-  | "large_rv"
+  | "camper_van"
+  | "tent_trailer"
+  | "trailer"
   | "roofed";
 
 export type SearchEquipmentOption = {
@@ -12,8 +12,11 @@ export type SearchEquipmentOption = {
   shortLabel: string;
   description: string;
   siteTypes: string[];
-  equipmentLengthFt?: number;
+  defaultLengthFt?: number;
+  needsLength?: boolean;
 };
+
+export const EQUIPMENT_LENGTH_OPTIONS = [18, 21, 24, 25, 27, 32, 35, 40] as const;
 
 export const SEARCH_EQUIPMENT_OPTIONS: SearchEquipmentOption[] = [
   {
@@ -31,28 +34,31 @@ export const SEARCH_EQUIPMENT_OPTIONS: SearchEquipmentOption[] = [
     siteTypes: ["tent", "rv", "backcountry"],
   },
   {
-    id: "small_rv",
-    label: "Camper van / small RV",
-    shortLabel: "Small RV",
-    description: "RV sites up to 24 ft",
+    id: "camper_van",
+    label: "Camper van",
+    shortLabel: "Van",
+    description: "Van or truck-camper sites",
     siteTypes: ["rv"],
-    equipmentLengthFt: 24,
+    defaultLengthFt: 21,
+    needsLength: true,
   },
   {
-    id: "rv",
-    label: "RV or trailer",
-    shortLabel: "RV",
-    description: "RV sites up to 32 ft",
+    id: "tent_trailer",
+    label: "Tent trailer",
+    shortLabel: "Tent trailer",
+    description: "Tent-trailer and pop-up sites",
     siteTypes: ["rv"],
-    equipmentLengthFt: 32,
+    defaultLengthFt: 21,
+    needsLength: true,
   },
   {
-    id: "large_rv",
-    label: "Large RV",
-    shortLabel: "Large RV",
-    description: "RV sites up to 40 ft",
+    id: "trailer",
+    label: "Trailer or motorhome",
+    shortLabel: "Trailer/RV",
+    description: "Travel trailer, fifth wheel, or motorhome",
     siteTypes: ["rv"],
-    equipmentLengthFt: 40,
+    defaultLengthFt: 25,
+    needsLength: true,
   },
   {
     id: "roofed",
@@ -63,6 +69,40 @@ export const SEARCH_EQUIPMENT_OPTIONS: SearchEquipmentOption[] = [
   },
 ];
 
+const LEGACY_EQUIPMENT_IDS: Record<string, SearchEquipmentId> = {
+  small_rv: "trailer",
+  rv: "trailer",
+  large_rv: "trailer",
+};
+
+const LEGACY_EQUIPMENT_LENGTHS: Record<string, number> = {
+  small_rv: 24,
+  rv: 32,
+  large_rv: 40,
+};
+
 export function searchEquipmentById(id: string | null | undefined): SearchEquipmentOption {
-  return SEARCH_EQUIPMENT_OPTIONS.find((option) => option.id === id) ?? SEARCH_EQUIPMENT_OPTIONS[0];
+  const normalizedId = id ? (LEGACY_EQUIPMENT_IDS[id] ?? id) : id;
+  return SEARCH_EQUIPMENT_OPTIONS.find((option) => option.id === normalizedId) ?? SEARCH_EQUIPMENT_OPTIONS[0];
+}
+
+export function defaultEquipmentLengthFt(id: string | null | undefined): number | undefined {
+  if (id && LEGACY_EQUIPMENT_LENGTHS[id]) return LEGACY_EQUIPMENT_LENGTHS[id];
+  return searchEquipmentById(id).defaultLengthFt;
+}
+
+export function normalizeEquipmentLengthFt(
+  id: string | null | undefined,
+  lengthFt: number | null | undefined,
+): number | undefined {
+  const option = searchEquipmentById(id);
+  if (!option.needsLength) return undefined;
+  if (typeof lengthFt === "number" && Number.isFinite(lengthFt) && lengthFt > 0) return Math.round(lengthFt);
+  return defaultEquipmentLengthFt(id);
+}
+
+export function equipmentDisplayLabel(id: string | null | undefined, lengthFt?: number | null): string {
+  const option = searchEquipmentById(id);
+  const normalizedLength = normalizeEquipmentLengthFt(id, lengthFt);
+  return normalizedLength ? `${option.shortLabel} ${normalizedLength} ft` : option.shortLabel;
 }

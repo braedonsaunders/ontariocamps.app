@@ -19,9 +19,12 @@ import {
 } from "lucide-react";
 import {
   SEARCH_EQUIPMENT_OPTIONS,
+  equipmentDisplayLabel,
+  normalizeEquipmentLengthFt,
   searchEquipmentById,
   type SearchEquipmentId,
 } from "@/lib/search-equipment";
+import { EquipmentLengthField } from "@/components/equipment-length-field";
 import {
   fetchPlaceSuggestions,
   localLocationSuggestions,
@@ -39,9 +42,9 @@ import {
 const EQUIPMENT_ICONS: Record<SearchEquipmentId, LucideIcon> = {
   any: Navigation,
   tent: Tent,
-  small_rv: Truck,
-  rv: Truck,
-  large_rv: Ruler,
+  camper_van: Truck,
+  tent_trailer: Truck,
+  trailer: Ruler,
   roofed: Home,
 };
 
@@ -75,11 +78,14 @@ export function HomeSearch() {
   const [locating, setLocating] = useState(false);
   const [equipmentOpen, setEquipmentOpen] = useState(false);
   const [equipment, setEquipment] = useState<SearchEquipmentId>("tent");
+  const [equipmentLengthFt, setEquipmentLengthFt] = useState<number | undefined>(undefined);
   const [start, setStart] = useState(todayPlus(30));
   const [end, setEnd] = useState(todayPlus(33));
   const [radius, setRadius] = useState(DEFAULT_SEARCH_RADIUS_KM);
 
   const selectedEquipment = useMemo(() => searchEquipmentById(equipment), [equipment]);
+  const selectedEquipmentLengthFt = normalizeEquipmentLengthFt(selectedEquipment.id, equipmentLengthFt);
+  const selectedEquipmentLabel = equipmentDisplayLabel(selectedEquipment.id, selectedEquipmentLengthFt);
   const EquipmentIcon = EQUIPMENT_ICONS[selectedEquipment.id];
   const minimumEndDate = start ? addIsoDays(start, 1) : undefined;
 
@@ -228,8 +234,8 @@ export function HomeSearch() {
     if (selectedEquipment.siteTypes.length > 0) {
       sp.set("site_types", selectedEquipment.siteTypes.join(","));
     }
-    if (selectedEquipment.equipmentLengthFt) {
-      sp.set("equipment_length_ft", String(selectedEquipment.equipmentLengthFt));
+    if (selectedEquipmentLengthFt) {
+      sp.set("equipment_length_ft", String(selectedEquipmentLengthFt));
     }
 
     router.push(`/search?${sp.toString()}`);
@@ -328,7 +334,14 @@ export function HomeSearch() {
           />
         </label>
 
-        <div className="relative rounded-md bg-stone-50 px-3 py-2 ring-1 ring-stone-200">
+        <div
+          className="relative rounded-md bg-stone-50 px-3 py-2 ring-1 ring-stone-200"
+          onBlur={(event) => {
+            const nextTarget = event.relatedTarget;
+            if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
+            window.setTimeout(() => setEquipmentOpen(false), 120);
+          }}
+        >
           <span className="mb-0.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-stone-500">
             <EquipmentIcon size={12} /> Equipment
           </span>
@@ -336,17 +349,16 @@ export function HomeSearch() {
             type="button"
             aria-expanded={equipmentOpen}
             onClick={() => setEquipmentOpen((open) => !open)}
-            onBlur={() => window.setTimeout(() => setEquipmentOpen(false), 120)}
             className="flex w-full min-w-0 items-center justify-between gap-3 text-left"
           >
             <span className="min-w-0">
-              <span className="block truncate text-sm font-semibold text-stone-950">{selectedEquipment.label}</span>
+              <span className="block truncate text-sm font-semibold text-stone-950">{selectedEquipmentLabel}</span>
               <span className="block truncate text-[11px] leading-4 text-stone-500">{selectedEquipment.description}</span>
             </span>
             <ChevronDown size={16} className="shrink-0 text-stone-400" />
           </button>
           {equipmentOpen && (
-            <div className="absolute left-0 right-0 top-[calc(100%+0.375rem)] z-[90] overflow-hidden rounded-lg bg-white p-1.5 shadow-2xl ring-1 ring-stone-200">
+            <div className="absolute left-0 right-0 top-[calc(100%+0.375rem)] z-[90] rounded-lg bg-white p-1.5 shadow-2xl ring-1 ring-stone-200 sm:right-auto sm:w-80">
               {SEARCH_EQUIPMENT_OPTIONS.map((option) => {
                 const Icon = EQUIPMENT_ICONS[option.id];
                 const active = option.id === selectedEquipment.id;
@@ -357,6 +369,7 @@ export function HomeSearch() {
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={() => {
                       setEquipment(option.id);
+                      setEquipmentLengthFt(option.defaultLengthFt);
                       setEquipmentOpen(false);
                     }}
                     className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-left transition ${
@@ -374,6 +387,17 @@ export function HomeSearch() {
                   </button>
                 );
               })}
+              {selectedEquipment.needsLength && (
+                <div className="mt-1.5 border-t border-stone-200 p-1.5">
+                  <EquipmentLengthField
+                    id="home-equipment-length"
+                    value={selectedEquipmentLengthFt}
+                    defaultValue={selectedEquipment.defaultLengthFt}
+                    onChange={setEquipmentLengthFt}
+                    showChips
+                  />
+                </div>
+              )}
             </div>
           )}
         </div>
